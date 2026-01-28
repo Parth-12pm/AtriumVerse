@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import redis.asyncio as redis
 from contextlib import asynccontextmanager
-from app.api import users
+from app.api import users,rooms,ws
 from app.core.database import engine
 from sqlalchemy import text
 
@@ -15,6 +15,11 @@ async def lifespan(app: FastAPI):
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
         print("DB connected Successfully")
+        
+        print("\n--- REGISTERED ROUTES ---")
+        for route in app.routes:
+            print(f"{route.path} ({type(route).__name__})")
+        print("-------------------------\n")
     except Exception as e:
         print(f"DB connection failed: {e}\n")
 
@@ -37,7 +42,9 @@ app.add_middleware(
 )
 
 
-app.include_router(users.router, prefix="/users", tags=["users"])
+app.include_router(users.router, prefix="/users", tags=["Users"])
+app.include_router(rooms.router, prefix="/rooms", tags=["Rooms"])
+app.include_router(ws.router,prefix="/ws",tags=["WebSocket"])
 
 @app.get("/")
 async def hello():
