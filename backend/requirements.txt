@@ -9,3 +9,4 @@ passlib[bcrypt]
 argon2-cffi
 python-jose[cryptography]
 python-multipart
+psycopg2
