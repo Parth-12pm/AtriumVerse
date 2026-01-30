@@ -10,8 +10,30 @@ if not DATABASE_URL:
     raise ValueError("DATABASE_URL is not set")
 
 
-engine = create_async_engine(DATABASE_URL, echo=True)
+engine = None
 
+if DATABASE_URL:
+    from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+    
+    parsed = urlparse(DATABASE_URL)
+    
+    if parsed.scheme in ["postgres", "postgresql"]:
+        parsed = parsed._replace(scheme="postgresql+asyncpg")
+        
+    qs = parse_qs(parsed.query)
+    connect_args = {}
+    
+    if "sslmode" in qs:
+        sslmode = qs.pop("sslmode")[0]
+        if sslmode == "require":
+            connect_args["ssl"] = "require"
+        
+    new_query = urlencode(qs, doseq=True)
+    parsed = parsed._replace(query=new_query)
+    
+    FINAL_URL = urlunparse(parsed)
+    
+    engine = create_async_engine(FINAL_URL, echo=True, connect_args=connect_args)
 
 SessionLocal = sessionmaker(
     bind=engine,

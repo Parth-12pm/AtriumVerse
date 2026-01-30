@@ -7,8 +7,15 @@ from app.core.database import engine
 from sqlalchemy import text
 
 
+from app.init_db import init_models
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    print("Initializing Database Tables...")
+    try:
+        await init_models()
+    except Exception as e:
+        print(f"Error creating tables: {e}")
 
     print("\n checking DB connection...")
     try : 
