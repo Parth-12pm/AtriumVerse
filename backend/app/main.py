@@ -5,8 +5,6 @@ from contextlib import asynccontextmanager
 from app.api import users,rooms,ws
 from app.core.database import engine
 from sqlalchemy import text
-
-
 from app.init_db import init_models
 
 @asynccontextmanager
