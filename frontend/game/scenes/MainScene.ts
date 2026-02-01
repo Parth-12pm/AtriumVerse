@@ -65,32 +65,15 @@ export class MainScene extends Scene {
       this.load.image('tileset16', '/phaser_assets/Old/Tileset_32x32_16.png');
     }
     
-    // Load new 16x16 character spritesheets (asprite format)
-    // Layout: 6 columns x 4 rows per sheet
+    // Load NPC_test character spritesheet
+    // VERIFIED DIMENSIONS: 64px width x 128px height
+    // Grid: 4 columns x 4 rows = 16 frames
+    // Frame Size: 16x32 pixels (64/4 = 16, 128/4 = 32)
     // Row 0 = Down, Row 1 = Right, Row 2 = Up, Row 3 = Left
-    const charPath = '/phaser_assets/Characters_free/characters_asprite/16x16';
-    
-    // Walk spritesheet (main movement animation)
-    if (!this.textures.exists('char_walk')) {
-      this.load.spritesheet('char_walk', `${charPath}/16x16 Walk-Sheet.png`, {
+    if (!this.textures.exists('player')) {
+      this.load.spritesheet('player', '/NPC_test.png', {
         frameWidth: 16,
-        frameHeight: 16,
-      });
-    }
-    
-    // Idle spritesheet (static/animated idle poses)
-    if (!this.textures.exists('char_idle')) {
-      this.load.spritesheet('char_idle', `${charPath}/16x16 Idle-Sheet.png`, {
-        frameWidth: 16,
-        frameHeight: 16,
-      });
-    }
-    
-    // Run spritesheet (faster movement)
-    if (!this.textures.exists('char_run')) {
-      this.load.spritesheet('char_run', `${charPath}/16x16 Run-Sheet.png`, {
-        frameWidth: 16,
-        frameHeight: 16,
+        frameHeight: 32,
       });
     }
   }
@@ -156,21 +139,21 @@ export class MainScene extends Scene {
       console.warn('[MainScene] Zones layer not found, using default spawn');
     }
 
-    // Create local player sprite using new asprite character
-    // Use frame 0 as idle (down-facing from Row 0)
-    this.playerSprite = this.add.sprite(0, 0, 'char_walk', 0);
-    this.playerSprite.setScale(2); // 16x16 → 32x32 to fit grid
+    // Create local player sprite using NPC_test character (16x32 frames)
+    // Use frame 0 as idle (down-facing)
+    this.playerSprite = this.add.sprite(0, 0, 'player', 0);
+    this.playerSprite.setScale(1.5); // 16x32 → 24x48 on screen
     this.playerSprite.setDepth(100); // Above all map layers
     this.playerSprite.setOrigin(0.5, 0.5); // Center origin
 
-    console.log('[MainScene] Created player sprite');
+    console.log('[MainScene] Created player sprite (16x32)');
 
-    // Username label - positioned above player's head
+    // Username label - positioned directly above player's head
     this.usernameText = this.add.text(0, 0, this.myUsername, {
       fontSize: '10px',
       color: '#ffffff',
       backgroundColor: '#000000aa',
-      padding: { x: 3, y: 1 },
+      padding: { x: 0, y: 0 },
     });
     this.usernameText.setOrigin(0.5, 1); // Anchor at bottom-center so it sits above head
     this.usernameText.setDepth(101);
@@ -200,18 +183,19 @@ export class MainScene extends Scene {
       wallsLayer.setCollisionByExclusion([-1, 0]);
     }
 
-    // Configure grid-engine with 8-directional movement
+    // Configure grid-engine - we'll handle animations manually
+    // NPC_test.png: Row 0=Down, Row 1=Right, Row 2=Up, Row 3=Left
     const gridEngineConfig = {
       characters: [
         {
           id: 'hero',
           sprite: this.playerSprite,
           startPosition: { x: spawnX, y: spawnY },
-          speed: 5,
+          speed: 4,
         },
       ],
-      numberOfDirections: 8, // Enable diagonal movement
-      collisionTilePropertyName: 'ge_collide', // Use our custom property
+      numberOfDirections: 4, // 4-way movement
+      collisionTilePropertyName: 'ge_collide',
     };
 
     console.log('[MainScene] Creating grid-engine with spawn at:', spawnX, spawnY);
@@ -226,10 +210,28 @@ export class MainScene extends Scene {
     
     console.log('[MainScene] Camera setup complete');
 
-    // Create walking animations for new asprite character
-    // 16x16 Walk-Sheet.png: 6 columns x 4 rows
+    // Create manual animations for NPC_test (16x32 frames, 4 columns x 4 rows)
     // Row 0=Down, Row 1=Right, Row 2=Up, Row 3=Left
-    this.createCharacterAnimations('char_walk');
+    const cols = 4; // 4 columns of animation frames
+    const directions = [
+      { name: 'down', row: 0 },
+      { name: 'right', row: 1 },
+      { name: 'up', row: 2 },
+      { name: 'left', row: 3 },
+    ];
+    
+    directions.forEach(({ name, row }) => {
+      this.anims.create({
+        key: `walk_${name}`,
+        frames: this.anims.generateFrameNumbers('player', { 
+          start: row * cols, 
+          end: row * cols + cols - 1 
+        }),
+        frameRate: 8,
+        repeat: -1,
+      });
+    });
+    console.log('[MainScene] Created 4-direction walk animations');
 
     // Setup movement observers (CLIENT-SIDE PREDICTION)
     this.gridEngine.movementStarted().subscribe(({ charId, direction }) => {
@@ -246,87 +248,44 @@ export class MainScene extends Scene {
 
         // Send to server (async)
         this.sendMovementToServer(pos.x, pos.y, direction);
-
-        // Map diagonal directions to cardinal for animations (no diagonal anims)
-        let animDirection = direction.toLowerCase();
-        if (animDirection.includes('left')) {
-          animDirection = 'left';
-        } else if (animDirection.includes('right')) {
-          animDirection = 'right';
-        } else if (animDirection.includes('up')) {
-          animDirection = 'up';
-        } else if (animDirection.includes('down')) {
-          animDirection = 'down';
-        }
         
-        // Track last direction for idle state
-        this.lastDirection = animDirection;
+        // Track last direction for reference
+        this.lastDirection = direction.toLowerCase();
         
-        // Ensure sprite and texture exist before animating
-        if (!this.playerSprite || !this.playerSprite.texture) {
-          console.warn('[MainScene] Player sprite not ready for animation');
-          return;
-        }
-        
-        // Switch to walk texture if we were idle
-        if (this.playerSprite.texture.key !== 'char_walk') {
-          this.playerSprite.setTexture('char_walk');
-        }
-        
-        // Play walking animation
-        const animKey = `char_walk_walk_${animDirection}`;
+        // Play walking animation manually
+        const animKey = `walk_${direction.toLowerCase()}`;
         if (this.anims.exists(animKey)) {
-          try {
-            this.playerSprite.play(animKey, true);
-          } catch (e) {
-            console.error('[MainScene] Animation error:', e);
-          }
-        } else {
-          console.warn(`[MainScene] Animation not found: ${animKey}`);
+          this.playerSprite.play(animKey, true);
         }
       }
     });
 
-    // Stop animation when movement stops - switch to idle facing last direction
+    // Movement stopped - stop animation and set idle frame
     this.gridEngine.movementStopped().subscribe(({ charId }) => {
       if (charId === 'hero') {
-        // Ensure sprite exists before stopping
-        if (!this.playerSprite) {
-          console.warn('[MainScene] Player sprite not ready for idle');
-          return;
-        }
-        
         this.playerSprite.stop();
         
-        // Idle spritesheet is also 8-direction layout:
-        // Row 0=Down, Row 2=Left, Row 4=Up, Row 6=Right
-        const idleTexture = this.textures.get('char_idle');
-        if (!idleTexture || !idleTexture.source[0]) {
-          console.warn('[MainScene] Idle texture not ready');
-          return;
-        }
-        const idleCols = Math.floor(idleTexture.source[0].width / 16);
+        // Set idle frame (first frame of the direction's row)
+        const directionToRow: Record<string, number> = {
+          'down': 0,
+          'right': 1,
+          'up': 2,
+          'left': 3,
+        };
+        const row = directionToRow[this.lastDirection] ?? 0;
+        const idleFrame = row * 4; // 4 columns per row
+        this.playerSprite.setFrame(idleFrame);
         
-        // Calculate idle frame based on last direction (use first frame of cardinal rows)
-        let idleFrame = 0; // Default: down (row 0)
-        switch (this.lastDirection) {
-          case 'down': idleFrame = 0 * idleCols; break;   // Row 0
-          case 'left': idleFrame = 2 * idleCols; break;   // Row 2
-          case 'up': idleFrame = 4 * idleCols; break;     // Row 4
-          case 'right': idleFrame = 6 * idleCols; break;  // Row 6
-        }
-        
-        // Switch to idle texture and frame
-        this.playerSprite.setTexture('char_idle', idleFrame);
+        console.log('[MainScene] Movement stopped, facing:', this.lastDirection, 'frame:', idleFrame);
       }
     });
 
     // Position update on every step
     this.gridEngine.positionChangeFinished().subscribe(({ charId }) => {
       if (charId === 'hero') {
-        // Update username label position
+        // Update username label position - just above player head, slightly right
         const sprite = this.playerSprite;
-        this.usernameText.setPosition(sprite.x, sprite.y - 20);
+        this.usernameText.setPosition(sprite.x + 5, sprite.y - 1);
       }
     });
 
@@ -406,8 +365,8 @@ export class MainScene extends Scene {
       console.log('[MainScene] Called move DOWN, isMoving:', this.gridEngine.isMoving('hero'), 'pos:', this.gridEngine.getPosition('hero'));
     }
 
-    // Update username label to follow player (above head: sprite is 32px, center origin)
-    this.usernameText.setPosition(this.playerSprite.x, this.playerSprite.y - 22);
+    // Update username label to follow player (just above head, slightly right)
+    this.usernameText.setPosition(this.playerSprite.x + 5, this.playerSprite.y - 1);
 
     // Update other players' labels
     this.otherPlayers.forEach((player) => {
@@ -417,21 +376,15 @@ export class MainScene extends Scene {
 
 
   /**
-   * Create walking animations for 16x16 asprite character
+   * Create walking animations for NPC_test character
    * 
-   * SPRITESHEET LAYOUT (8-direction rotational):
+   * SPRITESHEET LAYOUT (NPC_test.png) - 4 DIRECTIONS:
    * - Sprite size: 16x16 pixels per frame
-   * - 8 rows total (0-7), each row is a different facing direction
+   * - 4 columns (animation frames) x 4 rows (directions)
    * - Row 0 → Down
-   * - Row 1 → Down-Left (diagonal, SKIPPED)
-   * - Row 2 → Left
-   * - Row 3 → Up-Left (diagonal, SKIPPED)
-   * - Row 4 → Up
-   * - Row 5 → Up-Right (diagonal, SKIPPED)
-   * - Row 6 → Right
-   * - Row 7 → Down-Right (diagonal, SKIPPED)
-   * 
-   * For Gather.town-style top-down: ONLY use rows 0, 2, 4, 6
+   * - Row 1 → Right
+   * - Row 2 → Up
+   * - Row 3 → Left
    */
   private createCharacterAnimations(charKey: string) {
     // Check if animations already exist
@@ -441,61 +394,43 @@ export class MainScene extends Scene {
     
     // Get walk texture info to determine column count
     const walkTexture = this.textures.get(charKey);
+    if (!walkTexture || !walkTexture.source[0]) {
+      console.error(`[MainScene] Texture ${charKey} not found!`);
+      return;
+    }
+    
     const textureWidth = walkTexture.source[0].width;
     const textureHeight = walkTexture.source[0].height;
-    const cols = Math.floor(textureWidth / 16); // Columns per row
-    const rows = Math.floor(textureHeight / 16); // Total rows (should be 8)
+    const cols = Math.floor(textureWidth / 16); // Columns per row (should be 4)
+    const rows = Math.floor(textureHeight / 16); // Total rows (should be 4)
     
-    console.log(`[MainScene] Creating walk animations for ${charKey}: ${cols} columns x ${rows} rows (8-direction sheet)`);
+    console.log(`[MainScene] Creating 4-direction walk animations for ${charKey}: ${cols} columns x ${rows} rows`);
 
-    // Use ALL frames in each row for walk cycle
     const framesPerRow = cols;
 
-    // Row 0 → Facing DOWN
-    this.anims.create({
-      key: `${charKey}_walk_down`,
-      frames: this.anims.generateFrameNumbers(charKey, { 
-        start: 0 * cols, 
-        end: 0 * cols + framesPerRow - 1 
-      }),
-      frameRate: walkFrameRate,
-      repeat: -1,
+    // 4-direction row mapping for NPC_test
+    const directions = [
+      { name: 'down', row: 0 },
+      { name: 'right', row: 1 },
+      { name: 'up', row: 2 },
+      { name: 'left', row: 3 },
+    ];
+
+    directions.forEach(({ name, row }) => {
+      if (row < rows) { // Only create if row exists
+        this.anims.create({
+          key: `${charKey}_walk_${name}`,
+          frames: this.anims.generateFrameNumbers(charKey, { 
+            start: row * cols, 
+            end: row * cols + framesPerRow - 1 
+          }),
+          frameRate: walkFrameRate,
+          repeat: -1,
+        });
+      }
     });
 
-    // Row 2 → Facing LEFT (skip row 1 = diagonal)
-    this.anims.create({
-      key: `${charKey}_walk_left`,
-      frames: this.anims.generateFrameNumbers(charKey, { 
-        start: 2 * cols, 
-        end: 2 * cols + framesPerRow - 1 
-      }),
-      frameRate: walkFrameRate,
-      repeat: -1,
-    });
-
-    // Row 4 → Facing UP (skip row 3 = diagonal)
-    this.anims.create({
-      key: `${charKey}_walk_up`,
-      frames: this.anims.generateFrameNumbers(charKey, { 
-        start: 4 * cols, 
-        end: 4 * cols + framesPerRow - 1 
-      }),
-      frameRate: walkFrameRate,
-      repeat: -1,
-    });
-
-    // Row 6 → Facing RIGHT (skip row 5 = diagonal)
-    this.anims.create({
-      key: `${charKey}_walk_right`,
-      frames: this.anims.generateFrameNumbers(charKey, { 
-        start: 6 * cols, 
-        end: 6 * cols + framesPerRow - 1 
-      }),
-      frameRate: walkFrameRate,
-      repeat: -1,
-    });
-
-    console.log(`[MainScene] Created walk animations: down(row0), left(row2), up(row4), right(row6)`);
+    console.log(`[MainScene] Created 4-direction walk animations for ${charKey}`);
   }
 
 
@@ -557,11 +492,11 @@ export class MainScene extends Scene {
     sprite.setDepth(100);
 
     // Create username label
-    const text = this.add.text(0, -20, data.username, {
+    const text = this.add.text(0, 0, data.username, {
       fontSize: '12px',
       color: '#00ff00',
       backgroundColor: '#000000',
-      padding: { x: 4, y: 2 },
+      padding: { x: 0, y: 0 },
     });
     text.setOrigin(0.5);
     text.setDepth(101);

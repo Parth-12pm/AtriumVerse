@@ -43,14 +43,14 @@ export class Player {
     this.body.setCircle(12);  // Ultra-tight collision circle
     this.body.setOffset(8, 8); // Center the smaller collision body
 
-    // Create username label above player
-    this.usernameText = this.scene.add.text(config.x, config.y - 35, this.username, {
-      fontSize: '12px',
-      color: '#000000',
-      backgroundColor: '#ffffff',
-      padding: { x: 4, y: 2 },
+    // Create username label just above player's head (synced with MainScene.ts)
+    this.usernameText = this.scene.add.text(config.x, config.y - 28, this.username, {
+      fontSize: '10px',
+      color: '#ffffff',
+      backgroundColor: '#000000aa',
+      padding: { x: 0, y: 0 },
     });
-    this.usernameText.setOrigin(0.5, 0.5);
+    this.usernameText.setOrigin(0.5, 1); // Anchor at bottom-center so it sits above head
 
     // Create proximity circle (only visible for local player)
     this.proximityCircle = this.scene.add.circle(config.x, config.y, 150, 0x00ff00, 0.1);
