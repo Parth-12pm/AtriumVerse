@@ -1,6 +1,7 @@
 import * as Phaser from 'phaser';
 import { GridEngine } from 'grid-engine';
 import { MainScene } from './scenes/MainScene';
+import { RoomWebSocket } from '@/lib/websocket';
 
 /**
  * Grid-Engine Phaser Game Configuration

@@ -21,6 +21,11 @@ export class MainScene extends Scene {
   private currentRoomId: string = '';
   private lastDirection: string = 'down'; // Track last facing direction for idle state
   
+  // Throttling for sending position updates
+  private lastSentPosition = { x: 0, y: 0 };
+  private lastSentTime = 0;
+  private sendThrottleMs = 50; // Send max 20 updates/second
+  
   // Keyboard controls (create once, not every frame!)
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: { up: Phaser.Input.Keyboard.Key; down: Phaser.Input.Keyboard.Key; left: Phaser.Input.Keyboard.Key; right: Phaser.Input.Keyboard.Key };
@@ -323,6 +328,106 @@ export class MainScene extends Scene {
       cursors: !!this.cursors,
       wasd: !!this.wasd,
     });
+
+    this.initWebSocket();
+
+  }
+
+  private initWebSocket() {
+    // Prevent duplicate connections (React Strict Mode protection)
+    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+      console.log('[MainScene] WebSocket already connected, skipping initialization');
+      return;
+    }
+    
+    if (!this.currentRoomId || !this.myId) {
+      console.error('[MainScene] Cannot connect WebSocket: missing roomId or userId');
+      return;
+    }
+
+    console.log('[MainScene] Connecting WebSocket:', {
+      roomId: this.currentRoomId,
+      userId: this.myId
+    });
+
+    // Create WebSocket connection
+    this.socket = new WebSocket(
+      `ws://localhost:8000/ws/connect?room_id=${this.currentRoomId}&user_id=${this.myId}`
+    );
+
+    this.socket.onopen = () => {
+      console.log('🔌 [MainScene] WebSocket Connected!');
+    };
+
+    this.socket.onmessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log('📨 [MainScene] Received:', data);
+        this.handleServerMessage(data);
+      } catch (error) {
+        console.error('Failed to parse message:', error);
+      }
+    };
+
+    this.socket.onerror = (error: Event) => {
+      console.error('❌ [MainScene] WebSocket Error:', error);
+    };
+
+    this.socket.onclose = () => {
+      console.log('🔌 [MainScene] WebSocket Disconnected');
+    };
+  }
+
+  private handleServerMessage(data: any) {
+    switch (data.type) {
+      case 'user_list':
+        console.log('👥 [MainScene] Online users:', data.users);
+        // Spawn sprites for all users EXCEPT ourselves
+        data.users.forEach((userId: string) => {
+          if (userId !== this.myId && !this.otherPlayers.has(userId)) {
+            // Spawn at default position (they'll send their real position soon)
+            this.spawnRemotePlayer(userId, 'Player', 15, 15);
+          }
+        });
+        
+        // Send our current position so others can see us immediately
+        if (this.gridEngine.hasCharacter('hero')) {
+          const myPos = this.gridEngine.getPosition('hero');
+          this.sendMovementToServer(myPos.x, myPos.y, this.lastDirection);
+        }
+        break;
+
+      case 'player_move':
+        // Don't process our own movement echoes
+        if (data.user_id === this.myId) return;
+        
+        console.log('🏃 [MainScene] Player moved:', data.user_id, '@', data.x, data.y);
+        this.updateRemotePlayerPosition(data.user_id, data.x, data.y, data.username || 'Player');
+        break;
+
+      case 'user_joined':
+        // Don't spawn ourselves
+        if (data.user_id === this.myId) return;
+        
+        console.log('✅ [MainScene] User joined:', data.user_id);
+        
+        // Prevent duplicates (React Strict Mode)
+        if (!this.otherPlayers.has(data.user_id)) {
+          this.spawnRemotePlayer(data.user_id, 'Player', 15, 15);
+          
+          // Send our position so the new user can see us
+          if (this.gridEngine.hasCharacter('hero')) {
+            const myPos = this.gridEngine.getPosition('hero');
+            this.sendMovementToServer(myPos.x, myPos.y, this.lastDirection);
+          }
+        }
+        break;
+
+      case 'user_left':
+        console.log('❌ [MainScene] User left:', data.user_id);
+        this.removeRemotePlayer(data.user_id);
+        break;
+    }
   }
 
   private debugCounter = 0;
@@ -330,9 +435,9 @@ export class MainScene extends Scene {
   update() {
     // Debug: log every 60 frames to verify update is running
     this.debugCounter++;
-    if (this.debugCounter % 60 === 0) {
-      console.log('[MainScene] update() running, frame:', this.debugCounter);
-    }
+    // if (this.debugCounter % 60 === 0) {
+    //   console.log('[MainScene] update() running, frame:', this.debugCounter);
+    // }
     
     // Check if keyboard is available
     if (!this.cursors || !this.wasd) {
@@ -367,6 +472,11 @@ export class MainScene extends Scene {
 
     // Update username label to follow player (just above head, slightly right)
     this.usernameText.setPosition(this.playerSprite.x + 5, this.playerSprite.y - 1);
+    
+    // Update remote player labels to follow their sprites
+    this.otherPlayers.forEach((player) => {
+      player.text.setPosition(player.sprite.x, player.sprite.y - 20);
+    });
 
     // Update other players' labels
     this.otherPlayers.forEach((player) => {
@@ -437,15 +547,25 @@ export class MainScene extends Scene {
 
 
   private sendMovementToServer(x: number, y: number, direction: string) {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
-
-    this.socket.send(JSON.stringify({
-      type: 'move',
-      id: this.myId,
-      x,
-      y,
-      direction,
-    }));
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      return; // Silently ignore if not connected
+    }
+    
+    const now = Date.now();
+    const positionChanged = this.lastSentPosition.x !== x || this.lastSentPosition.y !== y;
+    
+    // Throttle: only send if position changed AND enough time passed
+    if (positionChanged && now - this.lastSentTime >= this.sendThrottleMs) {
+      this.socket.send(JSON.stringify({
+        type: 'player_move',
+        x,
+        y,
+        username: this.myUsername
+      }));
+      
+      this.lastSentPosition = { x, y };
+      this.lastSentTime = now;
+    }
   }
 
   private checkProximity() {
@@ -481,50 +601,94 @@ export class MainScene extends Scene {
     }
   }
 
-  private spawnRemotePlayer(data: { id: string; username: string; x: number; y: number }) {
-    if (this.otherPlayers.has(data.id)) return;
+  private spawnRemotePlayer(userId: string, username: string, x: number, y: number) {
+    if (this.otherPlayers.has(userId)) return;
 
-    console.log('[MainScene] Spawning remote player:', data.username);
+    console.log('[MainScene] Spawning remote player:', username, 'at', x, y);
 
-    // Create sprite
-    const sprite = this.add.sprite(0, 0, 'alex', 0);
-    sprite.setScale(2);
+    // Create sprite using same spritesheet as local player
+    const sprite = this.add.sprite(0, 0, 'player', 0);
+    sprite.setScale(1.5); // Same as local player
     sprite.setDepth(100);
+    sprite.setOrigin(0.5, 0.5);
 
     // Create username label
-    const text = this.add.text(0, 0, data.username, {
-      fontSize: '12px',
-      color: '#00ff00',
-      backgroundColor: '#000000',
-      padding: { x: 0, y: 0 },
+    const text = this.add.text(0, -20, username, {
+      fontSize: '10px',
+      color: '#00ff00', // Green to distinguish from local player
+      backgroundColor: '#000000aa',
+      padding: { x: 2, y: 1 },
     });
-    text.setOrigin(0.5);
+    text.setOrigin(0.5, 1); // Anchor at bottom-center
     text.setDepth(101);
 
-    // Add to grid-engine
+    // Add to grid-engine with character container for animations
     this.gridEngine.addCharacter({
-      id: data.id,
+      id: userId,
       sprite: sprite,
-      startPosition: { x: data.x, y: data.y },
+      startPosition: { x, y },
       speed: 4,
-      collides: {
-        collisionGroups: ['wall'],
+      container: {
+        width: 16,
+        height: 32,
+      },
+      // Use the same animations as local player
+      walkingAnimationMapping: {
+        up: 'player_walk_up',
+        down: 'player_walk_down',
+        left: 'player_walk_left',
+        right: 'player_walk_right',
       },
     });
 
-    this.otherPlayers.set(data.id, { sprite, text });
+    this.otherPlayers.set(userId, { sprite, text });
+  }
+  
+  private updateRemotePlayerPosition(userId: string, x: number, y: number, username?: string) {
+    const player = this.otherPlayers.get(userId);
+    if (!player) {
+      // Player not spawned yet, spawn them now
+      this.spawnRemotePlayer(userId, username || 'Player', x, y);
+      return;
+    }
+    
+    // Update username if provided
+    if (username && player.text.text !== username) {
+      player.text.setText(username);
+    }
+    
+    // Move the player using grid-engine SMOOTH movement
+    if (this.gridEngine.hasCharacter(userId)) {
+      const currentPos = this.gridEngine.getPosition(userId);
+      
+      // Only move if position actually changed
+      if (currentPos.x !== x || currentPos.y !== y) {
+        // Calculate distance to decide between teleport and smooth move
+        const distance = Math.abs(currentPos.x - x) + Math.abs(currentPos.y - y);
+        
+        if (distance > 5) {
+          // Too far - teleport instantly (player just joined or lagged)
+          this.gridEngine.setPosition(userId, { x, y });
+        } else {
+          // Close enough - use smooth pathfinding movement
+          this.gridEngine.moveTo(userId, { x, y });
+        }
+      }
+    }
   }
 
-  private removeRemotePlayer(data: { id: string }) {
-    const player = this.otherPlayers.get(data.id);
+  private removeRemotePlayer(userId: string) {
+    const player = this.otherPlayers.get(userId);
     if (!player) return;
 
-    console.log('[MainScene] Removing remote player:', data.id);
+    console.log('[MainScene] Removing remote player:', userId);
 
-    this.gridEngine.removeCharacter(data.id);
+    if (this.gridEngine.hasCharacter(userId)) {
+      this.gridEngine.removeCharacter(userId);
+    }
     player.sprite.destroy();
     player.text.destroy();
-    this.otherPlayers.delete(data.id);
+    this.otherPlayers.delete(userId);
   }
 
   destroy() {

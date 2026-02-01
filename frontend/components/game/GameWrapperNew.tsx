@@ -10,6 +10,7 @@ interface GameWrapperProps {
 
 // Module-level singleton to prevent React Strict Mode double-creation
 let globalGameInstance: Phaser.Game | null = null;
+let isInitializing = false; // Prevent race condition
 
 export default function GameWrapper({ userId, username, roomId }: GameWrapperProps) {
   const gameRef = useRef<Phaser.Game | null>(null);
@@ -24,6 +25,23 @@ export default function GameWrapper({ userId, username, roomId }: GameWrapperPro
         setIsGameReady(true);
         return;
       }
+      
+      // Check if another initialization is in progress
+      if (isInitializing) {
+        console.log('[GameWrapper] Game initialization in progress, waiting...');
+        // Wait for the other initialization to complete
+        const checkInterval = setInterval(() => {
+          if (globalGameInstance) {
+            console.log('[GameWrapper] Game ready from other initialization');
+            gameRef.current = globalGameInstance;
+            setIsGameReady(true);
+            clearInterval(checkInterval);
+          }
+        }, 50);
+        return;
+      }
+
+      isInitializing = true;
 
       // Dynamic import prevents SSR "window is not defined" error
       const { default: StartGame } = await import('@/game/phaser-game');
@@ -35,6 +53,7 @@ export default function GameWrapper({ userId, username, roomId }: GameWrapperPro
       
       globalGameInstance = game;
       gameRef.current = game;
+      isInitializing = false;
       
       setIsGameReady(true);
       console.log('[GameWrapper] Game ready!');

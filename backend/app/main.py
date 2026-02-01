@@ -6,6 +6,7 @@ from app.api import users,rooms,ws
 from app.core.database import engine
 from sqlalchemy import text
 from app.init_db import init_models
+from app.core.redis_client import init_redis,close_redis
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -28,8 +29,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"DB connection failed: {e}\n")
 
+    try:
+        print("\n🔴 Attempting Redis connection...")
+        await init_redis()
+        print("✅ Redis Connected Successfully\n")
+    except Exception as e:
+        print(f"❌ CRITICAL: Redis connection failed: {e}")
+        print(f"   Make sure Redis is running: sudo service redis-server start")
+        print(f"   Or check your Redis host/port settings\n")
+
     yield
 
+    await close_redis()
     print(" shutting down....")
 
 

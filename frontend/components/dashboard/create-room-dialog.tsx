@@ -34,7 +34,7 @@ export function CreateRoomDialog() {
       setOpen(false);
       setName("");
       router.refresh(); 
-      router.push(`/room/${newRoom.id}`);
+      router.push(`/room-grid/${newRoom.id}`);
     } catch (error) {
       toast.error("Failed to create room");
     } finally {

@@ -1,5 +1,6 @@
 from fastapi import WebSocket
 from typing import Dict, List
+from app.core.redis_client import r 
 
 class ConnectionManger: 
     def __init__(self):
@@ -21,6 +22,13 @@ class ConnectionManger:
         # Let's adjust the signature or just broadcast blindly for now? 
         # Wait, I need to check how I call it in ws.py. ws.py has user_id.
         # I should simply update connect() to accept user_id too.
+
+    async def get_room_users(self, room_id: str):
+
+        if not r:
+            return []
+        users = await r.smembers(f"room:{room_id}:users")
+        return list(users)
 
     async def disconnect(self, websocket:WebSocket, room_id: str):
         if room_id in self.active_connections:
