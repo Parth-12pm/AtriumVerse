@@ -622,22 +622,18 @@ export class MainScene extends Scene {
     text.setOrigin(0.5, 1); // Anchor at bottom-center
     text.setDepth(101);
 
-    // Add to grid-engine with character container for animations
+    // Add to grid-engine
     this.gridEngine.addCharacter({
       id: userId,
       sprite: sprite,
       startPosition: { x, y },
       speed: 4,
-      container: {
-        width: 16,
-        height: 32,
-      },
-      // Use the same animations as local player
+      // GridEngine expects FrameRow objects { leftFoot, standing, rightFoot }
       walkingAnimationMapping: {
-        up: 'player_walk_up',
-        down: 'player_walk_down',
-        left: 'player_walk_left',
-        right: 'player_walk_right',
+        up: { leftFoot: 9, standing: 8, rightFoot: 11 },
+        down: { leftFoot: 1, standing: 0, rightFoot: 3 },
+        left: { leftFoot: 13, standing: 12, rightFoot: 15 },
+        right: { leftFoot: 5, standing: 4, rightFoot: 7 },
       },
     });
 
