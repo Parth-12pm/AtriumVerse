@@ -1,10 +1,10 @@
 "use client";
 
-import { LoginForm } from "@/components/auth/login-form";
+import { RegisterForm } from "@/components/auth/register-form";
 import Link from "next/link";
 import { Sparkles } from "lucide-react";
 
-export default function LoginPage() {
+export default function RegisterPage() {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Simple Header */}
@@ -19,9 +19,9 @@ export default function LoginPage() {
         </div>
       </header>
 
-      {/* Login Form */}
+      {/* Register Form */}
       <main className="flex-1 flex items-center justify-center p-4">
-        <LoginForm />
+        <RegisterForm />
       </main>
     </div>
   );

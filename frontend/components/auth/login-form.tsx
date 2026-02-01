@@ -2,10 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { toast } from "sonner"; 
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
+import { ArrowRight, Loader2 } from "lucide-react";
 
 export function LoginForm() {
   const router = useRouter();
@@ -34,45 +37,84 @@ export function LoginForm() {
       localStorage.setItem("username", username);
 
       toast.success("Welcome back!");
-      router.push("/dashboard"); 
-      
+      router.push("/dashboard");
     } catch (error) {
       toast.error("Invalid credentials");
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
   };
 
   return (
-    <Card className="w-[450px] h-[450px]"> {/* Clean card */}
-      <CardHeader>
-        <CardTitle className="text-2xl font-bold text-center">Atrium-Verse</CardTitle>
+    <Card className="w-full max-w-md border-4 border-border shadow-shadow">
+      <CardHeader className="text-center pb-2">
+        <CardTitle className="text-3xl font-black uppercase tracking-tight">
+          Welcome Back
+        </CardTitle>
+        <CardDescription className="text-base">
+          Sign in to your AtriumVerse account
+        </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleLogin} className="space-y-8">
-          <div className="space-y-4">
-            <label className="text-sm font-bold">Username</label>
-            <Input 
-              value={username} 
-              onChange={(e) => setUsername(e.target.value)} 
+        <form onSubmit={handleLogin} className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="username" className="text-sm font-bold uppercase">
+              Username
+            </Label>
+            <Input
+              id="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               placeholder="Enter username"
+              required
+              className="border-2"
             />
           </div>
-          <div className="space-y-4">
-            <label className="text-sm font-bold">Password</label>
-            <Input 
+          
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <Label htmlFor="password" className="text-sm font-bold uppercase">
+                Password
+              </Label>
+              <Link 
+                href="#" 
+                className="text-xs text-muted-foreground hover:text-primary hover:underline"
+              >
+                Forgot password?
+              </Link>
+            </div>
+            <Input
+              id="password"
               type="password"
-              value={password} 
-              onChange={(e) => setPassword(e.target.value)} 
-              placeholder="*********"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+              className="border-2"
             />
           </div>
-          <div className="b-10">
-            <Button disabled={loading} type="submit" className="w-full">
-            {loading ? "Loading..." : "Login"}
+
+          <Button disabled={loading} type="submit" className="w-full font-bold text-base py-6">
+            {loading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Signing in...
+              </>
+            ) : (
+              <>
+                Sign In <ArrowRight className="ml-2 h-4 w-4" />
+              </>
+            )}
           </Button>
-          </div>
         </form>
+
+        <div className="mt-6 text-center">
+          <p className="text-sm text-muted-foreground">
+            Don&apos;t have an account?{" "}
+            <Link href="/register" className="font-bold text-primary hover:underline">
+              Sign up here
+            </Link>
+          </p>
+        </div>
       </CardContent>
     </Card>
   );
