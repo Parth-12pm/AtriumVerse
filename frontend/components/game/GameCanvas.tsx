@@ -1,14 +1,19 @@
-'use client';
+"use client";
 
-import { useRef } from 'react';
-import { PhaserGame, IRefPhaserGame } from './PhaserGameClient';
+import { useRef } from "react";
+import { PhaserGame, IRefPhaserGame } from "./PhaserGameClient";
 
 interface GameCanvasProps {
-  roomId: string;
+  serverId: string;
   userId: string;
   username: string;
   onPositionUpdate?: (x: number, y: number, direction: string) => void;
-  onPlayerJoin?: (userId: string, username: string, x: number, y: number) => void;
+  onPlayerJoin?: (
+    userId: string,
+    username: string,
+    x: number,
+    y: number,
+  ) => void;
   onPlayerLeave?: (userId: string) => void;
   onRoomChange?: (roomId: string, proximityRange: number) => void;
 }

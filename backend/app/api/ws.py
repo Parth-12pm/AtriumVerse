@@ -1,84 +1,107 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect , Depends ,Query , status
 from app.core.socket_manager import manager
-from app.core import redis_client  # Import module, not variable
+from app.core import redis_client  
+from app.core.spatial_manager import spatial_manager
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.database import get_db
+from app.api.deps import get_current_user
+import time
+from jose import jwt, JWTError
+from app.core.security import SECRET_KEY, ALGORITHM
 
 router = APIRouter()
 
-@router.websocket("/connect")
-async def websocket_endpoint(websocket: WebSocket, room_id: str, user_id: str):
-    print(f"✅ Connecting: Room={room_id}, User={user_id}")
-    
-    # Check if Redis is available
-    if redis_client.r is None:
-        print("❌ CRITICAL: Redis not initialized! Cannot accept WebSocket connections.")
-        await websocket.close(code=1011, reason="Server not ready - Redis unavailable")
+
+# Helper to validate token manually (since Depends doesn't work well for WS query params)
+async def get_user_from_token(token: str):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if username is None:
+            return None
+        return username # In a real app, query DB here to get full User object if needed
+    except JWTError:
+        return None
+
+
+@router.websocket("/{server_id}")
+async def websocket_endpoint(
+    websocket: WebSocket,
+    server_id: str,
+    token: str = Query(...),
+    db: AsyncSession = Depends(get_db)
+    ):
+
+    # 1. Authenticate via Token
+    username = await get_user_from_token(token)
+    if not username:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
+    user_id = username
+
+    # 2. Connect Manager
+    await manager.connect(websocket, server_id, user_id)
+
+    # 3. Load Zones (Cache Warmup)
+    await spatial_manager.load_zones(server_id, db) 
+
+    # 4. Redis Initial Setup
+    if redis_client.r:
+        await redis_client.r.sadd(f"server:{server_id}:users", user_id)
+        # Send initial user list
+        online_users = await redis_client.r.smembers(f"server:{server_id}:users")
+        await websocket.send_json({"type": "user_list", "users": list(online_users)})
+        # Notify others
+        await manager.broadcast({"type": "user_joined", "user_id": user_id}, server_id, websocket)
+
+    last_broadcast_time = 0
     
     try:
-        await manager.connect(websocket, room_id, user_id)
-
-        await redis_client.r.sadd(f"room:{room_id}:users", user_id)
-
-        online_users = await redis_client.r.smembers(f"room:{room_id}:users")
-        
-        # Send initial user_list to the newly connected client
-        await websocket.send_json({
-            "type": "user_list",
-            "users": list(online_users)
-        })
-        
-        print(f"📨 Sent user_list to {user_id}: {list(online_users)}")
-        
-        # Broadcast to OTHER clients that a new user joined
-        await manager.broadcast({
-            "type": "user_joined",
-            "user_id": user_id
-        }, room_id, websocket)  # websocket = sender (excluded from broadcast)
-
         while True:
-            try:
-                data = await websocket.receive_json()
-                print(f"📥 Received from {user_id}: {data}")
+            data = await websocket.receive_json()
 
-                if data.get("type") == "player_move":
-                    # Store position AND username in Redis
-                    await redis_client.r.hset(f"user:{user_id}", mapping={
-                        "x": str(data["x"]),
-                        "y": str(data["y"]),
-                        "room_id": room_id,
-                        "username": data.get("username", "Player")
-                    })
+            if data.get("type") == "player_move":
+                current_time = time.time()
+                
+                # THROTTLE: Only process movement every 50ms (20fps)
+                if current_time - last_broadcast_time > 0.02:
                     
-                    # Broadcast with username included
+                    # A. Save to Redis (Persist State)
+                    if redis_client.r:
+                        await redis_client.r.hset(f"user:{user_id}", mapping={
+                            "x": str(data["x"]),
+                            "y": str(data["y"]),
+                            "server_id": server_id,
+                            "username": data.get("username", "Player")
+                        })
+
+                    # B. Spatial Check (Zero Latency)
+                    zone = spatial_manager.check_zone(data["x"], data["y"], server_id)
+                    
+                    # C. Broadcast to others
                     await manager.broadcast({
                         "type": "player_move",
                         "user_id": user_id,
                         "x": data["x"],
                         "y": data["y"],
-                        "username": data.get("username", "Player")
-                    }, room_id, websocket)
+                        "username": data.get("username", "Player"),
+                        "zone": zone["name"] if zone else "Open Space"
+                    }, server_id, websocket)
+                    
+                    last_broadcast_time = current_time
 
-                if data.get("type") == "request_users":
-                    users = await manager.get_room_users(room_id)
-                    await websocket.send_json({"type":"user_list","users":users})
-                
-            except Exception as e:
-                print(f"❌ Error in receive loop for {user_id}: {e}")
-                raise  # Re-raise to trigger disconnect cleanup
+            # Handle other messages (chat, etc) without throttling
+            if data.get("type") == "request_users":
+                users = await manager.get_server_users(server_id)
+                await websocket.send_json({"type":"user_list","users":users})
 
     except WebSocketDisconnect:
-        print(f"👋 User {user_id} disconnected from room {room_id}")
-    except Exception as e:
-        print(f"❌ Unexpected error for {user_id}: {e}")
-    finally:
-        # Cleanup (runs whether normal disconnect or error)
-        await manager.disconnect(websocket, room_id)
+        await manager.disconnect(websocket, server_id)
         
-        # Safe Redis cleanup (check if r exists)
-        if redis_client.r is not None:
-            await redis_client.r.srem(f"room:{room_id}:users", user_id)
+        # Cleanup Redis
+        if redis_client.r:
+            await redis_client.r.srem(f"server:{server_id}:users", user_id)
             await redis_client.r.delete(f"user:{user_id}")
         
-        await manager.broadcast({"type": "user_left", "user_id": user_id}, room_id, websocket)
-        print(f"🧹 Cleanup complete for {user_id}")
-
+        await manager.broadcast({"type": "user_left", "user_id": user_id}, server_id, websocket)
+        print(f"👋 User {user_id} disconnected from server {server_id}")
