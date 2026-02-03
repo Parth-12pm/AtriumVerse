@@ -15,7 +15,7 @@ import {
 import { toast } from "sonner";
 import { Plus } from "lucide-react";
 
-export function CreateRoomDialog() {
+export function CreateServerDialog() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -25,16 +25,16 @@ export function CreateRoomDialog() {
     e.preventDefault();
     setLoading(true);
     try {
-      const newRoom = await fetchAPI("/rooms/", {
+      const new_server = await fetchAPI("/servers/create-server", {
         method: "POST",
         body: JSON.stringify({ name }),
       });
-      
-      toast.success("Room created!");
+
+      toast.success("Server created!");
       setOpen(false);
       setName("");
-      router.refresh(); 
-      router.push(`/room-grid/${newRoom.id}`);
+      router.refresh();
+      router.push(`/server/${new_server.id}`);
     } catch (error) {
       toast.error("Failed to create room");
     } finally {
