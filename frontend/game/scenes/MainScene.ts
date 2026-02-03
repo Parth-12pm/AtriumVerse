@@ -270,7 +270,7 @@ export class MainScene extends Scene {
     this.gridEngine.create(map, gridEngineConfig);
 
     // Camera setup
-    this.cameras.main.startFollow(this.playerSprite, true, 0.08, 0.08);
+    this.cameras.main.startFollow(this.playerSprite, true, 0.2, 0.2);
     this.cameras.main.setZoom(1.5);
     this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
 
@@ -363,7 +363,12 @@ export class MainScene extends Scene {
 
         // FORCE SENT Final Position to ensure sync
         const finalPos = this.gridEngine.getPosition("hero");
-        this.sendMovementToServer(finalPos.x, finalPos.y, this.lastDirection); // Ignore throttle? No, function checks throttle.
+        this.sendMovementToServer(
+          finalPos.x,
+          finalPos.y,
+          this.lastDirection,
+          true,
+        ); // Force send
         // We might need to force it. Let's make a force flag or just updating timestamp in send will handle it if enough time passed.
         // Actually, better to forcefully send if checking strict consistency.
         // But for now, let's just call it. If it was throttled recently, maybe it's fine because we sent target?
@@ -374,13 +379,7 @@ export class MainScene extends Scene {
       }
     });
 
-    // Position update on every step
-    this.gridEngine.positionChangeFinished().subscribe(({ charId }) => {
-      if (charId === "hero") {
-        const sprite = this.playerSprite;
-        this.usernameText.setPosition(sprite.x + 5, sprite.y - 1);
-      }
-    });
+    // Removed redundant positionChangeFinished listener for label updates (handled in update loop)
 
     // Listen for React → Phaser events
     EventBus.on(GameEvents.UPDATE_AVATAR, this.updateAvatar, this);
@@ -473,7 +472,18 @@ export class MainScene extends Scene {
     };
 
     this.socket.onclose = () => {
-      console.log("🔌 [MainScene] WebSocket Disconnected");
+      console.log(
+        "🔌 [MainScene] WebSocket Disconnected — reconnecting in 2s...",
+      );
+      this.socket = null;
+
+      // Retry after 2 seconds, but only if the scene is still alive
+      this.time.delayedCall(2000, () => {
+        if (this.scene.isActive("MainScene")) {
+          console.log("🔄 [MainScene] Attempting reconnect...");
+          this.initWebSocket();
+        }
+      });
     };
   }
 
@@ -482,21 +492,40 @@ export class MainScene extends Scene {
       case "user_list":
         console.log("👥 [MainScene] Online users:", data.users);
 
-        // Emit list to React for HUD
-        EventBus.emit(GameEvents.PLAYER_LIST_UPDATE, data.users);
+        // data.users is now an array of objects: { user_id, x, y, username }
+        // We only need IDs for the React HUD list typically, or maybe full objects?
+        // Let's map to IDs if the HUD expects IDs, or pass full objects if it handles them.
+        // Based on previous code: EventBus.emit(..., data.users) where data.users was list of strings.
+        // Now it's list of objects.
+        const userIds = data.users.map((u: any) => u.user_id);
+        EventBus.emit(GameEvents.PLAYER_LIST_UPDATE, userIds);
 
-        // Spawn sprites for all users EXCEPT ourselves
-        data.users.forEach((userId: string) => {
-          if (userId !== this.myId && !this.otherPlayers.has(userId)) {
-            // Spawn at default position (they'll send their real position soon)
-            this.spawnRemotePlayer(userId, "Player", 15, 15);
-          }
-        });
+        data.users.forEach(
+          (user: {
+            user_id: string;
+            x: number;
+            y: number;
+            username: string;
+          }) => {
+            if (
+              user.user_id !== this.myId &&
+              !this.otherPlayers.has(user.user_id)
+            ) {
+              // Spawn at their ACTUAL last-known position — no jump
+              this.spawnRemotePlayer(
+                user.user_id,
+                user.username,
+                user.x,
+                user.y,
+              );
+            }
+          },
+        );
 
-        // Send our current position so others can see us immediately
+        // Send our current position so others can see us immediately (force=true)
         if (this.gridEngine.hasCharacter("hero")) {
           const myPos = this.gridEngine.getPosition("hero");
-          this.sendMovementToServer(myPos.x, myPos.y, this.lastDirection);
+          this.sendMovementToServer(myPos.x, myPos.y, this.lastDirection, true);
         }
         break;
 
@@ -521,12 +550,23 @@ export class MainScene extends Scene {
 
         // Prevent duplicates (React Strict Mode)
         if (!this.otherPlayers.has(data.user_id)) {
-          this.spawnRemotePlayer(data.user_id, "Player", 15, 15);
+          // Backend sends x, y, username now — use them. ?? not || so that 0 is valid.
+          this.spawnRemotePlayer(
+            data.user_id,
+            data.username || "Player",
+            data.x ?? 15,
+            data.y ?? 15,
+          );
 
-          // Emit updated list (we need to construct it or wait for server list, logic: just add new user)
+          // Re-send our position so the new joiner sees us immediately. force=true.
           if (this.gridEngine.hasCharacter("hero")) {
             const myPos = this.gridEngine.getPosition("hero");
-            this.sendMovementToServer(myPos.x, myPos.y, this.lastDirection);
+            this.sendMovementToServer(
+              myPos.x,
+              myPos.y,
+              this.lastDirection,
+              true,
+            );
           }
         }
         break;
@@ -537,8 +577,6 @@ export class MainScene extends Scene {
         break;
     }
   }
-
-  private debugCounter = 0;
 
   update() {
     // Check if keyboard is available
@@ -566,8 +604,8 @@ export class MainScene extends Scene {
     // Update username label to follow player (just above head, slightly right)
     if (this.playerSprite && this.usernameText) {
       this.usernameText.setPosition(
-        this.playerSprite.x + 5,
-        this.playerSprite.y - 1,
+        this.playerSprite.x, // remove the +5, center it like remote labels
+        this.playerSprite.y - 20, // match remote label offset
       );
     }
 
@@ -577,7 +615,12 @@ export class MainScene extends Scene {
     });
   }
 
-  private sendMovementToServer(x: number, y: number, direction: string) {
+  private sendMovementToServer(
+    x: number,
+    y: number,
+    direction: string,
+    force: boolean = false,
+  ) {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       return; // Silently ignore if not connected
     }
@@ -586,11 +629,11 @@ export class MainScene extends Scene {
     const positionChanged =
       this.lastSentPosition.x !== x || this.lastSentPosition.y !== y;
 
-    // Throttle: only send if position changed AND enough time passed
-    // NOTE: If we are sending a TARGET position, we might want to skip throttle check?
-    // But typically we still want to throttle high-frequency inputs.
-    // However, since we call this on discrete movement events, it should be fine.
-    if (positionChanged && now - this.lastSentTime >= this.sendThrottleMs) {
+    // Throttle: only send if position changed AND (enough time passed OR force flag is set)
+    if (
+      positionChanged &&
+      (force || now - this.lastSentTime >= this.sendThrottleMs)
+    ) {
       this.socket.send(
         JSON.stringify({
           type: "player_move",
@@ -614,6 +657,7 @@ export class MainScene extends Scene {
       if (!this.gridEngine.hasCharacter(playerId)) return;
 
       const otherPos = this.gridEngine.getPosition(playerId);
+
 
       // Euclidean distance in tiles
       const distance = Phaser.Math.Distance.Between(
@@ -649,7 +693,7 @@ export class MainScene extends Scene {
     console.log("[MainScene] Spawning remote player:", username, "at", x, y);
 
     // Create sprite using same spritesheet as local player
-    const sprite = this.add.sprite(0, 0, "player", 0);
+    const sprite = this.add.sprite(0, 0, username, 0);
     sprite.setScale(1.5); // Same as local player
     sprite.setDepth(100);
     sprite.setOrigin(0.5, 0.5);
@@ -706,7 +750,7 @@ export class MainScene extends Scene {
           Math.abs(currentPos.x - x) + Math.abs(currentPos.y - y);
 
         // Lag Compensation / Catch-up Logic
-        if (distance > 5) {
+        if (distance > 3) {
           // Teleport if too far
           this.gridEngine.setPosition(userId, { x, y });
         } else {

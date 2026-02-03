@@ -7,6 +7,16 @@ from app.core.database import engine
 from sqlalchemy import text
 from app.init_db import init_models
 from app.core.redis_client import init_redis,close_redis
+import os
+from dotenv import load_dotenv
+
+
+load_dotenv()
+
+NEXT_PUBLIC_URL = os.getenv("NEXT_PUBLIC_URL")
+if not NEXT_PUBLIC_URL:
+    raise ValueError("NEXT_PUBLIC_URL is not set")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -41,7 +51,7 @@ app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000",NEXT_PUBLIC_URL],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

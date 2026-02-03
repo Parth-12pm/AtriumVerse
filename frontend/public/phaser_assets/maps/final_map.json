@@ -263,6 +263,42 @@
           "width": 0,
           "x": 465.333333333333,
           "y": 577.333333333333
+        },
+        {
+          "height": 0,
+          "id": 14,
+          "name": "Spawn_2",
+          "point": true,
+          "rotation": 0,
+          "type": "",
+          "visible": true,
+          "width": 0,
+          "x": 470.333333333333,
+          "y": 577.333333333333
+        },
+        {
+          "height": 0,
+          "id": 14,
+          "name": "Spawn_3",
+          "point": true,
+          "rotation": 0,
+          "type": "",
+          "visible": true,
+          "width": 0,
+          "x": 475.333333333333,
+          "y": 577.333333333333
+        },
+        {
+          "height": 0,
+          "id": 14,
+          "name": "Spawn_4",
+          "point": true,
+          "rotation": 0,
+          "type": "",
+          "visible": true,
+          "width": 0,
+          "x": 460.333333333333,
+          "y": 577.333333333333
         }
       ],
       "opacity": 1,

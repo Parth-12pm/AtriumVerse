@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import WebSocket
 from typing import Dict, List
 from app.core.redis_client import r 
@@ -13,15 +14,6 @@ class ConnectionManger:
             self.active_connections[server_id] = []
         self.active_connections[server_id].append(websocket)
 
-        # 🔔 CRITICAL: Tell everyone else "New User Joined!"
-        # This triggers them to send an "Offer" to this new user.
-        await self.broadcast({"type": "user_joined", "user_id": user_id}, server_id, websocket)
-
-        # Notify others that a new user joined (Triggers WebRTC Offer)
-        # We need a user_id here but the connect method signature only had server_id
-        # Let's adjust the signature or just broadcast blindly for now? 
-        # Wait, I need to check how I call it in ws.py. ws.py has user_id.
-        # I should simply update connect() to accept user_id too.
 
     async def get_server_users(self, server_id: str):
 
@@ -39,12 +31,20 @@ class ConnectionManger:
                 del self.active_connections[server_id]
 
     
-    async def broadcast(self, message:dict , server_id: str, sender: WebSocket):
+    async def broadcast(self, message: dict, server_id: str, sender: WebSocket):
 
         if server_id in self.active_connections:
-            for connection in self.active_connections[server_id]:
-                if connection != sender:
-                    await connection.send_json(message)
+            # Build list of coroutines — one per target connection
+            tasks = [
+                connection.send_json(message)
+                for connection in self.active_connections[server_id]
+                if connection != sender
+            ]
+            # Fire all sends concurrently — total time = slowest single send, not sum
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+                # return_exceptions=True: if one client socket is dead,
+                # it does NOT crash the broadcast for everyone else.
 
 
 

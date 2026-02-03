@@ -46,7 +46,12 @@ async def create_server(
 
         full_path = os.path.join(FRONTEND_DIR, "public", server_in.map_path)
 
-        zones_data = parse_map_zones(full_path)
+        zones_data, spawn_points = parse_map_zones(full_path)
+
+        new_server.map_config = {
+            "map_file": server_in.map_path,
+            "spawn_points": spawn_points  # [{ name, x, y }, ...]
+        }
 
         for z in zones_data:
             new_zone = Zone(

@@ -24,6 +24,14 @@ export default function GameWrapper({
 
   useEffect(() => {
     const initGame = async () => {
+      // DEV ONLY: If scene data changed (e.g. hot reload), destroy stale game
+      if (process.env.NODE_ENV === "development" && globalGameInstance) {
+        console.log("[GameWrapper] Dev: destroying stale game for hot reload");
+        globalGameInstance.destroy(true);
+        globalGameInstance = null;
+        isInitializing = false;
+      }
+
       // Check GLOBAL singleton, not just ref (Strict Mode protection)
       if (globalGameInstance) {
         console.log("[GameWrapper] Game already exists globally, reusing...");
