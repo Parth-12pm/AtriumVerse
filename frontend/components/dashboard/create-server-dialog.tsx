@@ -46,7 +46,7 @@ export function CreateServerDialog() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button>
-          <Plus className="mr-2 h-4 w-4" /> Create Room
+          <Plus className="mr-2 h-4 w-4" /> Create Server
         </Button>
       </DialogTrigger>
       <DialogContent>
@@ -55,7 +55,7 @@ export function CreateServerDialog() {
         </DialogHeader>
         <form onSubmit={handleCreate} className="space-y-4">
           <Input
-            placeholder="Room Name (e.g. Daily Standup)"
+            placeholder="Server Name (e.g. Daily Standup)"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />

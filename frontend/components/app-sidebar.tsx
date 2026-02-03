@@ -35,12 +35,6 @@ const mainItems = [
     description: "Overview & Stats",
   },
   {
-    title: "Rooms",
-    url: "/dashboard/rooms",
-    icon: Video,
-    description: "Your virtual spaces",
-  },
-  {
     title: "Calendar",
     url: "#",
     icon: Calendar,
