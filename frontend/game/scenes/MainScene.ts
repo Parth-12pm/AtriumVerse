@@ -703,7 +703,7 @@ export class MainScene extends Scene {
     console.log("[MainScene] Spawning remote player:", username, "at", x, y);
 
     // Create sprite using same spritesheet as local player
-    const sprite = this.add.sprite(0, 0, username, 0);
+    const sprite = this.add.sprite(0, 0, "player", 0);
     sprite.setScale(1.5); // Same as local player
     sprite.setDepth(100);
     sprite.setOrigin(0.5, 0.5);

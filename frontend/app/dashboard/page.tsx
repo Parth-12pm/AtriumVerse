@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { fetchAPI } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CreateRoomDialog } from "@/components/dashboard/create-room-dialog";
+import { CreateServerDialog } from "@/components/dashboard/create-server-dialog";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { Clock, Video, Users, ArrowUpRight, Plus } from "lucide-react";
@@ -73,7 +73,7 @@ export default function DashboardPage() {
           </h1>
           <p className="text-muted-foreground mt-1">Ready to collaborate?</p>
         </div>
-        <CreateRoomDialog />
+        <CreateServerDialog />
       </div>
 
       {/* Stats Cards */}
@@ -155,7 +155,7 @@ export default function DashboardPage() {
               Create your first virtual server and invite your team to
               collaborate.
             </p>
-            <CreateRoomDialog />
+            <CreateServerDialog />
           </div>
         </Card>
       ) : (
