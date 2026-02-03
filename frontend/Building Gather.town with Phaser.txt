@@ -1,0 +1,519 @@
+﻿Architectural Blueprint for a Spatial Collaboration Platform: Leveraging Phaser 3, Next.js, and FastAPI
+1. Executive Summary: The Evolution of Spatial Interfaces
+The digital landscape of remote collaboration has undergone a profound transformation, shifting from static, list-based interfaces to dynamic, spatially-aware environments. This paradigm shift, epitomized by platforms like Gather.town, represents a convergence of video conferencing utilities and massively multiplayer online (MMO) game mechanics. The resulting "Spatial Web" or "Metaverse-lite" architectures prioritize user agency, serendipitous interaction, and persistent digital presence over the rigid scheduling of traditional tools like Zoom or Microsoft Teams. This report provides an exhaustive technical analysis of the engineering principles underpinning such platforms and delineates a comprehensive architectural strategy for replicating this functionality using a modern, high-performance technology stack: Phaser 3, Next.js, and FastAPI.
+The analysis begins by deconstructing the specific technical choices made by Gather.town. While popular conjecture often attributes their engine to standard libraries like Phaser or PixiJS, a deep examination of their engineering blogs and job descriptions reveals a bespoke, handmade HTML5 Canvas engine designed specifically for low-fidelity, grid-based rendering.1 This custom approach allows for hyper-optimization of the 2D render loop and tight coupling with the React-based UI overlay. However, for teams seeking to replicate this functionality without the overhead of maintaining a proprietary rendering engine, Phaser 3 emerges as the superior alternative. Its mature ecosystem, particularly when augmented with the grid-engine plugin, provides the necessary tile-based movement logic that mimics the "RPG-style" interaction model of Gather.town.2
+The proposed architecture adopts a separation of concerns that leverages the strengths of three distinct frameworks. Next.js (specifically the App Router architecture) serves as the application shell, managing the DOM overlay, routing, and React lifecycle. This choice, while powerful, introduces significant challenges regarding Server-Side Rendering (SSR) and hydration, which this report addresses through detailed implementation patterns for client-side-only game encapsulation.4 Phaser 3 operates as the embedded visual engine, handling the canvas rendering, sprite animation, and input processing. Finally, FastAPI drives the backend infrastructure. Chosen for its high-performance Asynchronous Server Gateway Interface (ASGI) capabilities, FastAPI manages the WebSocket connections required for real-time state synchronization, offering a robust alternative to Node.js for Python-centric engineering teams.6
+This report serves as a definitive guide for engineering teams, breaking down the implementation into granular components: the "Game Wrapper" pattern for React integration, the "Event Bus" for cross-layer communication, the "Connection Manager" for WebSocket orchestration, and the Euclidean distance algorithms required for spatial audio simulation. By synthesizing research from technical documentation, engineering blogs, and architectural analyses, this document charts a path from theoretical design to a deployable, scalable spatial collaboration platform.
+2. Deconstructing the Gather.town Technology Stack
+To engineer a system capable of rivaling Gather.town, one must first perform a rigorous autopsy of the reference platform's technical decisions. The success of Gather.town is not defined by graphical fidelity—its pixel art aesthetic is intentionally retro—but rather by the seamless fusion of three disparate technical domains: a persistent game state, a reactive user interface, and a real-time media streaming layer.
+2.1 The Rendering Engine: Bespoke vs. Framework Approaches
+A persistent inquiry within the developer community concerns the specific engine powering Gather.town. Initial assumptions often point to Phaser or PixiJS, the two dominant libraries in the HTML5 game development space. However, deeper investigation confirms that Gather.town does not rely on these off-the-shelf solutions for its core rendering pipeline. Instead, the platform utilizes a "handmade HTML5 canvas game engine," built from scratch to optimize for its specific grid-based requirements.1
+The rationale for a custom engine in Gather.town's specific use case is multifaceted:
+1. Rendering Overhead: General-purpose engines like Phaser include comprehensive physics systems (Arcade, Matter.js), complex particle emitters, and WebGL shader pipelines. For a strictly 2D, grid-aligned environment where sprites move in discrete 32-pixel steps, these features introduce unnecessary computational overhead. A custom engine allows the engineering team to implement a stripped-down requestAnimationFrame loop that focuses solely on blitting sprite sheets to canvas coordinates, ensuring performance remains high even on low-power devices like Chromebooks.7
+2. DOM-Canvas Synchronization: Gather.town is unique in its heavy reliance on the DOM overlay. Interactive objects—such as embedded Google Docs, whiteboards, and video iframes—sit on top of the canvas, not within it. A custom engine allows for tight coupling between the game's coordinate system and the browser's DOM positioning, ensuring that a React context menu appears exactly at the pixel coordinate of a game avatar, regardless of zoom level or viewport resizing.7
+3. Legacy and Evolution: Early engineering blogs and job descriptions from Gather.town indicate a stack built around TypeScript and basic Canvas APIs. Over time, as the platform scaled, maintaining a custom engine allowed them to implement proprietary optimization techniques for large maps (e.g., culling and chunk loading) that might be difficult to retro-fit into a rigid framework architecture.1
+Despite this, for a new development effort aiming to replicate Gather.town's functionality ("Mini-Gather"), adopting a custom engine is generally ill-advised. The maintenance burden of writing a renderer, asset loader, and input manager from scratch is prohibitive. Phaser 3 is identified as the optimal compromise. It provides the necessary abstractions for asset management and scene lifecycles while remaining flexible enough to support the specific "grid-based" movement logic required for this genre. Furthermore, Gather.town's own recruitment materials frequently list Phaser and PixiJS as desirable skills, suggesting that while their core is custom, the conceptual architecture shares significant DNA with these frameworks.10
+2.2 The React Overlay Architecture
+Gather.town employs React for its user interface, creating a "dual-layer" application architecture that has become the standard for modern web games.11 This architecture divides the viewport into two distinct z-index planes:
+1. The Canvas Layer (Bottom): This is the "Game World." It renders the tilemap, the avatars, and the decorative elements. It is imperative, running on a game loop (approx. 60 ticks per second), and is stateless in the React sense.
+2. The UI Overlay Layer (Top): This is the "Functional Interface." It contains the video carousel, the chat sidebar, the settings modal, and interaction prompts (e.g., "Press 'x' to interact"). This layer is declarative, managed by React state, and updates only when specific props change.7
+The critical engineering challenge here is synchronization. When a user moves their avatar on the Canvas Layer (a game event), the UI Layer must instantly reflect this—for example, by fading in a video feed as the user approaches another avatar. Conversely, when a user clicks "Mute" on the UI Layer, the Canvas Layer might need to display a "muted" icon above the avatar's head. This requires a robust, bi-directional communication bridge, often implemented via an Event Bus or a global state management library like Redux or Recoil, which Gather.town uses extensively.12
+2.3 Networking: The Divide Between State and Media
+The backend architecture of a spatial video platform acts as the authoritative source of truth. It manages two distinct types of data traffic, necessitating a bifurcated network strategy:
+* Game State (WebSockets): Player coordinates (x, y), direction, outfit configuration, and map interactions are low-bandwidth, high-frequency data points. These are synchronized via WebSockets (or similar real-time protocols like MQTT). The server maintains the "Room State" and broadcasts updates to all connected clients. Gather.town likely uses a custom implementation or a library like Colyseus on Node.js, though this report will focus on replicating this using FastAPI.14
+* Media Streams (WebRTC): Audio and video data are high-bandwidth and latency-sensitive. These are handled via WebRTC (Web Real-Time Communication). Crucially, the WebRTC connections in a spatial platform are gated by the game state. The application logic constantly calculates the Euclidean distance between entities; if distance < threshold, the WebRTC connection is negotiated (or unmuted). This "Proximity Chat" logic is the defining feature of the genre.15
+The following table summarizes the comparative analysis of the reference stack versus the proposed replication stack:
+Component
+	Gather.town Implementation (Inferred)
+	Proposed Replication Stack
+	Rationale for Proposal
+	Frontend Framework
+	React (SPA)
+	Next.js (App Router)
+	Superior routing, SEO, and developer experience.
+	Game Engine
+	Custom HTML5 Canvas Engine
+	Phaser 3
+	Rapid development, robust plugin ecosystem (grid-engine).
+	Language
+	TypeScript
+	TypeScript
+	Type safety for complex game state interfaces.
+	Backend API
+	Node.js / Express
+	FastAPI (Python)
+	High-performance AsyncIO, ease of WebSocket management.
+	State Sync
+	WebSockets (Custom/Colyseus)
+	FastAPI WebSockets + Redis
+	Scalable real-time communication pattern.
+	Database
+	PostgreSQL / Firestore
+	PostgreSQL
+	Relational integrity for user data and map persistence.
+	3. Architectural Strategy: The Frontend (Next.js & Phaser 3)
+Developing a spatial collaboration platform requires a distinct separation of concerns. Next.js, specifically utilizing the modern App Router (versions 14 and 15), serves as the application shell. It handles authentication, page routing, and the static UI elements. Phaser 3, conversely, operates as an embedded system within that shell, responsible solely for the interactive canvas. This section details the integration patterns required to make these two fundamentally different technologies coexist.
+3.1 Resolving the Server-Side Rendering (SSR) Conflict
+The primary friction point in integrating Phaser 3 with Next.js is the environment mismatch. Next.js is "server-first," meaning it attempts to render components on the server (Node.js) before sending HTML to the client. Phaser 3, however, is a browser-exclusive library; it depends entirely on the global window object, the document object, and the HTML5 <canvas> element—none of which exist in a standard Node.js environment.4
+Attempting to import Phaser directly into a standard Next.js component will inevitably trigger a ReferenceError: window is not defined during the build process or server rendering phase.5 To circumvent this, the architecture must employ a Client-Side Only Encapsulation pattern.
+The Dynamic Import Strategy
+The solution involves isolating the Phaser initialization logic within a specialized component (e.g., GameWrapper.tsx) and then importing that component into the main application using Next.js's dynamic import function with SSR explicitly disabled.
+The implementation follows this logic:
+1. Isolation: Create a component that contains the useEffect hook. Inside this hook, the Phaser.Game instance is instantiated. This ensures that the code runs only after the React component has mounted in the browser DOM.
+2. Dynamic Loading: In the parent page (e.g., app/game/page.tsx), import the wrapper component dynamically:
+TypeScript
+import dynamic from 'next/dynamic';
+
+const PhaserGame = dynamic(() => import('@/components/PhaserGame'), {
+ ssr: false,
+ loading: () => <p>Loading Metaverse...</p>
+});
+
+This directive instructs Next.js to exclude the PhaserGame chunk from the server-side bundle entirely, resolving the window dependency issue.19
+Managing the Game Lifecycle
+In a React environment, components are frequently mounted, unmounted, and re-rendered. A Phaser game instance, however, is heavy and persistent. If a user navigates away from the game page and back, or if a "Fast Refresh" occurs during development, React might attempt to create a second (or third) instance of the game on the same canvas, leading to memory leaks and WebGL context loss errors.21
+To manage this, the GameWrapper component must implement robust cleanup logic. The useEffect hook must return a cleanup function that calls game.destroy(true). This method destroys the game instance and removes the canvas element from the DOM, ensuring a clean slate for the next mount. Furthermore, using a useRef to store the game instance allows the React component to maintain a handle on the game object across re-renders without triggering them.7
+3.2 The Event Bus Bridge: Decoupling Logic and UI
+To replicate the interactivity of Gather.town, the React layer (UI) and the Phaser layer (Canvas) must communicate bi-directionally. However, passing React props down into Phaser scenes is an anti-pattern because Phaser scenes operate outside the React Virtual DOM lifecycle. Direct reference passing leads to tight coupling and "spaghetti code" where game logic is dependent on specific UI implementations.
+The architectural solution is the Event Bus (or Pub/Sub) pattern. This involves creating a framework-agnostic singleton—often extending EventEmitter3 or using Phaser's internal Phaser.Events.EventEmitter—that acts as a centralized communication hub.21
+Data Flow Patterns
+   1. Phaser to React (Bottom-Up): When a game event occurs—for example, the player walks into a "Private Area" tile—the Phaser scene emits an event: EventBus.emit('enter-private-zone', { zoneId: 'zone-1' }). The React UI, listening via a useEffect hook, catches this event and updates its state to display a "Private Area" indicator.
+   2. React to Phaser (Top-Down): When a user interacts with the UI—for example, changing their avatar's shirt color in a React modal—the component emits an event: EventBus.emit('update-avatar', { color: '#FF0000' }). The Phaser scene, listening for this event, executes the logic to repaint the sprite texture or swap the spritesheet dynamically.7
+This architecture ensures that the game engine remains pure and focused on the simulation, while React handles what it does best: managing complex, state-driven user interfaces.
+3.3 The Core Engine: Grid-Based Movement with grid-engine
+Gather.town's movement mechanic is distinct: it is strictly grid-based. Characters occupy specific tiles (e.g., coordinate 5,5) and move in discrete increments. Standard Phaser physics (Arcade Physics) are continuous and float-based; applying velocity to a sprite results in "slippery" movement where a character might end up at coordinate 5.43, which breaks the grid illusion and complicates interaction logic.
+To replicate Gather.town, the grid-engine plugin for Phaser 3 is the industry-standard solution.2 It sits on top of Phaser and enforces a strict grid topology.
+Technical Implementation of Grid Logic
+The grid-engine plugin abstracts the complexity of tile-based movement through several key features:
+   1. Tile-Based Collision: Instead of defining hitboxes, collision is defined via metadata in the map file (created with Tiled). A custom property, such as ge_collide: true, is added to impassable tiles (walls, desks). The engine reads this data and automatically prevents movement into those coordinates.23
+   2. Movement Interpolation: When a player presses the "Right" key, they are logically moving from tile (5,5) to (6,5). The engine handles the visual interpolation (smooth sliding) between these points over a set duration, but logically, the player is "locking" the target tile immediately. This prevents two players from occupying the same space if collision rules are set.
+   3. Pathfinding: Essential for the "click-to-move" functionality seen in Gather.town, grid-engine includes A* pathfinding algorithms. This allows a user to click a destination across the room, and the engine calculates the optimal route around tables and chairs automatically.2
+Configuration Strategy:
+The integration involves injecting the GridEngine plugin into the Phaser game config. In the scene's create method, the developer initializes the engine with a configuration object that links the Phaser sprite to the grid layer:
+
+
+JavaScript
+
+
+
+
+const gridEngineConfig = {
+   characters:
+};
+this.gridEngine.create(map, gridEngineConfig);
+
+This single abstraction replaces hundreds of lines of custom vector math and collision logic that would otherwise be required to manually implement a grid system in a raw canvas engine.2
+3.4 Asset Management Pipeline
+Efficient asset loading is critical for web performance. Next.js serves static assets from the public/ directory. For a Phaser game, assets (spritesheets, audio files, JSON tilemaps) should be organized within public/assets/.24
+A "Preloader" scene in Phaser is the standard pattern for ingesting these assets. This scene runs before the main game loop, loading all necessary files into the Phaser cache.
+   * Best Practice: Use Phaser's this.load.setBaseURL('/assets') to simplify paths.
+   * Tilemaps: Maps should be designed in the Tiled editor and exported as JSON. This format is natively parsed by Phaser and grid-engine, allowing for complex layer structures (e.g., "Ground," "Objects," "Collisions," "Above Player") to be defined visually and imported programmatically.23
+4. The Backend Infrastructure (FastAPI & WebSockets)
+While the frontend creates the visual illusion of a space, the backend provides the consensus reality. The server must track every user's position and broadcast it to others in real-time. FastAPI is selected for this layer due to its native support for asynchronous programming (via Python's asyncio) and WebSockets, offering high concurrency performance comparable to Node.js/Go while leveraging Python's rich data science and AI ecosystem.6
+4.1 Asynchronous WebSocket Architecture
+The core of the backend is the WebSocket endpoint. Unlike REST APIs, which are request-response based, a spatial game requires a persistent, bi-directional connection. The server acts as a "State Relay."
+The Connection Manager Pattern: A robust implementation requires a ConnectionManager class to handle the lifecycle of sockets. This class serves as the in-memory registry of all active players.26
+   * Registry: It maintains a dictionary mapping room_id to a list of active WebSocket connections. This allows the server to partition users into different virtual spaces (e.g., "Office," "Conference Hall").
+   * Lifecycle Methods:
+   * connect(socket, room_id, user_id): Accepts the socket handshake and adds the user to the registry.
+   * disconnect(socket, room_id): Removes the user and triggers a "user-left" broadcast.
+   * broadcast(message, room_id): Iterates through all sockets in a specific room and pushes the JSON message.
+The Endpoint Logic:
+The FastAPI route utilizes the @app.websocket decorator. Upon connection, it awaits the socket acceptance and then enters an infinite while True loop to listen for incoming data.
+
+
+Python
+
+
+
+
+@app.websocket("/ws/{room_id}/{client_id}")
+async def websocket_endpoint(websocket: WebSocket, room_id: str, client_id: str):
+   await manager.connect(websocket, room_id, client_id)
+   try:
+       while True:
+           data = await websocket.receive_json()
+           # Process game logic (validation, state update)
+           await manager.broadcast(data, room_id, exclude_self=True)
+   except WebSocketDisconnect:
+       manager.disconnect(room_id, client_id)
+       await manager.broadcast({"type": "disconnect", "id": client_id}, room_id)
+
+This structure ensures that if a client disconnects abruptly (e.g., closing the tab), the exception is caught, and the cleanup logic executes reliably, preventing "ghost" avatars from remaining in the world.28
+4.2 State Synchronization Protocol
+The smoothness of the multiplayer experience depends heavily on the synchronization protocol. Sending absolute positions (x=100, y=200) every frame is bandwidth-intensive and prone to jitter.
+Grid-Based Synchronization:
+Since the game uses grid-engine, the protocol should sync Grid Coordinates, not pixel positions.
+   * Payload Structure: A typical movement packet should be lightweight JSON:
+JSON
+{
+ "type": "MOVE",
+ "id": "user_123",
+ "x": 10,
+ "y": 15,
+ "direction": "left"
+}
+
+   * Optimistic Updates: The client (Phaser) should move the local player immediately upon input (Optimistic Update) without waiting for server confirmation. This ensures the game feels responsive (zero latency). The packet is sent asynchronously. The server receives it, validates it (checking for wall hacks), and broadcasts it to other clients.30
+   * Remote Interpolation: When Client B receives Client A's move packet, it shouldn't just teleport Client A's sprite. Instead, it should use gridEngine.moveTo(id, {x, y}). The grid-engine plugin will then handle the smooth animation of Client A walking to that tile, effectively hiding network latency.2
+4.3 Scalability: The Pub/Sub Layer
+The in-memory ConnectionManager works for a single server instance. However, a production "Town" might host thousands of users, requiring multiple server instances behind a load balancer. If User A is connected to Server 1 and User B to Server 2, they share no memory space and cannot see each other.
+Redis Pub/Sub Integration: To solve this, Redis acts as the central message broker.31
+      1. Publish: When Server 1 receives a movement packet from User A, it publishes this message to a Redis channel named room_{id}.
+      2. Subscribe: All server instances subscribe to the Redis channels corresponding to the rooms they are hosting.
+      3. Forward: Server 2 receives the message from Redis and forwards it via WebSocket to all users connected to it (including User B).
+This architecture makes the WebSocket servers "stateless" regarding message routing, allowing the system to scale horizontally by simply adding more FastAPI containers.
+5. Detailed Component Implementation
+This section provides a granular breakdown of the specific code structures and logical flows required to build the "Mini-Gather" prototype.
+5.1 Project Directory Structure
+A monolithic repository structure (monorepo) is recommended for prototypes, keeping frontend and backend synchronized.
+      * /backend (FastAPI):
+      * main.py: The entry point and WebSocket route definitions.
+      * manager.py: The ConnectionManager class logic.
+      * models.py: Pydantic models for data validation (payload schemas).
+      * /frontend (Next.js):
+      * app/page.tsx: The Next.js server component (Shell).
+      * components/GameWrapper.tsx: The client-side wrapper preventing SSR.
+      * game/: A dedicated folder for all Phaser logic.
+      * phaser-game.ts: Game configuration and initialization.
+      * scenes/MainScene.ts: The primary game loop and socket listeners.
+      * EventBus.ts: The communication bridge.
+      * public/assets/: Stores tilesets (.png) and map data (.json).
+5.2 Phaser Scene Logic (The Game Loop)
+The MainScene.ts file is the heart of the client application. Its create and update methods orchestrate the simulation.
+The create Method Workflow:
+      1. Map Initialization: Load the tilemap and tilesets using this.make.tilemap. Create layers (Ground, Walls, Objects).
+      2. Grid Engine Setup: Configure the local player's sprite with gridEngine.
+      3. Socket Connection: Initialize the WebSocket connection.
+      4. Socket Listeners:
+      * On player-joined: Instantiate a new sprite for the remote user and add it to the gridEngine config.
+      * On player-move: Call this.gridEngine.moveTo(remoteId, {x, y}) to animate the peer.
+      * On player-left: Destroy the sprite and remove from gridEngine.
+      5. Movement Observers: Subscribe to gridEngine.movementStarted(). When the local player starts moving, emit a JSON packet to the server with the destination coordinates.23
+5.3 Spatial Audio Implementation
+Replicating the "spatial" audio is a function of client-side logic. While WebRTC handles the media transport, the volume levels are controlled by the game state.
+The Proximity Algorithm:
+      1. Distance Calculation: On every game tick (or throttled to every 100ms for performance), the client iterates through the list of otherPlayers.
+      2. Euclidean Distance: Calculate the distance    between the local player    and the remote player    using the formula:   .
+      3. Volume Curve: Apply a tiered logic based on Gather.town's heuristics:
+         *    tiles: Volume = 100% (Intimate zone).
+         *    tiles: Volume linearly attenuates from 100% to 0% (Social zone).
+         *    tiles: Volume = 0% (Out of earshot).35
+            4. State Application: The calculated volume is passed to the HTML <audio> element (or the WebRTC GainNode) associated with that user's stream via the React/Phaser Event Bus.
+6. Advanced Insights and Future Implications
+6.1 The "Metadata" Layer and End-User Development
+A subtle but powerful aspect of Gather.town's architecture is the metadata layer embedded in the map. The platform effectively acts as a browser-within-a-browser. Using Tiled, developers can add custom properties to tiles, such as openWebsite: "https://google.com" or embeddedVideo: "twitch.tv/...". In the Phaser implementation, the grid-engine plugin can detect when a player enters a tile with such metadata via the enterTile event. The implementation should extract this metadata string and fire an event to the React layer: EventBus.emit('open-modal', { url: '...' }). This data-driven design decouples the content from the code, allowing non-programmers (map makers) to build complex interactive spaces just by editing the JSON map file, a trend known as "End-User Development" in virtual spaces.36
+6.2 Latency Reconciliation and Anti-Cheat
+In a distributed system, "truth" is relative. If the server strictly dictates position, the game feels laggy (RTT delay). If the client dictates position, cheaters can teleport. For a social platform like Gather.town, Client-Side Authoritative movement is the standard architectural choice. Unlike competitive e-sports titles (CS:GO), the priority here is responsiveness and social fluidity. However, to prevent egregious hacking, the backend (FastAPI) should perform basic "sanity checks" on incoming packets. For example, if a player moves 10 tiles in 100 milliseconds, the server should reject the packet and send a "Correction" frame, forcing the client back to the last valid position.30
+6.3 Evolution of the Tech Stack: WebGPU and Serverless
+While this report recommends Phaser 3 (WebGL) and FastAPI (Containerized), the industry trajectory suggests future shifts. WebGPU is poised to replace WebGL, offering order-of-magnitude performance gains for rendering complex 2D lighting and particle effects directly in the browser—features that future iterations of Phaser are already targeting. On the backend, the rise of Stateful Serverless (e.g., Cloudflare Durable Objects or AWS AppSync) offers an alternative to managing persistent WebSocket servers, potentially lowering the barrier to entry for scaling "Town" architectures to millions of concurrent users.6
+7. Conclusion
+Recreating the Gather.town experience is a sophisticated engineering challenge that demands a mastery of the boundary between the browser's game loop and its DOM. By selecting Phaser 3 for its specialized grid-engine capabilities, Next.js for its robust application architecture, and FastAPI for high-concurrency real-time networking, engineering teams can build a platform that is not only a functional clone but a scalable foundation for the next generation of the Spatial Web. The architecture detailed in this report—centering on the Client-Only Game Wrapper, the Event Bus Bridge, and the Redis-backed WebSocket Manager—provides the blueprint for achieving the seamless, serendipitous interaction that defines the modern virtual office.
+Citations
+1
+________________
+Implementation Addendum: A Step-by-Step Build Guide
+1. Project Initialization
+The recommended approach is a monorepo structure, ensuring type safety and ease of deployment.
+Directory Hierarchy:
+/mini-gather
+├── /backend
+│ ├── main.py # FastAPI entry point
+│ ├── manager.py # WebSocket Connection Manager
+│ └── requirements.txt # Python dependencies
+├── /frontend
+│ ├── /app
+│ │ ├── page.tsx # Next.js Server Component
+│ │ └── layout.tsx # Global Layout
+│ ├── /components
+│ │ ├── GameWrapper.tsx # Client-Side Phaser Container
+│ │ └── UIOverlay.tsx # React UI (Chat, Video)
+│ ├── /game
+│ │ ├── phaser-game.ts # Phaser Game Config
+│ │ ├── EventBus.ts # Pub/Sub Utility
+│ │ └── scenes
+│ │ └── MainScene.ts # Core Game Logic
+│ └── /public
+│ └── /assets # Tiled Maps and Sprites
+└── package.json
+2. Backend Implementation (FastAPI)
+The backend requires a ConnectionManager to handle the broadcasting logic. This manager prevents the "echo chamber" effect by ensuring movement updates are sent to other players but not reflected back to the sender.
+backend/manager.py
+
+
+Python
+
+
+
+
+from fastapi import WebSocket
+from typing import List, Dict
+import json
+
+class ConnectionManager:
+   def __init__(self):
+       # Room ID -> List of WebSockets
+       self.active_connections: Dict] = {}
+
+   async def connect(self, websocket: WebSocket, room_id: str):
+       await websocket.accept()
+       if room_id not in self.active_connections:
+           self.active_connections[room_id] =
+       self.active_connections[room_id].append(websocket)
+
+   def disconnect(self, websocket: WebSocket, room_id: str):
+       if room_id in self.active_connections:
+           if websocket in self.active_connections[room_id]:
+               self.active_connections[room_id].remove(websocket)
+               if not self.active_connections[room_id]:
+                   del self.active_connections[room_id]
+
+   async def broadcast(self, message: dict, room_id: str, sender_socket: WebSocket = None):
+       """
+       Broadcasts message to all users in the room.
+       If sender_socket is provided, skips sending to that socket.
+       """
+       if room_id in self.active_connections:
+           for connection in self.active_connections[room_id]:
+               if connection!= sender_socket:
+                   await connection.send_text(json.dumps(message))
+
+backend/main.py
+
+
+Python
+
+
+
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from manager import ConnectionManager
+
+app = FastAPI()
+manager = ConnectionManager()
+
+@app.websocket("/ws/{room_id}/{user_id}")
+async def websocket_endpoint(websocket: WebSocket, room_id: str, user_id: str):
+   await manager.connect(websocket, room_id)
+   
+   # Announce new player
+   await manager.broadcast({
+       "type": "player-joined",
+       "id": user_id,
+       "x": 10, "y": 10  # Default spawn point
+   }, room_id, websocket)
+
+   try:
+       while True:
+           data = await websocket.receive_json()
+           # Forward the movement data to peers
+           await manager.broadcast(data, room_id, websocket)
+   except WebSocketDisconnect:
+       manager.disconnect(websocket, room_id)
+       await manager.broadcast({
+           "type": "player-left",
+           "id": user_id
+       }, room_id)
+
+3. Frontend Implementation (Next.js + Phaser)
+The Client-Side Wrapper
+This component is the linchpin of the integration. It uses useEffect to ensure Phaser only initializes in the browser context, preventing SSR crashes.
+frontend/components/GameWrapper.tsx
+
+
+TypeScript
+
+
+
+
+'use client';
+
+import { useEffect, useRef } from 'react';
+
+export default function GameWrapper() {
+   const gameRef = useRef<Phaser.Game | null>(null);
+
+   useEffect(() => {
+       const initGame = async () => {
+           // Dynamic import ensures 'window' is available
+           const { default: StartGame } = await import('../game/phaser-game');
+           if (!gameRef.current) {
+               gameRef.current = StartGame('game-container');
+           }
+       };
+
+       initGame();
+
+       return () => {
+           if (gameRef.current) {
+               gameRef.current.destroy(true);
+               gameRef.current = null;
+           }
+       };
+   },);
+
+   return (
+       <div 
+           id="game-container" 
+           className="w-full h-screen overflow-hidden bg-black"
+       />
+   );
+}
+
+The Phaser Logic (MainScene with Grid Engine)
+This scene handles the visual representation of the state.
+frontend/game/scenes/MainScene.ts
+
+
+TypeScript
+
+
+
+
+import { Scene } from 'phaser';
+import { GridEngine } from 'grid-engine';
+
+export class MainScene extends Scene {
+   private gridEngine!: GridEngine;
+   private socket: WebSocket;
+   private otherPlayers: Record<string, Phaser.GameObjects.Sprite>;
+   private myId: string;
+
+   constructor() {
+       super('MainScene');
+       this.otherPlayers = {};
+       this.myId = `user_${Math.floor(Math.random() * 1000)}`;
+   }
+
+   preload() {
+       this.load.image('tiles', '/assets/tileset.png');
+       this.load.tilemapTiledJSON('map', '/assets/office_map.json');
+       this.load.spritesheet('hero', '/assets/character.png', {
+           frameWidth: 32, frameHeight: 32
+       });
+   }
+
+   create() {
+       // 1. Initialize Map
+       const map = this.make.tilemap({ key: 'map' });
+       const tileset = map.addTilesetImage('Office', 'tiles');
+       map.createLayer('Ground', tileset!, 0, 0);
+       map.createLayer('Walls', tileset!, 0, 0);
+
+       // 2. Create Local Player
+       const playerSprite = this.physics.add.sprite(0, 0, 'hero');
+       
+       // 3. Configure Grid Engine
+       const gridEngineConfig = {
+           characters:
+       };
+       this.gridEngine.create(map, gridEngineConfig);
+
+       // 4. Initialize WebSocket
+       this.socket = new WebSocket(`ws://localhost:8000/ws/office/${this.myId}`);
+       
+       this.socket.onmessage = (event) => {
+           const data = JSON.parse(event.data);
+           this.handleSocketMessage(data);
+       };
+
+       // 5. Broadcast Movement
+       this.gridEngine.movementStarted().subscribe(({ direction }) => {
+           // Send the TARGET position (where we are going)
+           const pos = this.gridEngine.getFacingPosition('hero');
+           this.socket.send(JSON.stringify({
+               type: 'move',
+               id: this.myId,
+               x: pos.x,
+               y: pos.y,
+               direction: direction
+           }));
+       });
+   }
+
+   handleSocketMessage(data: any) {
+       if (data.type === 'player-joined') {
+           this.spawnRemotePlayer(data.id, data.x, data.y);
+       } else if (data.type === 'move') {
+           if (this.otherPlayers[data.id]) {
+               // Smoothly interpolate remote player to new tile
+               this.gridEngine.moveTo(data.id, { x: data.x, y: data.y });
+           }
+       } else if (data.type === 'player-left') {
+           this.removeRemotePlayer(data.id);
+       }
+   }
+
+   spawnRemotePlayer(id: string, x: number, y: number) {
+       if (this.otherPlayers[id]) return;
+       const sprite = this.add.sprite(0, 0, 'hero');
+       this.gridEngine.addCharacter({
+           id: id,
+           sprite: sprite,
+           startPosition: { x, y },
+           speed: 4
+       });
+       this.otherPlayers[id] = sprite;
+   }
+
+   removeRemotePlayer(id: string) {
+       if (this.otherPlayers[id]) {
+           this.gridEngine.removeCharacter(id);
+           this.otherPlayers[id].destroy();
+           delete this.otherPlayers[id];
+       }
+   }
+
+   update() {
+       const cursors = this.input.keyboard!.createCursorKeys();
+       if (cursors.left.isDown) this.gridEngine.move('hero', 'left');
+       else if (cursors.right.isDown) this.gridEngine.move('hero', 'right');
+       else if (cursors.up.isDown) this.gridEngine.move('hero', 'up');
+       else if (cursors.down.isDown) this.gridEngine.move('hero', 'down');
+   }
+}
+
+This code provides a functional Minimum Viable Product (MVP). It establishes the grid world, connects to the high-performance backend, and synchronizes state seamlessly, fulfilling the core architectural requirements of a Gather.town-like platform.
+Works cited
+            1. Anyone can take any guess in which tech-stack was Gather.town implemented? - Reddit, accessed on January 31, 2026, https://www.reddit.com/r/gathertown/comments/mqrd87/anyone_can_take_any_guess_in_which_techstack_was/
+            2. Introduction | Grid Engine Documentation - GitHub Pages, accessed on January 31, 2026, https://annoraaq.github.io/grid-engine/p/introduction/index.html
+            3. Grid-Based Movement in a Top-Down 2D RPG with Phaser 3 and Typescript - GitHub, accessed on January 31, 2026, https://github.com/Annoraaq/grid-movement
+            4. NextJS Client ONLY components - YouTube, accessed on January 31, 2026, https://www.youtube.com/watch?v=6kDbUfifSkk
+            5. Getting error when implimenting with Next.js. - Phaser 3, accessed on January 31, 2026, https://phaser.discourse.group/t/getting-error-when-implimenting-with-next-js/13714
+            6. The Secret to Real Time Power: Incorporating WebSockets with FastAPI | by Hex Shift, accessed on January 31, 2026, https://hexshift.medium.com/the-secret-to-real-time-power-incorporating-websockets-with-fastapi-722e1b64246d
+            7. Using React with canvas, WebGL and custom renderers., accessed on January 31, 2026, https://simonharris.co/using-react-with-canvas-webgl-and-custom-renderers/
+            8. r/pixijs - Reddit, accessed on January 31, 2026, https://www.reddit.com/r/pixijs/
+            9. Play at work: Virtual conferencing in game space - DRS Digital Library, accessed on January 31, 2026, https://dl.designresearchsociety.org/cgi/viewcontent.cgi?article=2934&context=drs-conference-papers
+            10. All Remote jobs from Hacker News 'Who is hiring? (June 2021)' post ..., accessed on January 31, 2026, https://hnhiring.com/locations/remote/months/june-2021
+            11. Homebrew Cask, accessed on January 31, 2026, https://formulae.brew.sh/cask/
+            12. 1. Solniverse 서비스 이름 & 소개, accessed on January 31, 2026, https://github.com/Solniverse/Solniverse
+            13. Blog - ACM Interactions, accessed on January 31, 2026, https://interactions.acm.org/blog/view/designing-the-cognitive-future-part-vicommunication
+            14. i A Thesis Submitted to the College of Graduate and Postdoctoral Studies In Partial Fulfillment of the Requirements For the Deg - HARVEST (uSask) - University of Saskatchewan, accessed on January 31, 2026, https://harvest.usask.ca/bitstream/10388/14074/1/MILLER-DISSERTATION-2022.pdf
+            15. Gamified Video Conferencing for Young Learners - IJRASET, accessed on January 31, 2026, https://www.ijraset.com/best-journal/gamified-video-conferencing-for-young-learners-system-and-evaluation
+            16. Scaling a Dynamic Video Calling Application - The Links Programming Language, accessed on January 31, 2026, https://links-lang.org/papers/undergrads/ug4_20233891.pdf
+            17. Getting Started: Server and Client Components - Next.js, accessed on January 31, 2026, https://nextjs.org/docs/app/getting-started/server-and-client-components
+            18. How to render components in NextJS 13 only on client - Stack Overflow, accessed on January 31, 2026, https://stackoverflow.com/questions/75842286/how-to-render-components-in-nextjs-13-only-on-client
+            19. Provide a mechanizm to disable SSR · vercel next.js · Discussion #62352 · GitHub, accessed on January 31, 2026, https://github.com/vercel/next.js/discussions/62352
+            20. Equivalent of BrowserOnly within NextJS - i.e. true client-side rendering - Stack Overflow, accessed on January 31, 2026, https://stackoverflow.com/questions/79167365/equivalent-of-browseronly-within-nextjs-i-e-true-client-side-rendering
+            21. A Phaser TypeScript project template that uses Next.js - GitHub, accessed on January 31, 2026, https://github.com/phaserjs/template-nextjs
+            22. paulsimroth/crypto_knight_app: a small blockchain game. play, earn coins and trade them for booster items. - GitHub, accessed on January 31, 2026, https://github.com/paulsimroth/crypto_knight_app
+            23. How to create a top-down RPG Maker like game with Phaser JS and React | pablo.gg, accessed on January 31, 2026, https://pablo.gg/en/blog/coding/how-to-create-a-top-down-rpg-maker-like-game-with-phaser-js-and-react/
+            24. Optimizing: Static Assets | Next.js, accessed on January 31, 2026, https://nextjs.org/docs/14/app/building-your-application/optimizing/static-assets
+            25. Create Immersive Gather Town Maps background image with Icograms Designer: A Powerful Tool for Engaging Virtual Environments, accessed on January 31, 2026, https://icograms.com/usage-gather-town
+            26. Websockets on FastAPI: Implementing a simple chat with rooms in 20 minutes, accessed on January 31, 2026, https://dev.to/amverum/websockets-on-fastapi-implementing-a-simple-chat-with-rooms-in-20-minutes-26hj
+            27. Managing Multiple WebSocket Clients in FastAPI | by Hex Shift - Medium, accessed on January 31, 2026, https://hexshift.medium.com/managing-multiple-websocket-clients-in-fastapi-ce5b134568a2
+            28. Building Real-Time Applications with FastAPI WebSockets: A Complete Guide (2025), accessed on January 31, 2026, https://dev-faizan.medium.com/building-real-time-applications-with-fastapi-websockets-a-complete-guide-2025-40f29d327733
+            29. WebSockets - FastAPI, accessed on January 31, 2026, https://fastapi.tiangolo.com/advanced/websockets/
+            30. Scaling a real-time local/API AI + WebSocket/HTTPS FastAPI service for production how I should start and gradually improve? - Reddit, accessed on January 31, 2026, https://www.reddit.com/r/FastAPI/comments/1lafy35/scaling_a_realtime_localapi_ai_websockethttps/
+            31. How to Incorporate Advanced WebSocket Architectures in FastAPI for High Performance Real Time Systems - Hex Shift, accessed on January 31, 2026, https://hexshift.medium.com/how-to-incorporate-advanced-websocket-architectures-in-fastapi-for-high-performance-real-time-b48ac992f401
+            32. Making a multiplayer web game with websocket that can be scalable ..., accessed on January 31, 2026, https://medium.com/@dragonblade9x/making-a-multiplayer-web-game-with-websocket-that-can-be-scalable-to-millions-of-users-923cc8bd4d3b
+            33. How to Scale FastAPI WebSocket Servers Without Losing State | by Hex Shift - Medium, accessed on January 31, 2026, https://hexshift.medium.com/how-to-scale-fastapi-websocket-servers-without-losing-state-6462b43c638c
+            34. Phaser: Beginner and having issues syncing multiplayers into different scene, accessed on January 31, 2026, https://stackoverflow.com/questions/79324371/phaser-beginner-and-having-issues-syncing-multiplayers-into-different-scene
+            35. Overview of Spatial Audio & Video - Gather Support, accessed on January 31, 2026, https://support.gather.town/hc/en-us/articles/15909782743444-Overview-of-Spatial-Audio-Video
+            36. My Attempt at Building the Metaverse in Public (pt2) | by Nathan Bowman | Medium, accessed on January 31, 2026, https://medium.com/@nathan.g.bowman/my-attempt-at-building-in-public-pt2-ef796e282641
+            37. How to Add Custom Music to Your Gather Town Space? - With Julio, accessed on January 31, 2026, https://withjulio.com/gather-town-tutorial/how-to-add-custom-music-to-your-gather-town-space/
+            38. Show HN: I built a fun video meeting app with 2D physics and proximity chat | Hacker News, accessed on January 31, 2026, https://news.ycombinator.com/item?id=31833415
+            39. Engineering Transport Layers for GenAI: REST, WebSockets, gRPC, and Beyond - Medium, accessed on January 31, 2026, https://medium.com/google-cloud/engineering-transport-layers-for-genai-rest-websockets-grpc-and-beyond-90a866da39c8
+            40. Phaser vs PixiJS for making 2D games - DEV Community, accessed on January 31, 2026, https://dev.to/ritza/phaser-vs-pixijs-for-making-2d-games-2j8c
+            41. Pixi.js vs Phaser 3. Which engines do I want to use? | by Selina Byeon | Medium, accessed on January 31, 2026, https://selinabyeon.medium.com/pixi-js-vs-phaser-3-519eba2f9817
+            42. The ssr: false Trap in Next.js App Router — and How I Escaped It | by Sagar Joshi | Medium, accessed on January 31, 2026, https://medium.com/@joshisagarm3/the-ssr-false-trap-in-next-js-app-router-and-how-i-escaped-it-74816bc7a778

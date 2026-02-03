@@ -1,0 +1,22 @@
+room:{room_id}:users -> set [user1, user2, user3]
+
+user:{user_id} -> hash {username,x,y,room_id,avatar}
+
+session:{user_id}:online -> string "true" (ex 300)
+
+room:{room_id}:chat -> list [msg1,msg2,msg3....] (trimmed to 100)
+
+room:{room_id}:info -> hash {name, created_at , host_id}
+
+user:{user_id}:nearby -> set [user2,user5,user7]
+
+
+
+ Successfully connected to Redis
+ Created a room with 3 users (SADD)
+ Got list of users (SMEMBERS)
+ Stored a player's position (HSET)
+ Retrieved a player's position (HGETALL)
+ Set an expiring key (SET ... EX)
+ Added 5 chat messages (LPUSH)
+ Retrieved last 3 messages (LRANGE)
