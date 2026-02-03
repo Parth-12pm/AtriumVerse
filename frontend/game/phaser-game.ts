@@ -12,7 +12,9 @@ export default async function StartGame(
     userId: string;
     username: string;
     serverId: string;
+
     token: string;
+    apiUrl?: string;
   },
 ): Promise<Phaser.Game> {
   const config: Phaser.Types.Core.GameConfig = {

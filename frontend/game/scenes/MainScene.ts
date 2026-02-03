@@ -7,7 +7,9 @@ interface SceneData {
   userId: string;
   username: string;
   serverId: string;
+
   token: string;
+  apiUrl?: string;
 }
 
 export class MainScene extends Scene {
@@ -23,7 +25,9 @@ export class MainScene extends Scene {
   private myId: string = "";
   private myUsername: string = "";
   private myServerId: string = "";
+
   private token: string = "";
+  private apiUrl: string = "http://localhost:8000";
   private lastDirection: string = "down"; // Track last facing direction for idle state
 
   // Throttling for sending position updates
@@ -51,7 +55,9 @@ export class MainScene extends Scene {
       this.myId = data.userId;
       this.myUsername = data.username;
       this.myServerId = data.serverId;
+
       this.token = data.token; // <--- Capture token
+      if (data.apiUrl) this.apiUrl = data.apiUrl;
       console.log("[MainScene] init() received data:", data);
     } else {
       console.warn("[MainScene] No scene data found in registry");
@@ -449,8 +455,13 @@ export class MainScene extends Scene {
     });
 
     // Create WebSocket connection
+    // Convert http/https to ws/wss
+    const wsUrl = this.apiUrl.replace(/^http/, "ws");
+    // Ensure no trailing slash before appending path
+    const baseUrl = wsUrl.endsWith("/") ? wsUrl.slice(0, -1) : wsUrl;
+
     this.socket = new WebSocket(
-      `ws://localhost:8000/ws/${this.myServerId}?token=${this.token}`,
+      `${baseUrl}/ws/${this.myServerId}?token=${this.token}`,
     );
 
     this.socket.onopen = () => {
@@ -657,7 +668,6 @@ export class MainScene extends Scene {
       if (!this.gridEngine.hasCharacter(playerId)) return;
 
       const otherPos = this.gridEngine.getPosition(playerId);
-
 
       // Euclidean distance in tiles
       const distance = Phaser.Math.Distance.Between(

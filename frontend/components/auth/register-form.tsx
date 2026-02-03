@@ -5,7 +5,13 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { ArrowRight, Loader2 } from "lucide-react";
@@ -20,7 +26,7 @@ export function RegisterForm() {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (password !== confirmPassword) {
       toast.error("Passwords do not match");
       return;
@@ -33,7 +39,9 @@ export function RegisterForm() {
 
     setLoading(true);
     try {
-      const response = await fetch("http://localhost:8000/users/register", {
+      const API_URL =
+        process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const response = await fetch(`${API_URL}/users/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, email, password }),
@@ -47,7 +55,9 @@ export function RegisterForm() {
       toast.success("Account created! Please login.");
       router.push("/login");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Registration failed");
+      toast.error(
+        error instanceof Error ? error.message : "Registration failed",
+      );
     } finally {
       setLoading(false);
     }
@@ -78,7 +88,7 @@ export function RegisterForm() {
               className="border-2"
             />
           </div>
-          
+
           <div className="space-y-2">
             <Label htmlFor="email" className="text-sm font-bold uppercase">
               Email
@@ -93,7 +103,7 @@ export function RegisterForm() {
               className="border-2"
             />
           </div>
-          
+
           <div className="space-y-2">
             <Label htmlFor="password" className="text-sm font-bold uppercase">
               Password
@@ -108,9 +118,12 @@ export function RegisterForm() {
               className="border-2"
             />
           </div>
-          
+
           <div className="space-y-2">
-            <Label htmlFor="confirmPassword" className="text-sm font-bold uppercase">
+            <Label
+              htmlFor="confirmPassword"
+              className="text-sm font-bold uppercase"
+            >
               Confirm Password
             </Label>
             <Input
@@ -124,7 +137,11 @@ export function RegisterForm() {
             />
           </div>
 
-          <Button disabled={loading} type="submit" className="w-full font-bold text-base py-6">
+          <Button
+            disabled={loading}
+            type="submit"
+            className="w-full font-bold text-base py-6"
+          >
             {loading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating...
@@ -140,7 +157,10 @@ export function RegisterForm() {
         <div className="mt-6 text-center">
           <p className="text-sm text-muted-foreground">
             Already have an account?{" "}
-            <Link href="/login" className="font-bold text-primary hover:underline">
+            <Link
+              href="/login"
+              className="font-bold text-primary hover:underline"
+            >
               Login here
             </Link>
           </p>

@@ -44,7 +44,11 @@ export function useWebRTC(roomId: string, userId: string) {
     if (!userId || !roomId || !localStream) return;
 
     const token = localStorage.getItem("token") || "";
-    const ws = new WebSocket(`ws://localhost:8000/ws/${roomId}?token=${token}`);
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const wsUrl = API_URL.replace(/^http/, "ws");
+    const baseUrl = wsUrl.endsWith("/") ? wsUrl.slice(0, -1) : wsUrl;
+
+    const ws = new WebSocket(`${baseUrl}/ws/${roomId}?token=${token}`);
     socketRef.current = ws;
 
     ws.onopen = () => {

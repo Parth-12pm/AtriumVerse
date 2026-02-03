@@ -5,7 +5,13 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { ArrowRight, Loader2 } from "lucide-react";
@@ -24,7 +30,9 @@ export function LoginForm() {
       formData.append("username", username);
       formData.append("password", password);
 
-      const response = await fetch("http://localhost:8000/users/login", {
+      const API_URL =
+        process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const response = await fetch(`${API_URL}/users/login`, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: formData,
@@ -70,14 +78,14 @@ export function LoginForm() {
               className="border-2"
             />
           </div>
-          
+
           <div className="space-y-2">
             <div className="flex justify-between items-center">
               <Label htmlFor="password" className="text-sm font-bold uppercase">
                 Password
               </Label>
-              <Link 
-                href="#" 
+              <Link
+                href="#"
                 className="text-xs text-muted-foreground hover:text-primary hover:underline"
               >
                 Forgot password?
@@ -94,7 +102,11 @@ export function LoginForm() {
             />
           </div>
 
-          <Button disabled={loading} type="submit" className="w-full font-bold text-base py-6">
+          <Button
+            disabled={loading}
+            type="submit"
+            className="w-full font-bold text-base py-6"
+          >
             {loading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Signing in...
@@ -110,7 +122,10 @@ export function LoginForm() {
         <div className="mt-6 text-center">
           <p className="text-sm text-muted-foreground">
             Don&apos;t have an account?{" "}
-            <Link href="/register" className="font-bold text-primary hover:underline">
+            <Link
+              href="/register"
+              className="font-bold text-primary hover:underline"
+            >
               Sign up here
             </Link>
           </p>

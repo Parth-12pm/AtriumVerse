@@ -70,6 +70,7 @@ export default function GameWrapper({
         username,
         serverId,
         token,
+        apiUrl: process.env.NEXT_PUBLIC_API_URL,
       });
 
       globalGameInstance = game;
