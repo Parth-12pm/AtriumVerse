@@ -66,6 +66,16 @@ We need a structured relational schema to handle membership, persistence, and in
 - `last_position_y`: Integer
 - `last_updated`: DateTime
 
+## 5. Dynamic Zone Management (Admin Control)
+
+1.  **Map vs DB**: The Map file (`.json`) provides the _initial_ zones and physical layout. The **Database** is the source of truth for properties (Name, Type).
+2.  **Overrides**: Admins can edit Zones via the Dashboard.
+    - _Example_: Rename "Room_1" -> "Engineering".
+    - _Example_: Change Type `PUBLIC` -> `PRIVATE`.
+3.  **API**: updates via `PATCH /servers/{id}/zones/{zone_id}`.
+
+## 6. Real-Time Logic (The "Magic")
+
 #### 5. ChatMessage (Communication)
 
 - `id`: UUID (PK)
@@ -110,9 +120,24 @@ We need a structured relational schema to handle membership, persistence, and in
   - `player_moved`: `{userId, x, y}`
   - `user_joined` / `user_left`
   - `chat_message`: `{userId, content, scope}`
-- **Signaling for P2P Video (No External Cost)**:
-  - We use the WebSocket as a "Signal Server".
-  - Clients exchange SDP offers/answers via WS.
-  - Video connects Peer-to-Peer (Mesh Network).
-  - **Proximity Logic**: Client calculates distance -> Initiates P2P call with neighbors.
-  - **Limit**: Max ~4-6 active peer connections to prevent CPU overload (standard P2P limit).
+- **Signaling (Star Topology)**:
+  - _Purpose_: "Handshaking".
+  - _Flow_: Client A sends "Call Me" -> Server -> Client B.
+  - _Why_: Clients don't know each other's IP. Server introduces them.
+- **Media (Mesh Topology)**:
+  - _Purpose_: Actual Video/Audio.
+  - _Flow_: Client A <-> Client B (Direct).
+  - _Why_: Low latency, $0 server cost.
+  - _Limit_: Logic must strictly limit connections to **nearest 4 neighbors** to prevent bandwidth explosion.
+
+### F. Security & Access Control (Critical)
+
+1.  **Auth Middleware**:
+    - All routes (except `/login`, `/register`) **MUST** require a valid JWT.
+    - `UserDeps` dependency to be injected in every API route.
+2.  **Role Middleware**:
+    - `Owner` IS the `Admin`.
+    - Only `Owner` can: Edit Zones, Ban Members, Delete Server.
+3.  **WebSocket Auth**:
+    - Connection URL must include `?token=...`.
+    - Reject immediately if invalid.

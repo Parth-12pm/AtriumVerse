@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { fetchAPI } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CreateServerDialog } from "@/components/dashboard/create-server-dialog";
+import { ManageMembersDialog } from "@/components/dashboard/manage-members-dialog";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { Clock, Video, Users, ArrowUpRight, Plus } from "lucide-react";
@@ -15,12 +16,14 @@ interface Server {
   name: string;
   created_at: string;
   owner_id?: string;
+  access_type?: "public" | "private";
 }
 
 export default function DashboardPage() {
   const router = useRouter();
   const [servers, setServers] = useState<Server[]>([]);
   const [username, setUsername] = useState("User");
+  const [userId, setUserId] = useState("");
   const [activeTab, setActiveTab] = useState<"recent" | "created">("recent");
   const [mounted, setMounted] = useState(false);
   const [dateString, setDateString] = useState("");
@@ -28,7 +31,8 @@ export default function DashboardPage() {
   useEffect(() => {
     setMounted(true);
     setUsername(localStorage.getItem("username") || "User");
-    // Format date client-side only to avoid hydration mismatch
+    setUserId(localStorage.getItem("user_id") || "");
+
     setDateString(
       new Date().toLocaleDateString(undefined, {
         weekday: "long",
@@ -42,7 +46,6 @@ export default function DashboardPage() {
 
   const loadServers = async () => {
     try {
-      // Fetch from new /servers/ endpoint (which maps to backend @router.get("/"))
       const data = await fetchAPI("/servers/");
       if (Array.isArray(data)) {
         setServers(data);
@@ -52,9 +55,32 @@ export default function DashboardPage() {
     }
   };
 
+  const handleJoin = async (e: React.MouseEvent, server: Server) => {
+    e.stopPropagation();
+    try {
+      const res = await fetchAPI(`/servers/${server.id}/join`, {
+        method: "POST",
+      });
+
+      if (res.status === "accepted" || res.message === "Already a member") {
+        router.push(`/server/${server.id}`);
+      } else if (
+        res.status === "pending" ||
+        res.message === "Request sent to owner"
+      ) {
+        toast.info("Request sent! Waiting for owner approval.");
+      } else {
+        router.push(`/server/${server.id}`);
+      }
+    } catch (err) {
+      toast.error("Failed to join server");
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("username");
+    localStorage.removeItem("user_id");
     router.push("/login");
   };
 
@@ -164,10 +190,14 @@ export default function DashboardPage() {
             <Card
               key={server.id}
               className="border-4 border-border hover:shadow-shadow hover:-translate-x-1 hover:-translate-y-1 transition-all cursor-pointer group"
-              onClick={() => router.push(`/server/${server.id}`)}
+              onClick={(e) => handleJoin(e, server)}
             >
-              {/* Preview Image Placeholder */}
-              <div className="h-32 bg-gradient-to-br from-primary/20 to-accent/20 border-b-4 border-border flex items-center justify-center">
+              <div className="h-32 bg-gradient-to-br from-primary/20 to-accent/20 border-b-4 border-border flex items-center justify-center relative">
+                {server.access_type === "private" && (
+                  <div className="absolute top-2 right-2 bg-black/50 text-white px-2 py-1 text-xs rounded font-bold">
+                    PRIVATE
+                  </div>
+                )}
                 <Video className="w-12 h-12 text-primary/50" />
               </div>
               <CardContent className="p-4">
@@ -175,21 +205,27 @@ export default function DashboardPage() {
                   {server.name}
                 </h3>
                 <p className="text-sm text-muted-foreground">
-                  {/* Handle potentially missing created_at if API differs */}
                   {server.created_at
                     ? new Date(server.created_at).toLocaleDateString()
                     : "Just now"}
                 </p>
-                <Button
-                  className="w-full mt-4 font-bold group-hover:bg-primary"
-                  variant="neutral"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    router.push(`/server/${server.id}`);
-                  }}
-                >
-                  Enter Server
-                </Button>
+                <div className="flex flex-col gap-2 mt-4">
+                  <Button
+                    className="w-full font-bold group-hover:bg-primary"
+                    variant="neutral"
+                    onClick={(e) => handleJoin(e, server)}
+                  >
+                    {server.access_type === "private"
+                      ? "Request Access"
+                      : "Enter Server"}
+                  </Button>
+
+                  {server.owner_id === userId && (
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <ManageMembersDialog serverId={server.id} />
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
           ))}

@@ -19,6 +19,7 @@ export function CreateServerDialog() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
+  const [accessType, setAccessType] = useState("public");
   const [loading, setLoading] = useState(false);
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -27,7 +28,7 @@ export function CreateServerDialog() {
     try {
       const new_server = await fetchAPI("/servers/create-server", {
         method: "POST",
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, access_type: accessType }),
       });
 
       toast.success("Server created!");
@@ -59,6 +60,16 @@ export function CreateServerDialog() {
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
+          <div className="space-y-2">
+            <select
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              value={accessType}
+              onChange={(e) => setAccessType(e.target.value)}
+            >
+              <option value="public">Public (Open to all)</option>
+              <option value="private">Private (Invite only)</option>
+            </select>
+          </div>
           <Button type="submit" disabled={loading} className="w-full">
             {loading ? "Creating..." : "Launch Space "}
           </Button>

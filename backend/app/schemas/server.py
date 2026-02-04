@@ -8,6 +8,7 @@ from datetime import datetime
 class ServerCreate(BaseModel):
     name: str 
     map_path: str = "phaser_assets/maps/final_map.json"
+    access_type: str = "public"
 
 
 class ServerResponse(BaseModel):

@@ -17,3 +17,4 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     owned_servers = relationship("Server", back_populates="owner")
+    memberships = relationship("ServerMember", back_populates="user")
