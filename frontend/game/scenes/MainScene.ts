@@ -187,18 +187,18 @@ export class MainScene extends Scene {
     // Create player sprite
     // Default to frame 0
     this.playerSprite = this.add.sprite(0, 0, "player", 0);
-    this.playerSprite.setScale(0.5);
+    this.playerSprite.setScale(1.6);
     this.playerSprite.setDepth(100);
-    this.playerSprite.setOrigin(0.5, 1);
+    this.playerSprite.setOrigin(0, 0);
 
     this.usernameText = this.add.text(0, 0, this.myUsername, {
       fontSize: "11px",
       fontFamily: "Arial, sans-serif",
       color: "#ffffff",
       backgroundColor: "#000000cc",
-      padding: { x: 4, y: 2 },
+      padding: { x: 5, y: 0 },
     });
-    this.usernameText.setOrigin(0.5, 1);
+    this.usernameText.setOrigin(0.6, -3);
     this.usernameText.setDepth(101);
 
     // Animation setup for 4x4 sprite sheet
@@ -521,7 +521,7 @@ export class MainScene extends Scene {
     if (this.otherPlayers.has(userId)) return;
 
     const sprite = this.add.sprite(0, 0, "player", 1);
-    sprite.setScale(0.5);
+    sprite.setScale(1.6);
     sprite.setDepth(100);
     sprite.setOrigin(0.5, 1);
 

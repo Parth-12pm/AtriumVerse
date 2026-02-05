@@ -6,6 +6,11 @@ import EventBus, { GameEvents } from "@/game/EventBus";
 import { ChannelSidebar } from "@/components/game/ChannelSidebar";
 import { Button } from "@/components/ui/button";
 import { Users, LogOut } from "lucide-react";
+import {
+  SidebarProvider,
+  SidebarInset,
+  SidebarTrigger,
+} from "@/components/ui/sidebar";
 
 export default function ServerHUD({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -77,8 +82,7 @@ export default function ServerHUD({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="h-screen w-screen flex bg-background overflow-hidden relative">
-      {/* Left Sidebar */}
+    <SidebarProvider>
       <ChannelSidebar
         serverId={serverId}
         serverName={currentZone}
@@ -88,10 +92,14 @@ export default function ServerHUD({ children }: { children: React.ReactNode }) {
         }}
       />
 
-      {/* Main Game Area */}
-      <div className="flex-1 relative w-full h-full">
+      <SidebarInset className="relative h-screen w-full overflow-hidden bg-background">
+        {/* Sidebar Trigger */}
+        <div className="absolute top-4 left-4 z-50">
+          <SidebarTrigger />
+        </div>
+
         {/* Game Canvas */}
-        {children}
+        <div className="w-full h-full relative">{children}</div>
 
         {/* Top Header Bar */}
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
@@ -115,7 +123,7 @@ export default function ServerHUD({ children }: { children: React.ReactNode }) {
             Exit Space
           </Button>
         </div>
-      </div>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
