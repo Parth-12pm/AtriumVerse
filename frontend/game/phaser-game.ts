@@ -48,6 +48,10 @@ export default async function StartGame(
     },
 
     scene: [MainScene],
+    fps: {
+      target: 60,
+      forceSetTimeOut: true,
+    },
 
     // Pass scene data via callbacks (NOT scene.start!)
     callbacks: sceneData

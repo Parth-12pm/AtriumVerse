@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { Card } from '@/components/ui/card';
+import { useState, useEffect } from "react";
+import { Card } from "@/components/ui/card";
 
 interface MinimapProps {
-  currentRoom: 'hall' | 'meeting' | 'office';
+  currentRoom: "hall" | "meeting" | "office";
   playerPosition: { x: number; y: number };
   proximityRange: number;
   remotePlayers?: Array<{
@@ -13,12 +13,31 @@ interface MinimapProps {
     x: number;
     y: number;
   }>;
+  onClose?: () => void;
 }
 
 const ROOM_INFO = {
-  hall: { name: 'Main Hall', width: 800, height: 600, color: '#e8f4f8', offsetX: 0 },
-  meeting: { name: 'Conference', width: 1200, height: 800, color: '#fff8dc', offsetX: 800 },
-  office: { name: 'Office', width: 1000, height: 700, color: '#f0f0f0', offsetX: 2000 },
+  hall: {
+    name: "Main Hall",
+    width: 800,
+    height: 600,
+    color: "#e8f4f8",
+    offsetX: 0,
+  },
+  meeting: {
+    name: "Conference",
+    width: 1200,
+    height: 800,
+    color: "#fff8dc",
+    offsetX: 800,
+  },
+  office: {
+    name: "Office",
+    width: 1000,
+    height: 700,
+    color: "#f0f0f0",
+    offsetX: 2000,
+  },
 };
 
 export function Minimap({
@@ -38,8 +57,8 @@ export function Minimap({
   const relativePlayerY = playerPosition.y;
 
   // Scale player position to minimap
-  const scaledPlayerX = (relativePlayerX * scale);
-  const scaledPlayerY = (relativePlayerY * scale);
+  const scaledPlayerX = relativePlayerX * scale;
+  const scaledPlayerY = relativePlayerY * scale;
   const scaledProximity = proximityRange * scale;
 
   return (
@@ -72,7 +91,7 @@ export function Minimap({
           // Convert to room-relative coordinates
           const relativeX = player.x - roomInfo.offsetX;
           const relativeY = player.y;
-          
+
           return (
             <circle
               key={player.id}

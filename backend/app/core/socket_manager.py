@@ -5,47 +5,53 @@ from app.core.redis_client import r
 
 class ConnectionManger: 
     def __init__(self):
-
-        self.active_connections: Dict[str, List[WebSocket]] = {}
+        # Changed to Dict[server_id, Dict[user_id, WebSocket]] for direct addressing
+        self.active_connections: Dict[str, Dict[str, WebSocket]] = {}
 
     async def connect(self, websocket: WebSocket, server_id: str, user_id: str):
         await websocket.accept()
         if server_id not in self.active_connections:
-            self.active_connections[server_id] = []
-        self.active_connections[server_id].append(websocket)
+            self.active_connections[server_id] = {}
+        # Store by user_id
+        self.active_connections[server_id][user_id] = websocket
 
-
-    async def get_server_users(self, server_id: str):
-
-        if not r:
-            return []
-        users = await r.smembers(f"server:{server_id}:users")
-        return list(users)
-
-    async def disconnect(self, websocket:WebSocket, server_id: str):
+    async def disconnect(self, websocket: WebSocket, server_id: str, user_id: str):
         if server_id in self.active_connections:
-            if websocket in self.active_connections[server_id]:
-                self.active_connections[server_id].remove(websocket)
+            if user_id in self.active_connections[server_id]:
+                del self.active_connections[server_id][user_id]
             
             if len(self.active_connections[server_id]) == 0:
                 del self.active_connections[server_id]
 
-    
-    async def broadcast(self, message: dict, server_id: str, sender: WebSocket):
-
+    async def send_personal_message(self, message: dict, server_id: str, target_user_id: str):
         if server_id in self.active_connections:
-            # Build list of coroutines — one per target connection
-            tasks = [
-                connection.send_json(message)
-                for connection in self.active_connections[server_id]
-                if connection != sender
-            ]
-            # Fire all sends concurrently — total time = slowest single send, not sum
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
-                # return_exceptions=True: if one client socket is dead,
-                # it does NOT crash the broadcast for everyone else.
+            target_ws = self.active_connections[server_id].get(target_user_id)
+            if target_ws:
+                try:
+                    await target_ws.send_json(message)
+                except Exception:
+                     # Clean up dead connection potentially?
+                     # Let the read loop handle disconnects usually.
+                     pass
 
+    async def broadcast(self, message: dict, server_id: str, sender: WebSocket):
+        if server_id not in self.active_connections:
+            return
 
+        async def safe_send(ws: WebSocket):
+            try:
+                # 500ms timeout prevents slow clients from blocking
+                await asyncio.wait_for(ws.send_json(message), timeout=0.5)
+            except asyncio.TimeoutError:
+                pass
+            except Exception:
+                # We can't easily disconnect here without user_id if we don't have it
+                # But typically the read loop handles the close.
+                pass
+
+        # Fire all sends concurrently
+        for target_ws in self.active_connections[server_id].values():
+            if target_ws != sender:
+                asyncio.create_task(safe_send(target_ws))
 
 manager = ConnectionManger()

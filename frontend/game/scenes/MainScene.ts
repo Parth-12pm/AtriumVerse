@@ -2,6 +2,7 @@ import * as Phaser from "phaser";
 import { Scene } from "phaser";
 import { GridEngine, Direction } from "grid-engine";
 import EventBus, { GameEvents, PlayerPositionEvent } from "../EventBus";
+import { rtcManager } from "../../lib/webrtc/RTCConnectionManager";
 
 interface SceneData {
   userId: string;
@@ -27,13 +28,14 @@ export class MainScene extends Scene {
   private myServerId: string = "";
 
   private token: string = "";
-  private apiUrl: string = "http://localhost:8000";
+  private apiUrl: string =
+    process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
   private lastDirection: string = "down"; // Track last facing direction for idle state
 
-  // Throttling for sending position updates
-  private lastSentPosition = { x: 0, y: 0 };
-  private lastSentTime = 0;
-  private sendThrottleMs = 25; // Lowered to 25ms (40fps) for smoother movement
+  // Throttling removed - relying on GridEngine discrete movement events
+  // private lastSentPosition = { x: 0, y: 0 };
+  // private lastSentTime = 0;
+  // private sendThrottleMs = 25;
 
   // Keyboard controls (create once, not every frame!)
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -102,9 +104,10 @@ export class MainScene extends Scene {
     // Frame Size: 16x32 pixels (64/4 = 16, 128/4 = 32)
     // Row 0 = Down, Row 1 = Right, Row 2 = Up, Row 3 = Left
     if (!this.textures.exists("player")) {
-      this.load.spritesheet("player", "/NPC_test.png", {
-        frameWidth: 16,
-        frameHeight: 32,
+      // Load the new 64x64 LPC sprite
+      this.load.spritesheet("player", "/characters/character_1_walk.png", {
+        frameWidth: 64,
+        frameHeight: 64,
       });
     }
   }
@@ -206,7 +209,7 @@ export class MainScene extends Scene {
     // Create local player sprite using NPC_test character (16x32 frames)
     // Use frame 0 as idle (down-facing)
     this.playerSprite = this.add.sprite(0, 0, "player", 0);
-    this.playerSprite.setScale(1.5); // 16x32 → 24x48 on screen
+    this.playerSprite.setScale(1); // 64x64 → 32x32 on screen
     this.playerSprite.setDepth(100); // Above all map layers
     this.playerSprite.setOrigin(0.5, 0.5); // Center origin
 
@@ -282,28 +285,36 @@ export class MainScene extends Scene {
 
     console.log("[MainScene] Camera setup complete");
 
-    // Create manual animations for NPC_test (16x32 frames, 4 columns x 4 rows)
-    // Row 0=Down, Row 1=Right, Row 2=Up, Row 3=Left
-    const cols = 4; // 4 columns of animation frames
-    const directions = [
-      { name: "down", row: 0 },
-      { name: "right", row: 1 },
-      { name: "up", row: 2 },
-      { name: "left", row: 3 },
-    ];
-
-    directions.forEach(({ name, row }) => {
-      this.anims.create({
-        key: `walk_${name}`,
-        frames: this.anims.generateFrameNumbers("player", {
-          start: row * cols,
-          end: row * cols + cols - 1,
-        }),
-        frameRate: 8,
-        repeat: -1,
-      });
+    // ✅ NEW: Create Animations (9 frames per row)
+    // Row 0: Up (0-8), Row 1: Left (9-17), Row 2: Down (18-26), Row 3: Right (27-35)
+    this.anims.create({
+      key: "walk-up",
+      frames: this.anims.generateFrameNumbers("player", { start: 0, end: 8 }),
+      frameRate: 15,
+      repeat: -1,
     });
-    console.log("[MainScene] Created 4-direction walk animations");
+    this.anims.create({
+      key: "walk-left",
+      frames: this.anims.generateFrameNumbers("player", { start: 9, end: 17 }),
+      frameRate: 15,
+      repeat: -1,
+    });
+    this.anims.create({
+      key: "walk-down",
+      frames: this.anims.generateFrameNumbers("player", { start: 18, end: 26 }),
+      frameRate: 15,
+      repeat: -1,
+    });
+    this.anims.create({
+      key: "walk-right",
+      frames: this.anims.generateFrameNumbers("player", { start: 27, end: 35 }),
+      frameRate: 15,
+      repeat: -1,
+    });
+
+    console.log(
+      "[MainScene] Created 9-frame walk animations (Up/Left/Down/Right)",
+    );
 
     // Setup movement observers (CLIENT-SIDE PREDICTION)
     this.gridEngine.movementStarted().subscribe(({ charId, direction }) => {
@@ -328,8 +339,7 @@ export class MainScene extends Scene {
             break;
         }
 
-        // Emit to React immediately (optional, use target or current?)
-        // HUD usually shows current, but maybe efficient to show target? Keep current for HUD.
+        // Emit to React immediately
         const payload: PlayerPositionEvent = {
           x: currentPos.x,
           y: currentPos.y,
@@ -337,68 +347,66 @@ export class MainScene extends Scene {
         };
         EventBus.emit(GameEvents.PLAYER_POSITION, payload);
 
-        // Send TARGET to server so others see us move TO there
+        // Send TARGET to server
         this.sendMovementToServer(targetX, targetY, direction);
 
-        // Track last direction for reference
+        // Track last direction
         this.lastDirection = direction.toLowerCase();
+      }
 
-        // Play walking animation manually
-        const animKey = `walk_${direction.toLowerCase()}`;
-        if (this.anims.exists(animKey)) {
-          this.playerSprite.play(animKey, true);
-        }
+      // ✅ CHANGED: Play animation for ANY character moving (Hero or Remote)
+      let sprite: Phaser.GameObjects.Sprite | undefined;
+
+      if (charId === "hero") {
+        sprite = this.playerSprite;
+      } else if (this.otherPlayers.has(charId)) {
+        sprite = this.otherPlayers.get(charId)?.sprite;
+      }
+
+      if (sprite) {
+        sprite.play(`walk-${direction}`);
       }
     });
 
-    // Movement stopped - stop animation and set idle frame
+    // Movement stopped
     this.gridEngine.movementStopped().subscribe(({ charId }) => {
+      let sprite: Phaser.GameObjects.Sprite | undefined;
+
       if (charId === "hero") {
-        this.playerSprite.stop();
-
-        // Set idle frame
-        const directionToRow: Record<string, number> = {
-          down: 0,
-          right: 1,
-          up: 2,
-          left: 3,
-        };
-        const row = directionToRow[this.lastDirection] ?? 0;
-        const idleFrame = row * 4;
-        this.playerSprite.setFrame(idleFrame);
-
-        // FORCE SENT Final Position to ensure sync
+        sprite = this.playerSprite;
+        // Ensure final position is synced
         const finalPos = this.gridEngine.getPosition("hero");
-        this.sendMovementToServer(
-          finalPos.x,
-          finalPos.y,
-          this.lastDirection,
-          true,
-        ); // Force send
-        // We might need to force it. Let's make a force flag or just updating timestamp in send will handle it if enough time passed.
-        // Actually, better to forcefully send if checking strict consistency.
-        // But for now, let's just call it. If it was throttled recently, maybe it's fine because we sent target?
-        // Sending target covers 99% of cases.
-        // We'll trust the target send for now, but calling this doesn't hurt.
-        // Actually, to prevent "missing the last step", we should allow this one to bypass throttle if needed?
-        // Let's just rely on target logic first.
+        this.sendMovementToServer(finalPos.x, finalPos.y, this.lastDirection);
+      } else if (this.otherPlayers.has(charId)) {
+        sprite = this.otherPlayers.get(charId)?.sprite;
+      }
+
+      if (sprite) {
+        sprite.stop();
+        // Optional: Could set to specific idle frame here if desired
       }
     });
 
     // Removed redundant positionChangeFinished listener for label updates (handled in update loop)
+
+    // Listen for outgoing chat from React
+    EventBus.on(GameEvents.SEND_CHAT_MESSAGE, (data: any) => {
+      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+        this.socket.send(
+          JSON.stringify({
+            type: "chat_message",
+            ...data,
+          }),
+        );
+      }
+    });
 
     // Listen for React → Phaser events
     EventBus.on(GameEvents.UPDATE_AVATAR, this.updateAvatar, this);
     EventBus.on(GameEvents.SPAWN_REMOTE_PLAYER, this.spawnRemotePlayer, this);
     EventBus.on(GameEvents.REMOVE_REMOTE_PLAYER, this.removeRemotePlayer, this);
 
-    // Proximity check timer
-    this.time.addEvent({
-      delay: 100,
-      callback: this.checkProximity,
-      callbackScope: this,
-      loop: true,
-    });
+    // Proximity check removed - dead code
 
     console.log("[MainScene] Grid-engine initialized successfully");
     console.log(
@@ -466,6 +474,9 @@ export class MainScene extends Scene {
 
     this.socket.onopen = () => {
       console.log("🔌 [MainScene] WebSocket Connected!");
+      if (this.socket) {
+        rtcManager.initialize(this.myId, this.socket);
+      }
     };
 
     this.socket.onmessage = (event: MessageEvent) => {
@@ -536,7 +547,7 @@ export class MainScene extends Scene {
         // Send our current position so others can see us immediately (force=true)
         if (this.gridEngine.hasCharacter("hero")) {
           const myPos = this.gridEngine.getPosition("hero");
-          this.sendMovementToServer(myPos.x, myPos.y, this.lastDirection, true);
+          this.sendMovementToServer(myPos.x, myPos.y, this.lastDirection);
         }
         break;
 
@@ -572,12 +583,7 @@ export class MainScene extends Scene {
           // Re-send our position so the new joiner sees us immediately. force=true.
           if (this.gridEngine.hasCharacter("hero")) {
             const myPos = this.gridEngine.getPosition("hero");
-            this.sendMovementToServer(
-              myPos.x,
-              myPos.y,
-              this.lastDirection,
-              true,
-            );
+            this.sendMovementToServer(myPos.x, myPos.y, this.lastDirection);
           }
         }
         break;
@@ -585,6 +591,18 @@ export class MainScene extends Scene {
       case "user_left":
         console.log("❌ [MainScene] User left:", data.user_id);
         this.removeRemotePlayer(data.user_id);
+        break;
+
+      case "chat_message":
+        EventBus.emit(GameEvents.CHAT_MESSAGE, data);
+        break;
+
+      // WebRTC Signaling Forwarding
+      case "signal_offer":
+      case "signal_answer":
+      case "signal_ice":
+        // Pass the entire message to RTC Manager via EventBus
+        EventBus.emit("signal_message", data);
         break;
     }
   }
@@ -626,65 +644,23 @@ export class MainScene extends Scene {
     });
   }
 
-  private sendMovementToServer(
-    x: number,
-    y: number,
-    direction: string,
-    force: boolean = false,
-  ) {
+  private sendMovementToServer(x: number, y: number, direction: string) {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      return; // Silently ignore if not connected
+      return;
     }
 
-    const now = Date.now();
-    const positionChanged =
-      this.lastSentPosition.x !== x || this.lastSentPosition.y !== y;
-
-    // Throttle: only send if position changed AND (enough time passed OR force flag is set)
-    if (
-      positionChanged &&
-      (force || now - this.lastSentTime >= this.sendThrottleMs)
-    ) {
-      this.socket.send(
-        JSON.stringify({
-          type: "player_move",
-          x,
-          y,
-          username: this.myUsername,
-        }),
-      );
-
-      this.lastSentPosition = { x, y };
-      this.lastSentTime = now;
-    }
+    // No throttling - GridEngine events are discrete enough (once per tile)
+    this.socket.send(
+      JSON.stringify({
+        type: "player_move",
+        x,
+        y,
+        username: this.myUsername,
+      }),
+    );
   }
 
-  private checkProximity() {
-    if (!this.gridEngine.hasCharacter("hero")) return;
-
-    const myPos = this.gridEngine.getPosition("hero");
-
-    this.otherPlayers.forEach((player, playerId) => {
-      if (!this.gridEngine.hasCharacter(playerId)) return;
-
-      const otherPos = this.gridEngine.getPosition(playerId);
-
-      // Euclidean distance in tiles
-      const distance = Phaser.Math.Distance.Between(
-        myPos.x,
-        myPos.y,
-        otherPos.x,
-        otherPos.y,
-      );
-
-      // Emit proximity event to React
-      EventBus.emit(GameEvents.PROXIMITY_CHANGE, {
-        playerId,
-        distance,
-        inRange: distance < 5, // 5 tiles = Gather.town "intimate zone"
-      });
-    });
-  }
+  // checkProximity removed
 
   private updateAvatar(data: { color?: string }) {
     if (data.color) {
@@ -704,7 +680,7 @@ export class MainScene extends Scene {
 
     // Create sprite using same spritesheet as local player
     const sprite = this.add.sprite(0, 0, "player", 0);
-    sprite.setScale(1.5); // Same as local player
+    sprite.setScale(1); // Same as local player
     sprite.setDepth(100);
     sprite.setOrigin(0.5, 0.5);
 
@@ -776,6 +752,9 @@ export class MainScene extends Scene {
 
           this.gridEngine.moveTo(userId, { x, y });
         }
+
+        // Notify React (for Proximity Audio)
+        EventBus.emit(GameEvents.REMOTE_PLAYER_MOVED, { userId, x, y });
       }
     }
   }
@@ -794,8 +773,61 @@ export class MainScene extends Scene {
     this.otherPlayers.delete(userId);
   }
 
+  // Chat Bubble Logic
+  private displayChatBubble(userId: string, text: string) {
+    // limit text length
+    if (text.length > 50) text = text.substring(0, 47) + "...";
+
+    let sprite: Phaser.GameObjects.Sprite | undefined;
+    if (userId === this.myId) {
+      sprite = this.playerSprite;
+    } else {
+      sprite = this.otherPlayers.get(userId)?.sprite;
+    }
+
+    if (!sprite) return;
+
+    // Remove existing bubble if any? (Complex-ish, skipping for now, just overwrite)
+
+    const bubbleContainer = this.add.container(sprite.x, sprite.y - 50);
+    bubbleContainer.setDepth(200);
+
+    const bubbleText = this.add.text(0, 0, text, {
+      fontSize: "12px",
+      color: "#000000",
+      backgroundColor: "#ffffff",
+      padding: { x: 4, y: 2 },
+    });
+    bubbleText.setOrigin(0.5);
+
+    // Rounded rectangle background (optional polish)
+    // bubbleText.setStyle({ ... })
+
+    bubbleContainer.add(bubbleText);
+
+    // Follow sprite
+    this.events.on("update", () => {
+      if (sprite && sprite.active) {
+        bubbleContainer.setPosition(sprite.x, sprite.y - 50);
+      } else {
+        bubbleContainer.destroy();
+      }
+    });
+
+    // Destroy after 5 seconds
+    this.time.delayedCall(5000, () => {
+      this.tweens.add({
+        targets: bubbleContainer,
+        alpha: 0,
+        duration: 500,
+        onComplete: () => bubbleContainer.destroy(),
+      });
+    });
+  }
+
   destroy() {
     // Cleanup
+    EventBus.off(GameEvents.SEND_CHAT_MESSAGE);
     EventBus.off(GameEvents.UPDATE_AVATAR, this.updateAvatar, this);
     EventBus.off(GameEvents.SPAWN_REMOTE_PLAYER, this.spawnRemotePlayer, this);
     EventBus.off(

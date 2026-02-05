@@ -24,12 +24,22 @@ export enum GameEvents {
   PLAYER_JOINED = "player-joined",
   PLAYER_LEFT = "player-left",
   PLAYER_LIST_UPDATE = "player-list-update",
+  REMOTE_PLAYER_MOVED = "remote-player-moved",
 
   // React → Phaser (UI Commands)
   UPDATE_AVATAR = "update-avatar",
   TOGGLE_NOCLIP = "toggle-noclip",
   SPAWN_REMOTE_PLAYER = "spawn-remote-player",
   REMOVE_REMOTE_PLAYER = "remove-remote-player",
+
+  // WebRTC Events
+  REMOTE_STREAM_READY = "remote-stream-ready",
+  REMOTE_STREAM_REMOVED = "remote-stream-removed",
+  LOCAL_STREAM_READY = "local-stream-ready",
+
+  // Chat Events
+  CHAT_MESSAGE = "chat-message", // Incoming
+  SEND_CHAT_MESSAGE = "send-chat-message", // Outgoing
 }
 
 /**

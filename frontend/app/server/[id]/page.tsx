@@ -4,6 +4,9 @@ import dynamic from "next/dynamic";
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 
+import { useProximityPeers } from "@/hooks/use-proximity-peers";
+import { FloatingVideoTiles } from "@/components/game/FloatingVideoTiles";
+
 // SSR disabled - grid-engine requires browser
 const GameWrapper = dynamic(() => import("@/components/game/GameWrapperNew"), {
   ssr: false,
@@ -40,6 +43,9 @@ export default function ServerPage({ params }: ServerPageProps) {
   const [token, setToken] = useState("");
   const [mounted, setMounted] = useState(false);
 
+  // Initialize WebRTC Proximity Logic
+  useProximityPeers(mounted ? userId : null);
+
   useEffect(() => {
     setMounted(true);
     if (typeof window !== "undefined") {
@@ -60,7 +66,8 @@ export default function ServerPage({ params }: ServerPageProps) {
   }, []);
 
   return (
-    <div className="h-full w-full">
+    <div className="h-full w-full relative">
+      <FloatingVideoTiles />
       <GameWrapper
         userId={userId}
         username={mounted ? username : "Player"}

@@ -1,8 +1,17 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Mic, MicOff, Video, VideoOff, MonitorUp, MonitorOff, Map, LogOut } from 'lucide-react';
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Mic,
+  MicOff,
+  Video,
+  VideoOff,
+  MonitorUp,
+  MonitorOff,
+  Map,
+  LogOut,
+} from "lucide-react";
 
 interface MediaControlsProps {
   onAudioToggle?: (enabled: boolean) => void;
@@ -21,8 +30,8 @@ export function MediaControls({
   onExit,
   showMinimap = false,
 }: MediaControlsProps) {
-  const [audioEnabled, setAudioEnabled] = useState(false);
-  const [videoEnabled, setVideoEnabled] = useState(false);
+  const [audioEnabled, setAudioEnabled] = useState(true);
+  const [videoEnabled, setVideoEnabled] = useState(true);
   const [screenShareEnabled, setScreenShareEnabled] = useState(false);
 
   const handleAudioToggle = () => {
@@ -62,26 +71,38 @@ export function MediaControls({
 
       {/* Audio Toggle */}
       <Button
-        variant={audioEnabled ? 'default' : 'neutral'}
+        variant={audioEnabled ? "default" : "neutral"}
         size="icon"
         onClick={handleAudioToggle}
         className={`border-2 border-border ${
-          !audioEnabled ? 'bg-destructive hover:bg-destructive/90 text-destructive-foreground' : ''
+          !audioEnabled
+            ? "bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+            : ""
         }`}
       >
-        {audioEnabled ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
+        {audioEnabled ? (
+          <Mic className="h-5 w-5" />
+        ) : (
+          <MicOff className="h-5 w-5" />
+        )}
       </Button>
 
       {/* Video Toggle */}
       <Button
-        variant={videoEnabled ? 'default' : 'neutral'}
+        variant={videoEnabled ? "default" : "neutral"}
         size="icon"
         onClick={handleVideoToggle}
         className={`border-2 border-border ${
-          !videoEnabled ? 'bg-destructive hover:bg-destructive/90 text-destructive-foreground' : ''
+          !videoEnabled
+            ? "bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+            : ""
         }`}
       >
-        {videoEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
+        {videoEnabled ? (
+          <Video className="h-5 w-5" />
+        ) : (
+          <VideoOff className="h-5 w-5" />
+        )}
       </Button>
 
       {/* Screen Share Toggle */}
@@ -92,7 +113,11 @@ export function MediaControls({
         disabled={true}
         className="border-2 border-border disabled:opacity-50"
       >
-        {screenShareEnabled ? <MonitorUp className="h-5 w-5" /> : <MonitorOff className="h-5 w-5" />}
+        {screenShareEnabled ? (
+          <MonitorUp className="h-5 w-5" />
+        ) : (
+          <MonitorOff className="h-5 w-5" />
+        )}
       </Button>
 
       <div className="w-px h-8 bg-border" />
@@ -100,7 +125,7 @@ export function MediaControls({
       {/* Minimap Toggle */}
       {onMinimapToggle && (
         <Button
-          variant={showMinimap ? 'default' : 'neutral'}
+          variant={showMinimap ? "default" : "neutral"}
           size="icon"
           onClick={onMinimapToggle}
           className="border-2 border-border"
