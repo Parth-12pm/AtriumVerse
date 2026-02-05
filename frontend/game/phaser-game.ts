@@ -2,17 +2,12 @@ import * as Phaser from "phaser";
 import { GridEngine } from "grid-engine";
 import { MainScene } from "./scenes/MainScene";
 
-/**
- * Grid-Engine Phaser Game Configuration
- * CRITICAL: No Arcade Physics - grid-engine handles all movement
- */
 export default async function StartGame(
   parent: string,
-  sceneData?: {
+  sceneData: {
     userId: string;
     username: string;
     serverId: string;
-
     token: string;
     apiUrl?: string;
   },
@@ -24,26 +19,22 @@ export default async function StartGame(
     parent: parent,
     backgroundColor: "#1a1a1a",
 
-    // CRITICAL: Enable pixel art rendering for crisp 32x32 tiles
     pixelArt: true,
     antialias: false,
     roundPixels: true,
 
-    // NO PHYSICS - grid-engine replaces Arcade Physics
-
-    // Grid-Engine Plugin
     plugins: {
       scene: [
         {
           key: "gridEngine",
           plugin: GridEngine,
-          mapping: "gridEngine", // Accessible via this.gridEngine in scenes
+          mapping: "gridEngine",
         },
       ],
     },
 
     scale: {
-      mode: Phaser.Scale.RESIZE, // Responsive scaling
+      mode: Phaser.Scale.RESIZE,
       autoCenter: Phaser.Scale.CENTER_BOTH,
     },
 
@@ -52,17 +43,12 @@ export default async function StartGame(
       target: 60,
       forceSetTimeOut: true,
     },
-
-    // Pass scene data via callbacks (NOT scene.start!)
-    callbacks: sceneData
-      ? {
-          preBoot: (game) => {
-            // Store data globally for scene to access in init()
-            (game.registry as any).sceneData = sceneData;
-          },
-        }
-      : undefined,
   };
 
-  return new Phaser.Game(config);
+  const game = new Phaser.Game(config);
+
+  // Pass data to scene via scene.start with data parameter
+  game.scene.start("MainScene", sceneData);
+
+  return game;
 }

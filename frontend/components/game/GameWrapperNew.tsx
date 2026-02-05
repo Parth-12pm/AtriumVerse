@@ -9,9 +9,8 @@ interface GameWrapperProps {
   token: string;
 }
 
-// Module-level singleton to prevent React Strict Mode double-creation
 let globalGameInstance: Phaser.Game | null = null;
-let isInitializing = false; // Prevent race condition
+let isInitializing = false;
 
 export default function GameWrapper({
   userId,
@@ -24,7 +23,6 @@ export default function GameWrapper({
 
   useEffect(() => {
     const initGame = async () => {
-      // DEV ONLY: If scene data changed (e.g. hot reload), destroy stale game
       if (process.env.NODE_ENV === "development" && globalGameInstance) {
         console.log("[GameWrapper] Dev: destroying stale game for hot reload");
         globalGameInstance.destroy(true);
@@ -32,20 +30,15 @@ export default function GameWrapper({
         isInitializing = false;
       }
 
-      // Check GLOBAL singleton, not just ref (Strict Mode protection)
       if (globalGameInstance) {
-        console.log("[GameWrapper] Game already exists globally, reusing...");
+        console.log("[GameWrapper] Game already exists, reusing");
         gameRef.current = globalGameInstance;
         setIsGameReady(true);
         return;
       }
 
-      // Check if another initialization is in progress
       if (isInitializing) {
-        console.log(
-          "[GameWrapper] Game initialization in progress, waiting...",
-        );
-        // Wait for the other initialization to complete
+        console.log("[GameWrapper] Initialization in progress, waiting");
         const checkInterval = setInterval(() => {
           if (globalGameInstance) {
             console.log("[GameWrapper] Game ready from other initialization");
@@ -59,12 +52,10 @@ export default function GameWrapper({
 
       isInitializing = true;
 
-      // Dynamic import prevents SSR "window is not defined" error
       const { default: StartGame } = await import("@/game/phaser-game");
 
-      console.log("[GameWrapper] Initializing Phaser with grid-engine...");
+      console.log("[GameWrapper] Initializing Phaser with Grid Engine");
 
-      // Pass user data directly to game initialization
       const game = await StartGame("game-container", {
         userId,
         username,
@@ -78,32 +69,24 @@ export default function GameWrapper({
       isInitializing = false;
 
       setIsGameReady(true);
-      console.log("[GameWrapper] Game ready!");
+      console.log("[GameWrapper] Game ready");
 
-      // Focus canvas for keyboard input
       setTimeout(() => {
-        const canvas = document.querySelector(
-          "#game-container canvas",
-        ) as HTMLCanvasElement;
+        const canvas = document.querySelector("#game-container canvas") as HTMLCanvasElement;
         if (canvas) {
-          canvas.tabIndex = 1; // Make focusable
+          canvas.tabIndex = 1;
           canvas.focus();
-          console.log("[GameWrapper] Canvas focused for keyboard input");
         }
       }, 100);
     };
 
     initGame();
 
-    // Cleanup on unmount - but DON'T destroy in strict mode first pass
     return () => {
-      // Only destroy if we're truly unmounting (not strict mode)
-      // We'll let the next component reuse the existing game
-      console.log("[GameWrapper] Cleanup called (may be strict mode)");
+      console.log("[GameWrapper] Cleanup called");
     };
-  }, [userId, username, serverId]);
+  }, [userId, username, serverId, token]);
 
-  // Real cleanup when component truly unmounts
   useEffect(() => {
     return () => {
       if (globalGameInstance) {
@@ -121,7 +104,6 @@ export default function GameWrapper({
         className="w-full h-full bg-black"
         tabIndex={0}
         onClick={(e) => {
-          // Focus canvas when clicking container
           const canvas = e.currentTarget.querySelector("canvas");
           if (canvas) canvas.focus();
         }}
@@ -130,7 +112,7 @@ export default function GameWrapper({
         <div className="absolute inset-0 flex items-center justify-center bg-black/90">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
-            <p className="text-white text-lg">Loading Grid-Engine...</p>
+            <p className="text-white text-lg">Loading World...</p>
           </div>
         </div>
       )}
