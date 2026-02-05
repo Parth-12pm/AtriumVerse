@@ -12,6 +12,7 @@ from app.api.deps import get_current_user
 import time, asyncio, random ,datetime
 from jose import jwt, JWTError
 from app.core.security import SECRET_KEY, ALGORITHM
+import datetime
 
 
 router = APIRouter()
@@ -52,6 +53,7 @@ async def websocket_endpoint(
 
 
     user_uuid = user_obj.id
+    user_id = str(user_uuid)
 
     # 2. Connect Manager
     await manager.connect(websocket, server_id, user_id)

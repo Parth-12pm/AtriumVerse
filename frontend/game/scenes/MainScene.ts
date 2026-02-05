@@ -508,8 +508,8 @@ export class MainScene extends Scene {
         // Let's map to IDs if the HUD expects IDs, or pass full objects if it handles them.
         // Based on previous code: EventBus.emit(..., data.users) where data.users was list of strings.
         // Now it's list of objects.
-        const userIds = data.users.map((u: any) => u.user_id);
-        EventBus.emit(GameEvents.PLAYER_LIST_UPDATE, userIds);
+        // Emit full user objects so React can display usernames
+        EventBus.emit(GameEvents.PLAYER_LIST_UPDATE, data.users);
 
         data.users.forEach(
           (user: {

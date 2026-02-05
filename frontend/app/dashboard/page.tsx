@@ -24,7 +24,9 @@ export default function DashboardPage() {
   const [servers, setServers] = useState<Server[]>([]);
   const [username, setUsername] = useState("User");
   const [userId, setUserId] = useState("");
-  const [activeTab, setActiveTab] = useState<"recent" | "created">("recent");
+  const [activeTab, setActiveTab] = useState<"recent" | "created" | "discover">(
+    "discover",
+  );
   const [mounted, setMounted] = useState(false);
   const [dateString, setDateString] = useState("");
 
@@ -83,6 +85,13 @@ export default function DashboardPage() {
     localStorage.removeItem("user_id");
     router.push("/login");
   };
+
+  const filteredServers = servers.filter((server) => {
+    if (activeTab === "created") return server.owner_id === userId;
+    if (activeTab === "discover") return server.access_type === "public";
+    // For recent/all, show everything or specific logic if we had history
+    return true;
+  });
 
   return (
     <div className="space-y-8">
@@ -154,23 +163,23 @@ export default function DashboardPage() {
       {/* Tabs */}
       <div className="flex gap-2 border-b-4 border-border pb-4">
         <Button
-          variant={activeTab === "recent" ? "default" : "neutral"}
-          onClick={() => setActiveTab("recent")}
+          variant={activeTab === "discover" ? "default" : "neutral"}
+          onClick={() => setActiveTab("discover")}
           className="font-bold"
         >
-          Last Visited
+          Discover
         </Button>
         <Button
           variant={activeTab === "created" ? "default" : "neutral"}
           onClick={() => setActiveTab("created")}
           className="font-bold"
         >
-          Created Servers
+          My Servers
         </Button>
       </div>
 
       {/* Spaces Grid */}
-      {servers.length === 0 ? (
+      {filteredServers.length === 0 ? (
         <Card className="border-4 border-border border-dashed p-12 text-center">
           <div className="flex flex-col items-center gap-4">
             <div className="w-16 h-16 bg-muted rounded-lg border-2 border-border flex items-center justify-center">
@@ -178,15 +187,16 @@ export default function DashboardPage() {
             </div>
             <h3 className="text-xl font-black uppercase">No Servers Yet</h3>
             <p className="text-muted-foreground max-w-sm">
-              Create your first virtual server and invite your team to
-              collaborate.
+              {activeTab === "created"
+                ? "You haven't created any servers yet."
+                : "No public servers found."}
             </p>
-            <CreateServerDialog />
+            {activeTab === "created" && <CreateServerDialog />}
           </div>
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {servers.map((server) => (
+          {filteredServers.map((server) => (
             <Card
               key={server.id}
               className="border-4 border-border hover:shadow-shadow hover:-translate-x-1 hover:-translate-y-1 transition-all cursor-pointer group"

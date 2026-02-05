@@ -43,12 +43,11 @@ export default function ServerHUD({ children }: { children: React.ReactNode }) {
       setCurrentRoom(data.roomId as "hall" | "meeting" | "office");
     };
 
-    const handleUserListUpdate = (users: string[]) => {
-      // Convert string[] to object array for UI
-      // Ideally backend sends full objects. For now, mock status.
-      const userObjects = users.map((uid) => ({
-        id: uid,
-        username: userIdToUsername(uid), // Helper or just use ID if username unknown
+    const handleUserListUpdate = (users: any[]) => {
+      // Users is now an array of { user_id, username, x, y, ... }
+      const userObjects = users.map((u) => ({
+        id: u.user_id,
+        username: u.username || "Player",
         status: "online" as const,
       }));
       setOnlineUsers(userObjects);
@@ -76,11 +75,7 @@ export default function ServerHUD({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // Temporary helper until backend sends usernames in list
-  const userIdToUsername = (id: string) => {
-    // Try to find if we knew this user?
-    return id.includes("test-user") ? "Player" : id;
-  };
+  // For now, let's just display ID or 'Player' if unknown.
 
   const handleExit = () => {
     router.push("/dashboard");

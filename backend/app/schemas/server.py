@@ -16,6 +16,7 @@ class ServerResponse(BaseModel):
     name: str
     owner_id: UUID
     created_at: datetime
-
+    access_type: str
+    
     class Config: 
         from_attributes = True
