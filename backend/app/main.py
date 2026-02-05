@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import redis.asyncio as redis
 from contextlib import asynccontextmanager
-from app.api import users,ws,servers
+from app.api import users,ws,servers,channels,messages
 from app.core.database import engine
 from sqlalchemy import text
 from app.init_db import init_models
@@ -61,6 +61,8 @@ app.add_middleware(
 app.include_router(users.router, prefix="/users", tags=["Users"])
 app.include_router(ws.router,prefix="/ws",tags=["WebSocket"])
 app.include_router(servers.router, prefix="/servers", tags=["Servers"])
+app.include_router(channels.router,prefix="/channels", tags=["Channels"])
+app.include_router(messages.router,prefix="/messages",tags=["Messages"])
 
 @app.get("/")
 async def hello():

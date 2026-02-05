@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import EventBus, { GameEvents } from "@/game/EventBus";
-import { LeftSidebar } from "@/components/game/LeftSidebar";
+import { ChannelSidebar } from "@/components/game/ChannelSidebar";
 import { Button } from "@/components/ui/button";
 import { Users, LogOut } from "lucide-react";
 
 export default function ServerHUD({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const params = useParams();
+  const serverId = params.id as string;
 
   const [playerPosition, setPlayerPosition] = useState({ x: 10, y: 10 });
   const [currentZone, setCurrentZone] = useState("Hall");
@@ -77,9 +79,10 @@ export default function ServerHUD({ children }: { children: React.ReactNode }) {
   return (
     <div className="h-screen w-screen flex bg-background overflow-hidden relative">
       {/* Left Sidebar */}
-      <LeftSidebar
+      <ChannelSidebar
+        serverId={serverId}
+        serverName={currentZone}
         users={onlineUsers}
-        roomName={currentZone}
         onInvite={() => {
           navigator.clipboard.writeText(window.location.href);
         }}

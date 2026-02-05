@@ -22,3 +22,6 @@ class Server(Base):
     owner = relationship("User", back_populates="owned_servers")
     zones = relationship("Zone", back_populates="server")
     members = relationship("ServerMember", back_populates="server")
+    
+    # NEW: Permanent channels
+    channels = relationship("Channel", back_populates="server", cascade="all, delete-orphan")

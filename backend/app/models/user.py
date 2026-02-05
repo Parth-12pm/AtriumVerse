@@ -18,3 +18,6 @@ class User(Base):
 
     owned_servers = relationship("Server", back_populates="owner")
     memberships = relationship("ServerMember", back_populates="user")
+    
+    # NEW: Messages sent by user
+    messages = relationship("Message", back_populates="user")

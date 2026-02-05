@@ -2,6 +2,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query, s
 from app.core.socket_manager import manager
 from app.core import redis_client  
 from app.core.spatial_manager import spatial_manager
+from app.core.zone_manager import zone_manager
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.server import Server
@@ -158,11 +159,68 @@ async def websocket_endpoint(
                         "username": data.get("username", "Player")
                     }))
 
-            if data.get("type") == "request_users":
+            # NEW: Zone lifecycle events
+            elif data.get("type") == "zone_enter":
+                zone_id = data.get("zone_id")
+                zone_type = data.get("zone_type", "PUBLIC")
+                
+                if zone_id:
+                    zone_state = await zone_manager.enter_zone(
+                        zone_id=zone_id,
+                        user_id=user_id,
+                        username=username,
+                        zone_type=zone_type
+                    )
+                    
+                    # Notify user of zone state
+                    await websocket.send_json({
+                        "type": "zone_entered",
+                        "zone_id": zone_id,
+                        "members": zone_state["members"],
+                        "member_count": zone_state["member_count"]
+                    })
+                    
+                    # Notify other zone members
+                    members = zone_state["members"]
+                    for member_id in members:
+                        if member_id != user_id:
+                            await manager.send_personal_message({
+                                "type": "zone_user_joined",
+                                "zone_id": zone_id,
+                                "user_id": user_id,
+                                "username": username
+                            }, server_id, member_id)
+            
+            elif data.get("type") == "zone_exit":
+                zone_id = data.get("zone_id")
+                
+                if zone_id:
+                    members_before = zone_manager.get_zone_members(zone_id)
+                    zone_destroyed = await zone_manager.exit_zone(zone_id, user_id)
+                    
+                    # Notify user
+                    await websocket.send_json({
+                        "type": "zone_exited",
+                        "zone_id": zone_id,
+                        "destroyed": zone_destroyed
+                    })
+                    
+                    # Notify remaining members
+                    if not zone_destroyed:
+                        for member_id in members_before:
+                            if member_id != user_id:
+                                await manager.send_personal_message({
+                                    "type": "zone_user_left",
+                                    "zone_id": zone_id,
+                                    "user_id": user_id,
+                                    "username": username
+                                }, server_id, member_id)
+
+            elif data.get("type") == "request_users":
                 users = await manager.get_server_users(server_id)
                 await websocket.send_json({"type":"user_list","users":users})
 
-            if data.get("type") == "chat_message":
+            elif data.get("type") == "chat_message":
                 scope = data.get("scope", "global")
                 message = data.get("message", "")
                 
@@ -192,9 +250,33 @@ async def websocket_endpoint(
                         }
                         await manager.send_personal_message(payload, server_id, target_id)
                         await manager.send_personal_message(payload, server_id, user_id)
+                
+                # NEW: Zone-scoped temporary chat
+                elif scope == "zone":
+                    current_zone = zone_manager.get_user_zone(user_id)
+                    if current_zone:
+                        members = zone_manager.get_zone_members(current_zone)
+                        payload = {
+                            "type": "chat_message",
+                            "sender": user_id,
+                            "username": username,
+                            "scope": "zone",
+                            "zone_id": current_zone,
+                            "text": message,
+                            "timestamp": datetime.datetime.utcnow().isoformat(),
+                            "temporary": True  # Flag for frontend to not persist
+                        }
+                        
+                        # Send to all zone members
+                        for member_id in members:
+                            await manager.send_personal_message(payload, server_id, member_id)
 
     except WebSocketDisconnect:
         save_task.cancel()
+        
+        # Cleanup zone membership
+        await zone_manager.cleanup_user(user_id)
+        
         await manager.disconnect(websocket, server_id, user_id)
         
         if redis_client.r:

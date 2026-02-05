@@ -7,14 +7,18 @@ export class MainScene extends Scene {
   private gridEngine!: GridEngine;
   private playerSprite!: Phaser.GameObjects.Sprite;
   private usernameText!: Phaser.GameObjects.Text;
-  private otherPlayers: Map<string, { sprite: Phaser.GameObjects.Sprite; text: Phaser.GameObjects.Text }> = new Map();
+  private otherPlayers: Map<
+    string,
+    { sprite: Phaser.GameObjects.Sprite; text: Phaser.GameObjects.Text }
+  > = new Map();
 
   private socket: WebSocket | null = null;
   private myId: string = "";
   private myUsername: string = "";
   private myServerId: string = "";
   private token: string = "";
-  private apiUrl: string = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  private apiUrl: string =
+    process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: {
@@ -23,6 +27,10 @@ export class MainScene extends Scene {
     left: Phaser.Input.Keyboard.Key;
     right: Phaser.Input.Keyboard.Key;
   };
+
+  // Zone tracking
+  private currentZone: string | null = null;
+  private zones: Phaser.Types.Tilemaps.TiledObject[] = [];
 
   constructor() {
     super({ key: "MainScene" });
@@ -40,14 +48,23 @@ export class MainScene extends Scene {
 
   preload() {
     if (!this.cache.tilemap.exists("main_map")) {
-      this.load.tilemapTiledJSON("main_map", "/phaser_assets/maps/final_map.json");
+      this.load.tilemapTiledJSON(
+        "main_map",
+        "/phaser_assets/maps/final_map.json",
+      );
     }
 
     if (!this.textures.exists("OfficeTiles")) {
-      this.load.image("OfficeTiles", "/phaser_assets/Interiors_free/32x32/Interiors_free_32x32.png");
+      this.load.image(
+        "OfficeTiles",
+        "/phaser_assets/Interiors_free/32x32/Interiors_free_32x32.png",
+      );
     }
     if (!this.textures.exists("RoomBuilder")) {
-      this.load.image("RoomBuilder", "/phaser_assets/Interiors_free/32x32/Room_Builder_free_32x32.png");
+      this.load.image(
+        "RoomBuilder",
+        "/phaser_assets/Interiors_free/32x32/Room_Builder_free_32x32.png",
+      );
     }
     if (!this.textures.exists("OldTiles")) {
       this.load.image("OldTiles", "/phaser_assets/Old/Tileset_32x32_1.png");
@@ -59,15 +76,52 @@ export class MainScene extends Scene {
       this.load.image("tileset16", "/phaser_assets/Old/Tileset_32x32_16.png");
     }
 
-    if (!this.textures.exists("player")) {
-      this.load.spritesheet("player", "/characters/character_1_walk.png", {
-        frameWidth: 64,
-        frameHeight: 64,
-      });
+    // Load NPC sprite as image to handle dynamic dimensions
+    if (!this.textures.exists("player_full")) {
+      this.load.image("player_full", "/NPC_test.png");
     }
   }
 
   create() {
+    // Generate valid sprite sheet from image
+    if (!this.textures.exists("player")) {
+      const playerTexture = this.textures.get("player_full");
+      const source = playerTexture.getSourceImage();
+
+      // Assume 4x4 grid
+      const frameWidth = source.width / 4;
+      const frameHeight = source.height / 4;
+
+      if (frameWidth > 0 && frameHeight > 0) {
+        const texture = this.textures.createCanvas(
+          "player",
+          source.width,
+          source.height,
+        );
+        if (texture) {
+          texture.draw(0, 0, source as HTMLImageElement);
+
+          // Add frames 0-15
+          for (let y = 0; y < 4; y++) {
+            for (let x = 0; x < 4; x++) {
+              const i = y * 4 + x;
+              texture.add(
+                i,
+                0,
+                x * frameWidth,
+                y * frameHeight,
+                frameWidth,
+                frameHeight,
+              );
+            }
+          }
+          console.log(
+            `[MainScene] Created dynamic spritesheet: ${frameWidth}x${frameHeight} frames`,
+          );
+        }
+      }
+    }
+
     const map = this.make.tilemap({ key: "main_map" });
 
     const officeTiles = map.addTilesetImage("OfficeTiles", "OfficeTiles");
@@ -76,7 +130,13 @@ export class MainScene extends Scene {
     const tileset2 = map.addTilesetImage("tileset2", "tileset2");
     const tileset16 = map.addTilesetImage("tileset16", "tileset16");
 
-    const allTilesets = [officeTiles, roomBuilder, oldTiles, tileset2, tileset16].filter((t) => t !== null) as Phaser.Tilemaps.Tileset[];
+    const allTilesets = [
+      officeTiles,
+      roomBuilder,
+      oldTiles,
+      tileset2,
+      tileset16,
+    ].filter((t) => t !== null) as Phaser.Tilemaps.Tileset[];
 
     const floorLayer = map.createLayer("Floor", allTilesets, 0, 0);
     const wallsLayer = map.createLayer("Walls", allTilesets, 0, 0);
@@ -99,19 +159,34 @@ export class MainScene extends Scene {
       });
     }
 
+    // Load zones from map
+    const zonesLayer = map.getObjectLayer("Zones");
+    if (zonesLayer) {
+      this.zones = zonesLayer.objects.filter(
+        (obj) => obj.name !== undefined && !obj.name.startsWith("Spawn"),
+      );
+    }
+
     let spawnX = 15;
     let spawnY = 15;
 
-    const zonesLayer = map.getObjectLayer("Zones");
     if (zonesLayer) {
-      const spawnPoint = zonesLayer.objects.find((obj) => obj.name === "Spawn_main");
-      if (spawnPoint && spawnPoint.x !== undefined && spawnPoint.y !== undefined) {
+      const spawnPoint = zonesLayer.objects.find(
+        (obj) => obj.name === "Spawn_main",
+      );
+      if (
+        spawnPoint &&
+        spawnPoint.x !== undefined &&
+        spawnPoint.y !== undefined
+      ) {
         spawnX = Math.floor(spawnPoint.x / 32);
         spawnY = Math.floor(spawnPoint.y / 32) - 1;
       }
     }
 
-    this.playerSprite = this.add.sprite(0, 0, "player", 22);
+    // Create player sprite
+    // Default to frame 0
+    this.playerSprite = this.add.sprite(0, 0, "player", 0);
     this.playerSprite.setScale(0.5);
     this.playerSprite.setDepth(100);
     this.playerSprite.setOrigin(0.5, 1);
@@ -126,28 +201,36 @@ export class MainScene extends Scene {
     this.usernameText.setOrigin(0.5, 1);
     this.usernameText.setDepth(101);
 
-    this.anims.create({
-      key: "walk-up",
-      frames: this.anims.generateFrameNumbers("player", { start: 0, end: 8 }),
-      frameRate: 12,
-      repeat: -1,
-    });
-    this.anims.create({
-      key: "walk-left",
-      frames: this.anims.generateFrameNumbers("player", { start: 9, end: 17 }),
-      frameRate: 12,
-      repeat: -1,
-    });
+    // Animation setup for 4x4 sprite sheet
+    // Row 0 (0-3): walk_down
     this.anims.create({
       key: "walk-down",
-      frames: this.anims.generateFrameNumbers("player", { start: 18, end: 26 }),
-      frameRate: 12,
+      frames: this.anims.generateFrameNumbers("player", { start: 0, end: 3 }),
+      frameRate: 8,
       repeat: -1,
     });
+
+    // Row 1 (4-7): walk_right
     this.anims.create({
       key: "walk-right",
-      frames: this.anims.generateFrameNumbers("player", { start: 27, end: 35 }),
-      frameRate: 12,
+      frames: this.anims.generateFrameNumbers("player", { start: 4, end: 7 }),
+      frameRate: 8,
+      repeat: -1,
+    });
+
+    // Row 2 (8-11): walk_up
+    this.anims.create({
+      key: "walk-up",
+      frames: this.anims.generateFrameNumbers("player", { start: 8, end: 11 }),
+      frameRate: 8,
+      repeat: -1,
+    });
+
+    // Row 3 (12-15): walk_left
+    this.anims.create({
+      key: "walk-left",
+      frames: this.anims.generateFrameNumbers("player", { start: 12, end: 15 }),
+      frameRate: 8,
       repeat: -1,
     });
 
@@ -192,6 +275,7 @@ export class MainScene extends Scene {
           direction: direction as "up" | "down" | "left" | "right",
         });
         this.sendMovementToServer(pos.x, pos.y);
+        this.checkZoneEntry(pos.x, pos.y);
       }
     });
 
@@ -244,14 +328,14 @@ export class MainScene extends Scene {
     if (this.playerSprite && this.usernameText) {
       this.usernameText.setPosition(
         this.playerSprite.x,
-        this.playerSprite.y - this.playerSprite.displayHeight - 4
+        this.playerSprite.y - this.playerSprite.displayHeight - 4,
       );
     }
 
     this.otherPlayers.forEach((player) => {
       player.text.setPosition(
         player.sprite.x,
-        player.sprite.y - player.sprite.displayHeight - 4
+        player.sprite.y - player.sprite.displayHeight - 4,
       );
     });
   }
@@ -261,24 +345,78 @@ export class MainScene extends Scene {
     return this.otherPlayers.get(charId)?.sprite;
   }
 
+  // Updated idle frames for 4x4 sprite sheet
   private getIdleFrame(direction: string): number {
     switch (direction) {
-      case "up": return 4;
-      case "left": return 13;
-      case "down": return 22;
-      case "right": return 31;
-      default: return 22;
+      case "down":
+        return 1; // Row 0, frame 1
+      case "right":
+        return 5; // Row 1, frame 1
+      case "up":
+        return 9; // Row 2, frame 1
+      case "left":
+        return 13; // Row 3, frame 1
+      default:
+        return 1;
     }
   }
 
   private sendMovementToServer(x: number, y: number) {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
-    this.socket.send(JSON.stringify({ 
-      type: "player_move", 
-      x, 
-      y, 
-      username: this.myUsername 
-    }));
+    this.socket.send(
+      JSON.stringify({
+        type: "player_move",
+        x,
+        y,
+        username: this.myUsername,
+      }),
+    );
+  }
+
+  // Zone detection - world drives communication
+  private checkZoneEntry(x: number, y: number) {
+    const pixelX = x * 32;
+    const pixelY = y * 32;
+
+    let foundZone: string | null = null;
+
+    for (const zone of this.zones) {
+      if (
+        zone.x !== undefined &&
+        zone.y !== undefined &&
+        zone.width !== undefined &&
+        zone.height !== undefined &&
+        pixelX >= zone.x &&
+        pixelX <= zone.x + zone.width &&
+        pixelY >= zone.y &&
+        pixelY <= zone.y + zone.height
+      ) {
+        foundZone = zone.name || null;
+        break;
+      }
+    }
+
+    // Emit zone change events
+    if (foundZone !== this.currentZone) {
+      if (this.currentZone) {
+        EventBus.emit(GameEvents.ZONE_EXIT, {
+          zoneId: this.currentZone,
+          zoneName: this.currentZone,
+          zoneType: this.currentZone.startsWith("Room") ? "PRIVATE" : "PUBLIC",
+        });
+      }
+
+      if (foundZone) {
+        EventBus.emit(GameEvents.ZONE_ENTER, {
+          zoneId: foundZone,
+          zoneName: foundZone,
+          zoneType: foundZone.startsWith("Room") ? "PRIVATE" : "PUBLIC",
+        });
+        EventBus.emit(GameEvents.ROOM_ENTER, { roomId: foundZone });
+      }
+
+      this.currentZone = foundZone;
+    }
   }
 
   private initWebSocket() {
@@ -293,7 +431,9 @@ export class MainScene extends Scene {
 
     const wsUrl = this.apiUrl.replace(/^http/, "ws");
     const baseUrl = wsUrl.endsWith("/") ? wsUrl.slice(0, -1) : wsUrl;
-    this.socket = new WebSocket(`${baseUrl}/ws/${this.myServerId}?token=${this.token}`);
+    this.socket = new WebSocket(
+      `${baseUrl}/ws/${this.myServerId}?token=${this.token}`,
+    );
 
     this.socket.onopen = () => console.log("🔌 Connected");
 
@@ -305,7 +445,8 @@ export class MainScene extends Scene {
       }
     };
 
-    this.socket.onerror = (error: Event) => console.error("❌ WebSocket Error:", error);
+    this.socket.onerror = (error: Event) =>
+      console.error("❌ WebSocket Error:", error);
 
     this.socket.onclose = () => {
       console.log("🔌 Disconnected");
@@ -323,7 +464,10 @@ export class MainScene extends Scene {
       case "user_list":
         EventBus.emit(GameEvents.PLAYER_LIST_UPDATE, data.users);
         data.users.forEach((user: any) => {
-          if (user.user_id !== this.myId && !this.otherPlayers.has(user.user_id)) {
+          if (
+            user.user_id !== this.myId &&
+            !this.otherPlayers.has(user.user_id)
+          ) {
             this.spawnRemotePlayer(user.user_id, user.username, user.x, user.y);
           }
         });
@@ -335,13 +479,26 @@ export class MainScene extends Scene {
 
       case "player_move":
         if (data.user_id !== this.myId) {
-          this.updateRemotePlayerPosition(data.user_id, data.x, data.y, data.username || "Player");
+          this.updateRemotePlayerPosition(
+            data.user_id,
+            data.x,
+            data.y,
+            data.username || "Player",
+          );
         }
         break;
 
       case "user_joined":
-        if (data.user_id !== this.myId && !this.otherPlayers.has(data.user_id)) {
-          this.spawnRemotePlayer(data.user_id, data.username || "Player", data.x ?? 15, data.y ?? 15);
+        if (
+          data.user_id !== this.myId &&
+          !this.otherPlayers.has(data.user_id)
+        ) {
+          this.spawnRemotePlayer(
+            data.user_id,
+            data.username || "Player",
+            data.x ?? 15,
+            data.y ?? 15,
+          );
         }
         break;
 
@@ -355,10 +512,15 @@ export class MainScene extends Scene {
     }
   }
 
-  private spawnRemotePlayer(userId: string, username: string, x: number, y: number) {
+  private spawnRemotePlayer(
+    userId: string,
+    username: string,
+    x: number,
+    y: number,
+  ) {
     if (this.otherPlayers.has(userId)) return;
 
-    const sprite = this.add.sprite(0, 0, "player", 22);
+    const sprite = this.add.sprite(0, 0, "player", 1);
     sprite.setScale(0.5);
     sprite.setDepth(100);
     sprite.setOrigin(0.5, 1);
@@ -384,9 +546,14 @@ export class MainScene extends Scene {
     this.otherPlayers.set(userId, { sprite, text });
   }
 
-  private updateRemotePlayerPosition(userId: string, x: number, y: number, username?: string) {
+  private updateRemotePlayerPosition(
+    userId: string,
+    x: number,
+    y: number,
+    username?: string,
+  ) {
     const player = this.otherPlayers.get(userId);
-    
+
     if (!player) {
       this.spawnRemotePlayer(userId, username || "Player", x, y);
       return;
@@ -421,7 +588,7 @@ export class MainScene extends Scene {
     if (this.gridEngine.hasCharacter(userId)) {
       this.gridEngine.removeCharacter(userId);
     }
-    
+
     player.sprite.destroy();
     player.text.destroy();
     this.otherPlayers.delete(userId);
