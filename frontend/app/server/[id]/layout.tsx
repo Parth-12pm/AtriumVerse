@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import ServerHUD from "../../../components/game/ServerHUD";
 
 export const metadata: Metadata = {
   title: "Server | AtriumVerse",
@@ -11,11 +10,5 @@ export default function ServerLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <ServerHUD>{children}</ServerHUD>;
+  return <>{children}</>;
 }
-
-
-
-
-
-

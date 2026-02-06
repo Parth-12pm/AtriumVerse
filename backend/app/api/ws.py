@@ -8,7 +8,9 @@ from sqlalchemy import select
 from app.models.server import Server
 from app.models.server_member import ServerMember
 from app.models.user import User
+from app.models.direct_message import DirectMessage
 from app.core.database import get_db, SessionLocal
+from uuid import UUID
 import time, asyncio, random, datetime
 from jose import jwt, JWTError
 from app.core.security import SECRET_KEY, ALGORITHM
@@ -270,6 +272,40 @@ async def websocket_endpoint(
                         # Send to all zone members
                         for member_id in members:
                             await manager.send_personal_message(payload, server_id, member_id)
+            
+            # NEW: Persistent Direct Message events
+            elif data.get("type") == "dm_sent":
+                # Real-time notification when a DM is sent (already saved in DB via REST)
+                target_id = data.get("target_id")
+                message_data = data.get("message")
+                
+                if target_id and message_data:
+                    await manager.send_personal_message({
+                        "type": "dm_received",
+                        "message": message_data
+                    }, server_id, target_id)
+            
+            elif data.get("type") == "dm_edited":
+                # Real-time notification when a DM is edited
+                target_id = data.get("target_id")
+                message_data = data.get("message")
+                
+                if target_id and message_data:
+                    await manager.send_personal_message({
+                        "type": "dm_updated",
+                        "message": message_data
+                    }, server_id, target_id)
+            
+            elif data.get("type") == "dm_deleted":
+                # Real-time notification when a DM is deleted
+                target_id = data.get("target_id")
+                message_id = data.get("message_id")
+                
+                if target_id and message_id:
+                    await manager.send_personal_message({
+                        "type": "dm_deleted",
+                        "message_id": message_id
+                    }, server_id, target_id)
 
     except WebSocketDisconnect:
         save_task.cancel()

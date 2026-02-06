@@ -1,28 +1,73 @@
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export async function fetchAPI(endpoint: string, options: RequestInit = {}) {
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
-    const token = localStorage.getItem("token");
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options.headers as Record<string, string>),
+  };
 
-    const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        ...(options.headers as Record<string, string>),
-    };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
 
-    if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-    }
+  const response = await fetch(`${BASE_URL}${endpoint}`, {
+    ...options,
+    headers,
+  });
 
-    
-    const response = await fetch(`${BASE_URL}${endpoint}`,{
-        ...options,
-        headers,
-    });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || "API request failed");
+  }
 
-    if(!response.ok){
-        const erroData = await response.json().catch(()=> ({}));
-        throw new Error(erroData.detail || "API request failed");
-    }
-
-    return response.json();
+  return response.json();
 }
+
+// Axios-like wrapper around fetchAPI
+export const apiClient = {
+  get: async (url: string, options?: { params?: Record<string, any> }) => {
+    let finalUrl = url;
+    if (options?.params) {
+      const searchParams = new URLSearchParams();
+      Object.entries(options.params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          searchParams.append(key, String(value));
+        }
+      });
+      const queryString = searchParams.toString();
+      if (queryString) {
+        finalUrl = `${url}?${queryString}`;
+      }
+    }
+    const data = await fetchAPI(finalUrl, { method: "GET" });
+    return { data };
+  },
+  post: async (url: string, body: any) => {
+    const data = await fetchAPI(url, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    return { data };
+  },
+  put: async (url: string, body: any) => {
+    const data = await fetchAPI(url, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+    return { data };
+  },
+  patch: async (url: string, body: any) => {
+    const data = await fetchAPI(url, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+    return { data };
+  },
+  delete: async (url: string) => {
+    const data = await fetchAPI(url, { method: "DELETE" });
+    return { data };
+  },
+};

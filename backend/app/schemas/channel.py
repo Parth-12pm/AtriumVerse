@@ -29,3 +29,4 @@ class ChannelUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     position: Optional[int] = None
+    type: Optional[str] = None

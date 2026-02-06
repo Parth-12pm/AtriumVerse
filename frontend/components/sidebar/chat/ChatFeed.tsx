@@ -1,0 +1,363 @@
+"use client";
+
+import React, { useState, useEffect, useRef } from "react";
+import { Send, Edit2, Trash2, User, Hash } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { messagesAPI, directMessagesAPI } from "@/lib/services/api.service";
+import { toast } from "sonner";
+import { format } from "date-fns";
+import EventBus from "@/game/EventBus";
+import { getCommunicationManager } from "@/game/managers/CommunicationManager";
+import type { Message, DirectMessage } from "@/types/api.types";
+
+// Union type for messages that can be either channel messages or DMs
+type ChatMessage = Message | DirectMessage;
+
+interface ChatFeedProps {
+  mode: "channel" | "dm";
+  channelId?: string;
+  dmUserId?: string;
+  serverId: string;
+}
+
+export default function ChatFeed({
+  mode,
+  channelId,
+  dmUserId,
+  serverId,
+}: ChatFeedProps) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [newMessage, setNewMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState("");
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const currentUserId =
+    typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
+
+  // Load messages when channel/DM changes
+  useEffect(() => {
+    if (mode === "channel" && channelId) {
+      loadChannelMessages();
+    } else if (mode === "dm" && dmUserId) {
+      loadDMMessages();
+    }
+  }, [mode, channelId, dmUserId]);
+
+  // Auto-scroll to bottom on new messages
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  // Listen for real-time messages
+  useEffect(() => {
+    if (mode === "channel") {
+      EventBus.on("chat:channel_message", handleChannelMessageReceived);
+      return () => {
+        EventBus.off("chat:channel_message", handleChannelMessageReceived);
+      };
+    } else if (mode === "dm") {
+      EventBus.on("dm:received", handleDMReceived);
+      EventBus.on("dm:updated", handleDMUpdated);
+      EventBus.on("dm:deleted", handleDMDeleted);
+      return () => {
+        EventBus.off("dm:received", handleDMReceived);
+        EventBus.off("dm:updated", handleDMUpdated);
+        EventBus.off("dm:deleted", handleDMDeleted);
+      };
+    }
+  }, [mode, channelId, dmUserId]);
+
+  const handleChannelMessageReceived = (msg: any) => {
+    if (msg.channel_id === channelId) {
+      setMessages((prev) => [...prev, msg]);
+    }
+  };
+
+  const handleDMReceived = (msg: ChatMessage) => {
+    // Only add if it's for the current conversation
+    if (
+      "sender_id" in msg &&
+      (msg.sender_id === dmUserId || msg.receiver_id === dmUserId)
+    ) {
+      setMessages((prev) => [...prev, msg]);
+    }
+  };
+
+  const handleDMUpdated = (msg: ChatMessage) => {
+    setMessages((prev) => prev.map((m) => (m.id === msg.id ? msg : m)));
+  };
+
+  const handleDMDeleted = (data: { message_id: string }) => {
+    setMessages((prev) => prev.filter((m) => m.id !== data.message_id));
+  };
+
+  const loadChannelMessages = async () => {
+    try {
+      const response = await messagesAPI.list(channelId!);
+      setMessages(response.data.reverse()); // Oldest first
+    } catch (error) {
+      console.error("Failed to load channel messages:", error);
+      toast.error("Failed to load messages");
+    }
+  };
+
+  const loadDMMessages = async () => {
+    try {
+      const response = await directMessagesAPI.getMessages(dmUserId!);
+      setMessages(response.data.reverse()); // Oldest first
+    } catch (error) {
+      console.error("Failed to load DM messages:", error);
+      toast.error("Failed to load messages");
+    }
+  };
+
+  const sendMessage = async () => {
+    if (!newMessage.trim()) return;
+
+    setLoading(true);
+    try {
+      const commManager = getCommunicationManager();
+
+      if (mode === "channel" && channelId && commManager) {
+        await commManager.sendChannelMessage(channelId, newMessage.trim());
+      } else if (mode === "dm" && dmUserId && commManager) {
+        const msg = await commManager.sendDirectMessage(
+          dmUserId,
+          newMessage.trim(),
+        );
+        setMessages((prev) => [...prev, msg]);
+      }
+
+      setNewMessage("");
+    } catch (error) {
+      toast.error("Failed to send message");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const startEdit = (msg: ChatMessage) => {
+    setEditingId(msg.id);
+    setEditContent(msg.content);
+  };
+
+  const saveEdit = async (messageId: string) => {
+    if (!editContent.trim()) return;
+
+    try {
+      if (mode === "channel") {
+        const response = await messagesAPI.edit(messageId, {
+          content: editContent.trim(),
+        });
+        setMessages((prev) =>
+          prev.map((m) => (m.id === messageId ? response.data : m)),
+        );
+      } else if (mode === "dm" && dmUserId) {
+        const response = await directMessagesAPI.edit(messageId, {
+          content: editContent.trim(),
+        });
+        setMessages((prev) =>
+          prev.map((m) => (m.id === messageId ? response.data : m)),
+        );
+      }
+
+      setEditingId(null);
+      toast.success("Message updated");
+    } catch (error) {
+      toast.error("Failed to update message");
+    }
+  };
+
+  const deleteMessage = async (messageId: string) => {
+    try {
+      if (mode === "channel") {
+        await messagesAPI.delete(messageId);
+        setMessages((prev) => prev.filter((m) => m.id !== messageId));
+      } else if (mode === "dm") {
+        await directMessagesAPI.delete(messageId);
+        setMessages((prev) => prev.filter((m) => m.id !== messageId));
+      }
+
+      toast.success("Message deleted");
+    } catch (error) {
+      toast.error("Failed to delete message");
+    }
+  };
+
+  const formatTime = (timestamp: string) => {
+    try {
+      return format(new Date(timestamp), "h:mm a");
+    } catch {
+      return "";
+    }
+  };
+
+  const getMessageUsername = (msg: ChatMessage) => {
+    // Type guard: Message has username and channel_id, DirectMessage has sender_username
+    if ("channel_id" in msg) {
+      // This is a Message (channel message)
+      return msg.username || "Unknown";
+    }
+    // This is a DirectMessage
+    return msg.sender_username || "Unknown";
+  };
+
+  const getMessageUserId = (msg: ChatMessage) => {
+    // Type guard: DirectMessage has sender_id, Message has user_id
+    if ("sender_id" in msg) {
+      return msg.sender_id;
+    }
+    return msg.user_id;
+  };
+
+  return (
+    <div className="flex-1 flex flex-col h-full bg-white">
+      {/* Messages Area */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+        {messages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-center">
+            <div className="w-16 h-16 bg-gray-100 rounded-lg border-3 border-black flex items-center justify-center mb-4">
+              {mode === "channel" ? (
+                <Hash className="w-8 h-8 text-gray-500" />
+              ) : (
+                <User className="w-8 h-8 text-gray-500" />
+              )}
+            </div>
+            <h3 className="text-xl font-black mb-2">
+              {mode === "channel"
+                ? "Start the conversation!"
+                : "No messages yet"}
+            </h3>
+            <p className="text-gray-500 text-sm">
+              {mode === "channel"
+                ? "Be the first to send a message"
+                : "Send a message to start chatting"}
+            </p>
+          </div>
+        ) : (
+          messages.map((msg) => {
+            const username = getMessageUsername(msg);
+            const userId = getMessageUserId(msg);
+
+            return (
+              <div
+                key={msg.id}
+                className="flex gap-3 hover:bg-gray-50 -mx-2 px-2 py-2 rounded-lg group"
+              >
+                {/* Avatar */}
+                <Avatar className="w-10 h-10">
+                  <AvatarFallback className="bg-gradient-to-br from-purple-400 to-pink-400 text-white font-black">
+                    {username.slice(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+
+                <div className="flex-1 min-w-0">
+                  {/* Message Header */}
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-black text-sm">{username}</span>
+                    <span className="text-xs text-gray-500">
+                      {formatTime(msg.created_at)}
+                    </span>
+                    {msg.edited_at && (
+                      <span className="text-xs text-gray-500 italic">
+                        (edited)
+                      </span>
+                    )}
+
+                    {/* Actions (only for own messages) */}
+                    {userId === currentUserId && (
+                      <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                        <Button
+                          onClick={() => startEdit(msg)}
+                          variant="neutral"
+                          size="icon"
+                          className="w-6 h-6 p-0"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </Button>
+                        <Button
+                          onClick={() => deleteMessage(msg.id)}
+                          variant="neutral"
+                          size="icon"
+                          className="w-6 h-6 p-0 hover:bg-red-100"
+                        >
+                          <Trash2 className="w-3 h-3 text-red-600" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Message Content */}
+                  {editingId === msg.id ? (
+                    <div className="flex gap-2 mt-2">
+                      <Input
+                        value={editContent}
+                        onChange={(e) => setEditContent(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveEdit(msg.id);
+                          if (e.key === "Escape") setEditingId(null);
+                        }}
+                        className="flex-1"
+                      />
+                      <Button
+                        onClick={() => saveEdit(msg.id)}
+                        variant="default"
+                        className="bg-blue-500 text-white hover:bg-blue-600"
+                        size="sm"
+                      >
+                        Save
+                      </Button>
+                      <Button
+                        onClick={() => setEditingId(null)}
+                        variant="neutral"
+                        size="sm"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-sm break-words">{msg.content}</p>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Message Input */}
+      <div className="p-4 border-t-4 border-black bg-gray-50">
+        <div className="flex gap-2">
+          <Input
+            type="text"
+            placeholder={
+              mode === "channel" ? "Message channel..." : "Send a message..."
+            }
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
+            disabled={loading}
+            className="flex-1"
+          />
+          <Button
+            onClick={sendMessage}
+            disabled={loading || !newMessage.trim()}
+            variant="default"
+            className="bg-blue-500 text-white hover:bg-blue-600"
+            size="icon"
+          >
+            <Send className="w-5 h-5" />
+          </Button>
+        </div>
+        <p className="text-xs text-gray-500 mt-2">
+          Press Enter to send • Shift+Enter for new line
+        </p>
+      </div>
+    </div>
+  );
+}

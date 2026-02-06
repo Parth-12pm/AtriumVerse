@@ -5,7 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import EventBus, { GameEvents } from "@/game/EventBus";
 import { ChannelSidebar } from "@/components/game/ChannelSidebar";
 import { Button } from "@/components/ui/button";
-import { Users, LogOut } from "lucide-react";
+import { Users, LogOut, Power } from "lucide-react";
 import {
   SidebarProvider,
   SidebarInset,

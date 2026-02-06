@@ -3,6 +3,9 @@
 import dynamic from "next/dynamic";
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
+import BaseSidebar from "@/components/sidebar/BaseSidebar";
+import ProximityChat from "@/components/game/ProximityChat";
+import ServerDock from "@/components/navigation/ServerDock";
 
 const GameWrapper = dynamic(() => import("@/components/game/GameWrapperNew"), {
   ssr: false,
@@ -62,13 +65,20 @@ export default function ServerPage({ params }: ServerPageProps) {
   }
 
   return (
-    <div className="h-full w-full relative">
-      <GameWrapper
-        userId={userId}
-        username={username}
-        serverId={serverId}
-        token={token}
-      />
+    <div className="relative w-full h-screen">
+      <ServerDock />
+      <div className="ml-16">
+        <BaseSidebar serverId={serverId} />
+        <div className="ml-16 w-[calc(100%-8rem)] h-full">
+          <GameWrapper
+            userId={userId}
+            username={username}
+            serverId={serverId}
+            token={token}
+          />
+        </div>
+      </div>
+      <ProximityChat />
     </div>
   );
 }
