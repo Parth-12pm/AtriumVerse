@@ -275,17 +275,6 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
 
           {/* Settings Content */}
           <div className="flex-1 p-4 overflow-auto flex flex-col gap-4">
-            {/* Server Info */}
-            <div className="bg-gray-100 border-3 border-black rounded-lg p-4">
-              <p className="font-bold mb-2">📋 Server Info</p>
-              <p className="text-sm text-gray-700 mb-2">
-                Server ID:{" "}
-                <code className="bg-white px-2 py-1 rounded text-xs">
-                  {serverId.slice(0, 8)}...
-                </code>
-              </p>
-            </div>
-
             {/* Leave Server (All Users) */}
             <div className="bg-orange-50 border-3 border-orange-500 rounded-lg p-4">
               <h3 className="font-black text-orange-700 mb-2 flex items-center gap-2">
@@ -299,7 +288,6 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
               <Button
                 onClick={() => {
                   if (confirm("Are you sure you want to leave this server?")) {
-                    // TODO: Call API to leave server
                     router.push("/dashboard");
                   }
                 }}

@@ -72,7 +72,9 @@ export default function GameWrapper({
       console.log("[GameWrapper] Game ready");
 
       setTimeout(() => {
-        const canvas = document.querySelector("#game-container canvas") as HTMLCanvasElement;
+        const canvas = document.querySelector(
+          "#game-container canvas",
+        ) as HTMLCanvasElement;
         if (canvas) {
           canvas.tabIndex = 1;
           canvas.focus();

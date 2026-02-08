@@ -30,6 +30,17 @@ export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
   const [dateString, setDateString] = useState("");
 
+  const loadServers = async () => {
+    try {
+      const data = await fetchAPI("/servers/");
+      if (Array.isArray(data)) {
+        setServers(data);
+      }
+    } catch {
+      toast.error("Failed to load servers");
+    }
+  };
+
   useEffect(() => {
     setMounted(true);
     setUsername(localStorage.getItem("username") || "User");
@@ -45,17 +56,6 @@ export default function DashboardPage() {
     );
     loadServers();
   }, []);
-
-  const loadServers = async () => {
-    try {
-      const data = await fetchAPI("/servers/");
-      if (Array.isArray(data)) {
-        setServers(data);
-      }
-    } catch (error) {
-      toast.error("Failed to load servers");
-    }
-  };
 
   const handleJoin = async (e: React.MouseEvent, server: Server) => {
     e.stopPropagation();
@@ -74,7 +74,7 @@ export default function DashboardPage() {
       } else {
         router.push(`/server/${server.id}`);
       }
-    } catch (err) {
+    } catch {
       toast.error("Failed to join server");
     }
   };
