@@ -192,8 +192,16 @@ async def list_members(
     if not server:
         raise HTTPException(status_code=404, detail="Server not found")
     
-    if server.owner_id != current_user.id:
-        raise HTTPException(403, detail="Only owner can view member list")
+    # Allow any member to view member list (not just owner)
+    member_result = await db.execute(
+        select(ServerMember).where(
+            ServerMember.server_id == server_id,
+            ServerMember.user_id == current_user.id,
+            ServerMember.status == MemberStatus.ACCEPTED
+        )
+    )
+    if not member_result.scalars().first():
+        raise HTTPException(403, detail="Only members can view member list")
 
     result = await db.execute(
         select(ServerMember)

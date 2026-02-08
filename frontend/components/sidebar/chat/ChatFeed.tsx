@@ -53,12 +53,43 @@ export default function ChatFeed({
     }
   }, [messages]);
 
-  // Listen for real-time messages
+  // Listen for real-time messages from WebSocket
   useEffect(() => {
+    const handleChannelMessage = (msg: any) => {
+      // Only add if for this channel and not from current user (already added locally)
+      if (msg.channel_id === channelId && msg.user_id !== currentUserId) {
+        setMessages((prev) => {
+          // Prevent duplicates
+          if (prev.some((m) => m.id === msg.id)) return prev;
+          return [...prev, msg];
+        });
+      }
+    };
+
+    const handleDMReceived = (msg: ChatMessage) => {
+      if (
+        "sender_id" in msg &&
+        (msg.sender_id === dmUserId || msg.receiver_id === dmUserId)
+      ) {
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === msg.id)) return prev;
+          return [...prev, msg];
+        });
+      }
+    };
+
+    const handleDMUpdated = (msg: ChatMessage) => {
+      setMessages((prev) => prev.map((m) => (m.id === msg.id ? msg : m)));
+    };
+
+    const handleDMDeleted = (data: { message_id: string }) => {
+      setMessages((prev) => prev.filter((m) => m.id !== data.message_id));
+    };
+
     if (mode === "channel") {
-      EventBus.on("chat:channel_message", handleChannelMessageReceived);
+      EventBus.on("chat:channel_message", handleChannelMessage);
       return () => {
-        EventBus.off("chat:channel_message", handleChannelMessageReceived);
+        EventBus.off("chat:channel_message", handleChannelMessage);
       };
     } else if (mode === "dm") {
       EventBus.on("dm:received", handleDMReceived);
@@ -70,13 +101,7 @@ export default function ChatFeed({
         EventBus.off("dm:deleted", handleDMDeleted);
       };
     }
-  }, [mode, channelId, dmUserId]);
-
-  const handleChannelMessageReceived = (msg: any) => {
-    if (msg.channel_id === channelId) {
-      setMessages((prev) => [...prev, msg]);
-    }
-  };
+  }, [mode, channelId, dmUserId, currentUserId]);
 
   const handleDMReceived = (msg: ChatMessage) => {
     // Only add if it's for the current conversation
@@ -121,20 +146,36 @@ export default function ChatFeed({
 
     setLoading(true);
     try {
-      const commManager = getCommunicationManager();
+      if (mode === "channel" && channelId) {
+        // Use messagesAPI directly for reliable REST calls
+        const response = await messagesAPI.send(channelId, {
+          content: newMessage.trim(),
+        });
+        // Add the new message to the list locally
+        setMessages((prev) => [...prev, response.data]);
 
-      if (mode === "channel" && channelId && commManager) {
-        await commManager.sendChannelMessage(channelId, newMessage.trim());
-      } else if (mode === "dm" && dmUserId && commManager) {
-        const msg = await commManager.sendDirectMessage(
-          dmUserId,
-          newMessage.trim(),
-        );
-        setMessages((prev) => [...prev, msg]);
+        // Broadcast via WebSocket so other users receive it in real-time
+        EventBus.emit("channel:message_sent", {
+          ...response.data,
+          channel_id: channelId,
+        });
+      } else if (mode === "dm" && dmUserId) {
+        const response = await directMessagesAPI.send({
+          receiver_id: dmUserId,
+          content: newMessage.trim(),
+        });
+        setMessages((prev) => [...prev, response.data]);
+
+        // Send DM notification via WebSocket
+        EventBus.emit("dm:message_sent", {
+          target_id: dmUserId,
+          message: response.data,
+        });
       }
 
       setNewMessage("");
     } catch (error) {
+      console.error("Failed to send message:", error);
       toast.error("Failed to send message");
     } finally {
       setLoading(false);
@@ -299,6 +340,7 @@ export default function ChatFeed({
                         value={editContent}
                         onChange={(e) => setEditContent(e.target.value)}
                         onKeyDown={(e) => {
+                          e.stopPropagation(); // Prevent game from capturing input
                           if (e.key === "Enter") saveEdit(msg.id);
                           if (e.key === "Escape") setEditingId(null);
                         }}
@@ -340,7 +382,11 @@ export default function ChatFeed({
             }
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
+            onKeyDown={(e) => {
+              // Stop propagation for ALL keys to prevent game from capturing input
+              e.stopPropagation();
+              if (e.key === "Enter" && !e.shiftKey) sendMessage();
+            }}
             disabled={loading}
             className="flex-1"
           />

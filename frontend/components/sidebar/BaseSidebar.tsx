@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import ChatExpandedView from "@/components/sidebar/chat/ChatExpandedView";
 import PeopleExpandedView from "@/components/sidebar/people/PeopleExpandedView";
 import EventBus, { GameEvents } from "@/game/EventBus";
+import { serversAPI } from "@/lib/services/api.service";
 
 interface BaseSidebarProps {
   serverId: string;
@@ -37,6 +38,20 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
   const [currentZone, setCurrentZone] = useState("Hall");
   const [isServerOwner, setIsServerOwner] = useState(false);
 
+  // Fetch server data to determine ownership
+  useEffect(() => {
+    const checkOwnership = async () => {
+      try {
+        const response = await serversAPI.get(serverId);
+        const userId = localStorage.getItem("user_id");
+        setIsServerOwner(response.data.owner_id === userId);
+      } catch (error) {
+        console.error("Failed to check server ownership:", error);
+      }
+    };
+    checkOwnership();
+  }, [serverId]);
+
   // Listen to zone changes via EventBus
   useEffect(() => {
     const handleZoneEnter = (data: { roomId: string }) => {
@@ -51,6 +66,17 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
       EventBus.off(GameEvents.ROOM_ENTER, handleZoneEnter);
     };
   }, []);
+
+  // Emit ui:focus/ui:blur events for game input control
+  useEffect(() => {
+    if (currentView !== "collapsed") {
+      // Tell game to disable input
+      EventBus.emit("ui:focus");
+    } else {
+      // Tell game to re-enable input
+      EventBus.emit("ui:blur");
+    }
+  }, [currentView]);
 
   const toggleView = (view: SidebarView) => {
     if (currentView === view) {
@@ -170,6 +196,14 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
         <PeopleExpandedView
           serverId={serverId}
           onClose={() => setCurrentView("collapsed")}
+          onStartDM={(userId: string, username: string) => {
+            // Switch to chat view first
+            setCurrentView("chat");
+            // Delay event emission to allow ChatExpandedView to mount and register listener
+            setTimeout(() => {
+              EventBus.emit("dm:start", { userId, username });
+            }, 100);
+          }}
         />
       )}
 
@@ -269,7 +303,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
                 onClick={() => {
                   if (confirm("Are you sure you want to leave this server?")) {
                     // TODO: Call API to leave server
-                    router.push("/servers");
+                    router.push("/dashboard");
                   }
                 }}
                 variant="neutral"
@@ -299,7 +333,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
                       )
                     ) {
                       // TODO: Call serversAPI.delete(serverId)
-                      router.push("/servers");
+                      router.push("/dashboard");
                     }
                   }}
                   className="w-full bg-red-600 hover:bg-red-700 text-white font-bold border-3 border-black"

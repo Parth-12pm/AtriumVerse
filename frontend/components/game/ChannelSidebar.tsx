@@ -82,7 +82,7 @@ export function ChannelSidebar({
 
   const loadChannels = async () => {
     try {
-      const data = await fetchAPI(`/servers/${serverId}/channels`);
+      const data = await fetchAPI(`/channels/${serverId}/channels`);
       setChannels(data);
     } catch (error) {
       console.error("Failed to load channels:", error);
@@ -94,7 +94,7 @@ export function ChannelSidebar({
 
     setLoading(true);
     try {
-      const channel = await fetchAPI(`/servers/${serverId}/channels`, {
+      const channel = await fetchAPI(`/channels/${serverId}/channels`, {
         method: "POST",
         body: JSON.stringify({
           name: newChannelName.trim(),

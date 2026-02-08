@@ -239,6 +239,19 @@ async def websocket_endpoint(
                         "timestamp": datetime.datetime.utcnow().isoformat()
                     }, server_id)
                 
+                # Channel-scoped persistent messages (broadcast to all in server)
+                elif scope == "channel":
+                    channel_id = data.get("channel_id")
+                    message_data = data.get("message_data", {})
+                    
+                    if channel_id and message_data:
+                        # Broadcast to all connected users (they filter by channel_id on frontend)
+                        await manager.broadcast({
+                            "type": "chat_message",
+                            "scope": "channel",
+                            **message_data  # Full message object with id, user_id, content, etc.
+                        }, server_id, websocket)  # Exclude sender
+                
                 elif scope == "direct":
                     target_id = data.get("target")
                     if target_id:

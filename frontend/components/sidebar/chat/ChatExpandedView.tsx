@@ -10,6 +10,7 @@ import {
   directMessagesAPI,
   serversAPI,
 } from "@/lib/services/api.service";
+import EventBus from "@/game/EventBus";
 import type { Channel, Conversation, ChannelCreate } from "@/types/api.types";
 
 interface ChatExpandedViewProps {
@@ -28,6 +29,9 @@ export default function ChatExpandedView({
     null,
   );
   const [selectedDMUserId, setSelectedDMUserId] = useState<string | null>(null);
+  const [selectedDMUsername, setSelectedDMUsername] = useState<string | null>(
+    null,
+  );
   const [channels, setChannels] = useState<Channel[]>([]);
   const [dmConversations, setDMConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,6 +43,43 @@ export default function ChatExpandedView({
     loadChannels();
     loadDMConversations();
   }, [serverId]);
+
+  // Listen for dm:start events from People view
+  useEffect(() => {
+    const handleDMStart = (data: { userId: string; username: string }) => {
+      console.log("dm:start event received:", data);
+      setMode("dm");
+      setSelectedDMUserId(data.userId);
+      setSelectedDMUsername(data.username);
+      setSelectedChannelId(null);
+    };
+
+    EventBus.on("dm:start", handleDMStart);
+    return () => {
+      EventBus.off("dm:start", handleDMStart);
+    };
+  }, []);
+
+  // Refresh DM conversations when a message is sent (for immediate list update)
+  useEffect(() => {
+    const handleDMSent = () => {
+      // Refresh the conversation list to show new/updated conversations
+      loadDMConversations();
+    };
+
+    const handleDMReceived = () => {
+      // Refresh when receiving a DM (for unread counter updates)
+      loadDMConversations();
+    };
+
+    EventBus.on("dm:message_sent", handleDMSent);
+    EventBus.on("dm:received", handleDMReceived);
+
+    return () => {
+      EventBus.off("dm:message_sent", handleDMSent);
+      EventBus.off("dm:received", handleDMReceived);
+    };
+  }, []);
 
   const loadServerData = async () => {
     try {
@@ -52,7 +93,7 @@ export default function ChatExpandedView({
 
   const getUserId = (): string => {
     // Get from localStorage (set during login)
-    return localStorage.getItem("userId") || "";
+    return localStorage.getItem("user_id") || "";
   };
 
   const loadChannels = async () => {
@@ -192,13 +233,17 @@ export default function ChatExpandedView({
                 )}
               </div>
             </>
-          ) : mode === "dm" && selectedDM ? (
+          ) : mode === "dm" && (selectedDM || selectedDMUserId) ? (
             <>
               <div className="w-10 h-10 bg-purple-500 border-3 border-black rounded-full flex items-center justify-center">
                 <User className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h3 className="font-black text-lg">{selectedDM.username}</h3>
+                <h3 className="font-black text-lg">
+                  {selectedDM?.username ||
+                    selectedDMUsername ||
+                    "Direct Message"}
+                </h3>
                 <p className="text-sm text-gray-600">Direct Message</p>
               </div>
             </>

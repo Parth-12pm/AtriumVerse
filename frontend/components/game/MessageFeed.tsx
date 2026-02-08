@@ -32,7 +32,8 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
-  const currentUserId = typeof window !== 'undefined' ? localStorage.getItem("user_id") : null;
+  const currentUserId =
+    typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
 
   useEffect(() => {
     loadMessages();
@@ -47,7 +48,7 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
 
   const loadMessages = async () => {
     try {
-      const data = await fetchAPI(`/channels/${channelId}/messages`);
+      const data = await fetchAPI(`/messages/channels/${channelId}/messages`);
       setMessages(data.reverse()); // Reverse to show oldest first
     } catch (error) {
       console.error("Failed to load messages:", error);
@@ -56,14 +57,17 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
 
   const sendMessage = async () => {
     if (!newMessage.trim()) return;
-    
+
     setLoading(true);
     try {
-      const message = await fetchAPI(`/channels/${channelId}/messages`, {
-        method: "POST",
-        body: JSON.stringify({ content: newMessage.trim() })
-      });
-      
+      const message = await fetchAPI(
+        `/messages/channels/${channelId}/messages`,
+        {
+          method: "POST",
+          body: JSON.stringify({ content: newMessage.trim() }),
+        },
+      );
+
       setMessages([...messages, message]);
       setNewMessage("");
     } catch (error) {
@@ -80,14 +84,14 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
 
   const saveEdit = async (messageId: string) => {
     if (!editContent.trim()) return;
-    
+
     try {
       const updated = await fetchAPI(`/messages/${messageId}`, {
         method: "PATCH",
-        body: JSON.stringify({ content: editContent.trim() })
+        body: JSON.stringify({ content: editContent.trim() }),
       });
-      
-      setMessages(messages.map(m => m.id === messageId ? updated : m));
+
+      setMessages(messages.map((m) => (m.id === messageId ? updated : m)));
       setEditingId(null);
       toast.success("Message updated");
     } catch (error) {
@@ -98,7 +102,7 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
   const deleteMessage = async (messageId: string) => {
     try {
       await fetchAPI(`/messages/${messageId}`, { method: "DELETE" });
-      setMessages(messages.filter(m => m.id !== messageId));
+      setMessages(messages.filter((m) => m.id !== messageId));
       toast.success("Message deleted");
     } catch (error) {
       toast.error("Failed to delete message");
@@ -122,10 +126,7 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
       </div>
 
       {/* Messages Area */}
-      <div 
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto p-4 space-y-4"
-      >
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <div className="w-16 h-16 bg-muted rounded-lg border-4 border-border flex items-center justify-center mb-4">
@@ -140,8 +141,8 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
           </div>
         ) : (
           messages.map((msg) => (
-            <div 
-              key={msg.id} 
+            <div
+              key={msg.id}
               className="flex gap-3 hover:bg-accent/5 -mx-2 px-2 py-1 rounded-lg group"
             >
               <Avatar className="h-10 w-10 border-2 border-border shrink-0">
@@ -149,7 +150,7 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
                   {msg.username.slice(0, 2).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
-              
+
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="font-black text-sm">{msg.username}</span>
@@ -161,7 +162,7 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
                       (edited)
                     </span>
                   )}
-                  
+
                   {/* Actions (only for own messages) */}
                   {msg.user_id === currentUserId && (
                     <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
@@ -184,7 +185,7 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
                     </div>
                   )}
                 </div>
-                
+
                 {editingId === msg.id ? (
                   <div className="flex gap-2">
                     <Input

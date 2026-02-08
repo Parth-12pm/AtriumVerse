@@ -32,6 +32,9 @@ export class MainScene extends Scene {
   private currentZone: string | null = null;
   private zones: Phaser.Types.Tilemaps.TiledObject[] = [];
 
+  // UI input control - disable game input when UI is focused
+  private inputEnabled: boolean = true;
+
   constructor() {
     super({ key: "MainScene" });
   }
@@ -304,11 +307,112 @@ export class MainScene extends Scene {
       }
     });
 
+    // Forward channel messages to WebSocket for real-time broadcast
+    EventBus.on("channel:message_sent", (msg: any) => {
+      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+        this.socket.send(
+          JSON.stringify({
+            type: "chat_message",
+            scope: "channel",
+            channel_id: msg.channel_id,
+            message: msg.content,
+            message_data: msg, // Full message object for recipients
+          }),
+        );
+      }
+    });
+
+    // Forward DM notifications to WebSocket
+    EventBus.on("dm:message_sent", (data: any) => {
+      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+        this.socket.send(
+          JSON.stringify({
+            type: "dm_sent",
+            target_id: data.target_id,
+            message: data.message,
+          }),
+        );
+      }
+    });
+
+    // Listen for UI focus events to disable game input
+    EventBus.on("ui:focus", () => {
+      this.inputEnabled = false;
+      // Disable keyboard capture so WASD can be typed in inputs
+      if (this.input.keyboard) {
+        this.input.keyboard.enabled = false;
+        // Reset all key states to prevent stuck movement
+        this.input.keyboard.resetKeys();
+        // Also remove key captures
+        this.input.keyboard.removeAllKeys(true);
+      }
+    });
+    EventBus.on("ui:blur", () => {
+      this.inputEnabled = true;
+      // Re-enable keyboard capture
+      if (this.input.keyboard) {
+        this.input.keyboard.enabled = true;
+        // Recreate WASD keys
+        this.wasd = {
+          up: this.input.keyboard.addKey("W"),
+          down: this.input.keyboard.addKey("S"),
+          left: this.input.keyboard.addKey("A"),
+          right: this.input.keyboard.addKey("D"),
+        };
+      }
+    });
+
+    // Listen for user list requests from UI components
+    EventBus.on(GameEvents.REQUEST_USER_LIST, () => {
+      // Immediately emit cached user list from local state
+      const cachedUsers: any[] = [];
+
+      // Add current user
+      if (this.myId && this.myUsername) {
+        const heroPos = this.gridEngine?.hasCharacter("hero")
+          ? this.gridEngine.getPosition("hero")
+          : { x: 15, y: 15 };
+        cachedUsers.push({
+          user_id: this.myId,
+          username: this.myUsername,
+          x: heroPos.x,
+          y: heroPos.y,
+        });
+      }
+
+      // Add other players from local cache
+      this.otherPlayers.forEach((player, oderId) => {
+        const charId = `player_${oderId}`;
+        if (this.gridEngine?.hasCharacter(charId)) {
+          const pos = this.gridEngine.getPosition(charId);
+          cachedUsers.push({
+            user_id: oderId,
+            username: player.text.text,
+            x: pos.x,
+            y: pos.y,
+          });
+        }
+      });
+
+      // Emit immediately with cached data
+      if (cachedUsers.length > 0) {
+        EventBus.emit(GameEvents.PLAYER_LIST_UPDATE, cachedUsers);
+      }
+
+      // Also request fresh data from server
+      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+        this.socket.send(JSON.stringify({ type: "request_users" }));
+      }
+    });
+
     this.initWebSocket();
   }
 
   update() {
     if (!this.cursors || !this.wasd) return;
+
+    // Skip input processing when UI is focused
+    if (!this.inputEnabled) return;
 
     const leftPressed = this.cursors.left.isDown || this.wasd.left.isDown;
     const rightPressed = this.cursors.right.isDown || this.wasd.right.isDown;
@@ -507,7 +611,25 @@ export class MainScene extends Scene {
         break;
 
       case "chat_message":
+        // Emit general chat message event
         EventBus.emit(GameEvents.CHAT_MESSAGE, data);
+
+        // Also emit specific events for ChatFeed
+        if (data.scope === "channel") {
+          EventBus.emit("chat:channel_message", data);
+        }
+        break;
+
+      case "dm_received":
+        EventBus.emit("dm:received", data.message);
+        break;
+
+      case "dm_updated":
+        EventBus.emit("dm:updated", data.message);
+        break;
+
+      case "dm_deleted":
+        EventBus.emit("dm:deleted", { message_id: data.message_id });
         break;
     }
   }
@@ -596,6 +718,11 @@ export class MainScene extends Scene {
 
   destroy() {
     EventBus.off(GameEvents.SEND_CHAT_MESSAGE);
+    EventBus.off(GameEvents.REQUEST_USER_LIST);
+    EventBus.off("channel:message_sent");
+    EventBus.off("dm:message_sent");
+    EventBus.off("ui:focus");
+    EventBus.off("ui:blur");
     if (this.socket) this.socket.close();
   }
 }

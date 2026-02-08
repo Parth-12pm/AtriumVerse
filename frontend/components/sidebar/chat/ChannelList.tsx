@@ -105,10 +105,18 @@ export default function ChannelList({
               </p>
             ) : (
               channels.map((channel) => (
-                <button
+                <div
                   key={channel.id}
                   onClick={() => onChannelSelect(channel.id)}
-                  className={`group w-full px-4 py-2 flex items-center gap-3 hover:bg-gray-100 transition-all ${
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onChannelSelect(channel.id);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  className={`group w-full px-4 py-2 flex items-center gap-3 hover:bg-gray-100 transition-all cursor-pointer ${
                     selectedChannelId === channel.id
                       ? "bg-blue-100 border-l-4 border-blue-500 font-bold"
                       : ""
@@ -129,14 +137,16 @@ export default function ChannelList({
                     <p className="font-bold text-sm">{channel.name}</p>
                   </div>
                   {isServerOwner && (
-                    <ChannelDropdown
-                      channelId={channel.id}
-                      channelName={channel.name}
-                      onEdit={() => setEditingChannel(channel)}
-                      onDelete={onDeleteChannel}
-                    />
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <ChannelDropdown
+                        channelId={channel.id}
+                        channelName={channel.name}
+                        onEdit={() => setEditingChannel(channel)}
+                        onDelete={onDeleteChannel}
+                      />
+                    </div>
                   )}
-                </button>
+                </div>
               ))
             )}
           </div>

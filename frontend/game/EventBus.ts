@@ -16,6 +16,7 @@ export enum GameEvents {
   PLAYER_LEFT = "player-left",
   PLAYER_LIST_UPDATE = "player-list-update",
   REMOTE_PLAYER_MOVED = "remote-player-moved",
+  REQUEST_USER_LIST = "request-user-list",
 
   // Chat Events
   CHAT_MESSAGE = "chat-message",

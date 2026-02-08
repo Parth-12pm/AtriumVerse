@@ -76,6 +76,7 @@ export default function CreateChannelDialog({
                 placeholder="general"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => e.stopPropagation()}
                 required
               />
             </div>

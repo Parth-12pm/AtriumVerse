@@ -11,6 +11,7 @@ import type { ServerMember } from "@/types/api.types";
 interface PeopleExpandedViewProps {
   serverId: string;
   onClose: () => void;
+  onStartDM?: (userId: string, username: string) => void;
 }
 
 interface OnlineUser {
@@ -24,6 +25,7 @@ interface OnlineUser {
 export default function PeopleExpandedView({
   serverId,
   onClose,
+  onStartDM,
 }: PeopleExpandedViewProps) {
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
   const [serverMembers, setServerMembers] = useState<ServerMember[]>([]);
@@ -73,6 +75,9 @@ export default function PeopleExpandedView({
     EventBus.on(GameEvents.PLAYER_LIST_UPDATE, handleUserListUpdate);
     EventBus.on(GameEvents.REMOTE_PLAYER_MOVED, handleRemoteMove);
 
+    // Request current user list when component mounts
+    EventBus.emit(GameEvents.REQUEST_USER_LIST);
+
     return () => {
       EventBus.off(GameEvents.PLAYER_LIST_UPDATE, handleUserListUpdate);
       EventBus.off(GameEvents.REMOTE_PLAYER_MOVED, handleRemoteMove);
@@ -97,36 +102,62 @@ export default function PeopleExpandedView({
       {/* User List */}
       <div className="flex-1 overflow-y-auto p-4">
         <div className="space-y-2">
-          {onlineUsers.map((user) => (
-            <div
-              key={user.id}
-              className="flex items-center gap-3 p-3 bg-gray-50 border-2 border-black rounded-lg hover:bg-gray-100 transition-colors"
-            >
-              <Avatar className="w-10 h-10">
-                <AvatarFallback className="bg-gradient-to-br from-purple-400 to-pink-400 text-white font-black">
-                  {user.username.slice(0, 2).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1 min-w-0">
-                <p className="font-black text-sm truncate">{user.username}</p>
-                <div className="flex items-center gap-1 text-xs text-gray-500">
-                  <MapPin className="w-3 h-3" />
-                  <span>
-                    ({user.x}, {user.y})
-                  </span>
-                </div>
-              </div>
+          {onlineUsers.map((user) => {
+            const currentUserId = localStorage.getItem("user_id");
+            const isCurrentUser = user.id === currentUserId;
+
+            return (
               <div
-                className={`w-3 h-3 rounded-full border-2 border-black ${
-                  user.status === "online"
-                    ? "bg-green-500"
-                    : user.status === "away"
-                      ? "bg-yellow-500"
-                      : "bg-red-500"
+                key={user.id}
+                className={`flex items-center gap-3 p-3 bg-gray-50 border-2 border-black rounded-lg transition-colors ${
+                  isCurrentUser ? "" : "hover:bg-gray-100 cursor-pointer"
                 }`}
-              />
-            </div>
-          ))}
+                onClick={() => {
+                  if (!isCurrentUser) {
+                    // Use callback if provided, otherwise emit event
+                    if (onStartDM) {
+                      onStartDM(user.id, user.username);
+                    } else {
+                      EventBus.emit("dm:start", {
+                        userId: user.id,
+                        username: user.username,
+                      });
+                      onClose();
+                    }
+                  }
+                }}
+              >
+                <Avatar className="w-10 h-10">
+                  <AvatarFallback className="bg-gradient-to-br from-purple-400 to-pink-400 text-white font-black">
+                    {user.username.slice(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <p className="font-black text-sm truncate">
+                    {user.username}{" "}
+                    {isCurrentUser && (
+                      <span className="text-gray-500">(you)</span>
+                    )}
+                  </p>
+                  <div className="flex items-center gap-1 text-xs text-gray-500">
+                    <MapPin className="w-3 h-3" />
+                    <span>
+                      ({user.x}, {user.y})
+                    </span>
+                  </div>
+                </div>
+                <div
+                  className={`w-3 h-3 rounded-full border-2 border-black ${
+                    user.status === "online"
+                      ? "bg-green-500"
+                      : user.status === "away"
+                        ? "bg-yellow-500"
+                        : "bg-red-500"
+                  }`}
+                />
+              </div>
+            );
+          })}
           {onlineUsers.length === 0 && (
             <div className="text-center py-12">
               <Users className="w-12 h-12 mx-auto mb-3 text-gray-400" />

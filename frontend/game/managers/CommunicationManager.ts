@@ -221,7 +221,7 @@ export class CommunicationManager {
     try {
       // Send via REST API to save in DB
       const response = await apiClient.post(
-        `/api/channels/${channelId}/messages`,
+        `/messages/channels/${channelId}/messages`,
         {
           content,
         },
