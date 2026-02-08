@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Hash, Send, Edit2, Trash2 } from "lucide-react";
 import { fetchAPI } from "@/lib/api";
@@ -71,7 +70,7 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
       setMessages([...messages, message]);
       setNewMessage("");
     } catch (error) {
-      toast.error("Failed to send message");
+      toast.error(`Failed to send message : ${error}`);
     } finally {
       setLoading(false);
     }
@@ -95,7 +94,7 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
       setEditingId(null);
       toast.success("Message updated");
     } catch (error) {
-      toast.error("Failed to update message");
+      toast.error(`Failed to update message : ${error}`);
     }
   };
 
@@ -105,7 +104,7 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
       setMessages(messages.filter((m) => m.id !== messageId));
       toast.success("Message deleted");
     } catch (error) {
-      toast.error("Failed to delete message");
+      toast.error(`Failed to delete message : ${error}`);
     }
   };
 

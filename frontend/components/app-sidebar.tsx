@@ -5,7 +5,6 @@ import Link from "next/link"
 import { 
   Calendar, 
   Home, 
-  Video, 
   Settings, 
   Sparkles,
   Users,

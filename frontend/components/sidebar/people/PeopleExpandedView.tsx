@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { X, Users, MapPin, Check, XCircle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { X, Users, MapPin } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import EventBus, { GameEvents } from "@/game/EventBus";

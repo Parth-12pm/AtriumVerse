@@ -37,7 +37,7 @@ export function CreateServerDialog() {
       router.refresh();
       router.push(`/server/${new_server.id}`);
     } catch (error) {
-      toast.error("Failed to create room");
+      toast.error(`Failed to create room ${error}`);
     } finally {
       setLoading(false);
     }

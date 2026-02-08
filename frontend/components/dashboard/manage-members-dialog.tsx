@@ -9,7 +9,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Users, Check, X, Shield } from "lucide-react";
+import { Check, X, Shield } from "lucide-react";
 import { fetchAPI } from "@/lib/api";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";

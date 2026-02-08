@@ -26,8 +26,6 @@ export function ChatOverlay() {
 
   useEffect(() => {
     const handleMessage = (data: any) => {
-      // Deduplicate? Or backend handles?
-      // Just append
       setMessages((prev) => [
         ...prev,
         {

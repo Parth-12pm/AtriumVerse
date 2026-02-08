@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
-import { Send, MapPin, X } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Send, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import EventBus from "@/game/EventBus";
@@ -24,26 +24,6 @@ export default function ProximityChat() {
   const [isMinimized, setIsMinimized] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const MAX_MESSAGES = 20; // Keep only last 20 messages
-
-  useEffect(() => {
-    // Listen for zone events
-    EventBus.on("zone:confirmed_entry", handleZoneEntered);
-    EventBus.on("zone:confirmed_exit", handleZoneExited);
-    EventBus.on("chat:zone_message", handleZoneMessage);
-
-    return () => {
-      EventBus.off("zone:confirmed_entry", handleZoneEntered);
-      EventBus.off("zone:confirmed_exit", handleZoneExited);
-      EventBus.off("chat:zone_message", handleZoneMessage);
-    };
-  }, []);
-
-  // Auto-scroll to bottom on new messages
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
 
   const handleZoneEntered = (zoneData: any) => {
     setIsInZone(true);
@@ -69,6 +49,26 @@ export default function ProximityChat() {
       return updated;
     });
   };
+
+  useEffect(() => {
+    // Listen for zone events
+    EventBus.on("zone:confirmed_entry", handleZoneEntered);
+    EventBus.on("zone:confirmed_exit", handleZoneExited);
+    EventBus.on("chat:zone_message", handleZoneMessage);
+
+    return () => {
+      EventBus.off("zone:confirmed_entry", handleZoneEntered);
+      EventBus.off("zone:confirmed_exit", handleZoneExited);
+      EventBus.off("chat:zone_message", handleZoneMessage);
+    };
+  }, []);
+
+  // Auto-scroll to bottom on new messages
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
 
   const sendMessage = () => {
     if (!newMessage.trim()) return;

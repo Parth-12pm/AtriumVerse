@@ -81,7 +81,7 @@ async def list_conversations(
             .where(
                 DirectMessage.sender_id == user.id,
                 DirectMessage.receiver_id == current_user.id,
-                DirectMessage.is_read == False
+                not DirectMessage.is_read 
             )
         )
         unread_count = unread_result.scalar() or 0
@@ -130,7 +130,7 @@ async def get_conversation_messages(
                     DirectMessage.receiver_id == current_user.id
                 )
             ),
-            DirectMessage.is_deleted == False
+            not DirectMessage.is_deleted 
         )
         .order_by(desc(DirectMessage.created_at))
         .limit(limit)
@@ -154,7 +154,7 @@ async def get_conversation_messages(
         .where(
             DirectMessage.sender_id == user_id,
             DirectMessage.receiver_id == current_user.id,
-            DirectMessage.is_read == False
+            not DirectMessage.is_read 
         )
     )
     
@@ -163,7 +163,7 @@ async def get_conversation_messages(
         .where(
             DirectMessage.sender_id == user_id,
             DirectMessage.receiver_id == current_user.id,
-            DirectMessage.is_read == False
+            not DirectMessage.is_read 
         )
     )).scalars().all()
     

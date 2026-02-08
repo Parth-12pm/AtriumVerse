@@ -1,15 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Map,
   MessageSquare,
   Video,
   Settings,
-  Gift,
-  Calendar,
-  Bell,
   Users,
   LogOut,
   Trash2,
@@ -296,7 +293,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
                 Leave Server
               </h3>
               <p className="text-sm text-gray-700 mb-3">
-                You'll lose access to all channels. You can rejoin later if
+                You&apos;ll lose access to all channels. You can rejoin later if
                 invited.
               </p>
               <Button

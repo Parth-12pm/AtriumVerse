@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ModeToggle } from "@/components/mode-toggle";
-import { Video, Users, Zap, ArrowRight, MessageSquare, Map, Sparkles } from "lucide-react";
+import { Video, Users, Zap, ArrowRight, Sparkles } from "lucide-react";
 
 export default function LandingPage() {
   return (
@@ -101,7 +101,7 @@ export default function LandingPage() {
             </CardHeader>
             <CardContent>
               <p className="text-muted-foreground">
-                See who's around, who's busy, and who's available. Build team culture remotely.
+                See who&apos;s around, who&apos;s busy, and who&apos;s available. Build team culture remotely.
               </p>
             </CardContent>
           </Card>
@@ -157,7 +157,7 @@ export default function LandingPage() {
             </div>
             <h3 className="text-xl font-black uppercase mb-2">Start Collaborating</h3>
             <p className="text-muted-foreground">
-              Walk around, meet people, join conversations. It's that simple.
+              Walk around, meet people, join conversations. It&apos;s that simple.
             </p>
           </div>
         </div>

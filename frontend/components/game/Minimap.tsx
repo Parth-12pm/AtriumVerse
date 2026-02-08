@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 
 interface MinimapProps {

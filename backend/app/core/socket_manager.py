@@ -1,7 +1,6 @@
 import asyncio
 from fastapi import WebSocket
-from typing import Dict, List
-from app.core.redis_client import r 
+from typing import Dict
 
 class ConnectionManger: 
     def __init__(self):

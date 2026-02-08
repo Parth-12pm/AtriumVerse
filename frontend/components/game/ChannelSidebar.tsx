@@ -15,7 +15,6 @@ import {
   Hash,
   Plus,
   Settings,
-  ChevronDown,
   Megaphone,
   Volume2,
   Lock,
@@ -108,7 +107,7 @@ export function ChannelSidebar({
       setShowCreateChannel(false);
       toast.success(`Channel #${channel.name} created!`);
     } catch (error) {
-      toast.error("Failed to create channel");
+      toast.error(`Failed to create channel : ${error}`);
     } finally {
       setLoading(false);
     }

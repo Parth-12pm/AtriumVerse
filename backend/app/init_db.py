@@ -1,9 +1,5 @@
 import asyncio
 from app.core.database import engine, Base
-from app.models.user import User
-from app.models.server import Server
-from app.models.zone import Zone
-from app.models.server_member import ServerMember
 
 
 async def init_models():

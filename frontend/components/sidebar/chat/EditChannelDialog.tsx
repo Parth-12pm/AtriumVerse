@@ -66,7 +66,7 @@ export default function EditChannelDialog({
             Edit Channel
           </DialogTitle>
           <DialogDescription>
-            Update the channel's name or type.
+            Update the channel&apos;s name or type.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>

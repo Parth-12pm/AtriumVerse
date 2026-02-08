@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import  { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { Home, Plus, Settings } from "lucide-react";
+import { Home, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { serversAPI } from "@/lib/services/api.service";
 import type { Server } from "@/types/api.types";

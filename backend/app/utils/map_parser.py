@@ -1,4 +1,5 @@
-import json, os
+import json
+import os
 
 
 def parse_map_zones(file_path):

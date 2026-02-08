@@ -11,6 +11,49 @@ export function useProximityPeers(myUserId: string | null) {
     new Map(),
   );
 
+  // Logic: Check distance to ONE peer (called when they move or I move)
+  const checkDistance = (
+    userId: string,
+    peerX: number,
+    peerY: number,
+    myX: number,
+    myY: number,
+  ) => {
+    if (!myUserId || userId === myUserId) return;
+
+    const dx = Math.abs(peerX - myX);
+    const dy = Math.abs(peerY - myY);
+    const distance = Math.sqrt(dx * dx + dy * dy); // Euclidean
+
+    // Hysteresis
+    // If < 5, Connect
+    // If > 7, Disconnect
+    // Between 5-7, keep current state (handled implicitly by RTCManager not disconnecting until explicitly told)
+
+    if (distance < CONNECT_DISTANCE) {
+      // Attempt connect (initiator=true if myId > userId to avoid dual-init)
+      // Simple tie-breaker: sort IDs
+      const isInitiator = myUserId > userId;
+      rtcManager.connectToPeer(userId, isInitiator);
+    } else if (distance > DISCONNECT_DISTANCE) {
+      rtcManager.disconnectPeer(userId);
+    }
+
+    // Always update audio position if connected
+    rtcManager.updateSpatialPosition(
+      { x: myX, y: myY },
+      { x: peerX, y: peerY },
+      userId,
+    );
+  };
+
+  // Logic: Check distance to ALL peers (called when I move)
+  const checkProximity = (myX: number, myY: number) => {
+    remotePositions.current.forEach((pos, userId) => {
+      checkDistance(userId, pos.x, pos.y, myX, myY);
+    });
+  };
+
   // Initialize Local Media on mount
   useEffect(() => {
     if (!myUserId) return;
@@ -79,47 +122,4 @@ export function useProximityPeers(myUserId: string | null) {
       EventBus.off(GameEvents.PLAYER_LIST_UPDATE, handleListUpdate);
     };
   }, [myPosition, myUserId]);
-
-  // Logic: Check distance to ALL peers (called when I move)
-  const checkProximity = (myX: number, myY: number) => {
-    remotePositions.current.forEach((pos, userId) => {
-      checkDistance(userId, pos.x, pos.y, myX, myY);
-    });
-  };
-
-  // Logic: Check distance to ONE peer (called when they move or I move)
-  const checkDistance = (
-    userId: string,
-    peerX: number,
-    peerY: number,
-    myX: number,
-    myY: number,
-  ) => {
-    if (!myUserId || userId === myUserId) return;
-
-    const dx = Math.abs(peerX - myX);
-    const dy = Math.abs(peerY - myY);
-    const distance = Math.sqrt(dx * dx + dy * dy); // Euclidean
-
-    // Hysteresis
-    // If < 5, Connect
-    // If > 7, Disconnect
-    // Between 5-7, keep current state (handled implicitly by RTCManager not disconnecting until explicitly told)
-
-    if (distance < CONNECT_DISTANCE) {
-      // Attempt connect (initiator=true if myId > userId to avoid dual-init)
-      // Simple tie-breaker: sort IDs
-      const isInitiator = myUserId > userId;
-      rtcManager.connectToPeer(userId, isInitiator);
-    } else if (distance > DISCONNECT_DISTANCE) {
-      rtcManager.disconnectPeer(userId);
-    }
-
-    // Always update audio position if connected
-    rtcManager.updateSpatialPosition(
-      { x: myX, y: myY },
-      { x: peerX, y: peerY },
-      userId,
-    );
-  };
 }

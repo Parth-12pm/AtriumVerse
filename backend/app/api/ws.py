@@ -8,10 +8,10 @@ from sqlalchemy import select
 from app.models.server import Server
 from app.models.server_member import ServerMember
 from app.models.user import User
-from app.models.direct_message import DirectMessage
 from app.core.database import get_db, SessionLocal
-from uuid import UUID
-import time, asyncio, random, datetime
+import asyncio
+import random
+import datetime
 from jose import jwt, JWTError
 from app.core.security import SECRET_KEY, ALGORITHM
 
@@ -90,7 +90,9 @@ async def websocket_endpoint(
         online_users = await redis_client.r.smembers(f"server:{server_id}:users")
         user_positions = []
         for uid in online_users:
-            if uid == user_id: continue
+            if uid == user_id: 
+                continue
+            
             pos_data = await redis_client.r.hgetall(f"user:{uid}")
             if pos_data:
                 user_positions.append({

@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import redis.asyncio as redis
 from contextlib import asynccontextmanager
 from app.api import users,ws,servers,channels,messages,direct_messages
 from app.core.database import engine

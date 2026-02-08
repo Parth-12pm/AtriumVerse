@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { X, Hash, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ChannelList from "@/components/sidebar/chat/ChannelList";

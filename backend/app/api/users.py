@@ -57,5 +57,6 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends() , db: AsyncSess
         "token_type": "bearer",
         "user_id": user.id,
         "username": user.username
+        
     }
 

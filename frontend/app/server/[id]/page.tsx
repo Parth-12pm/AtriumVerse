@@ -2,12 +2,11 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useState, use } from "react";
-import { useRouter } from "next/navigation";
 import BaseSidebar from "@/components/sidebar/BaseSidebar";
 import ProximityChat from "@/components/game/ProximityChat";
 import ServerDock from "@/components/navigation/ServerDock";
 
-const GameWrapper = dynamic(() => import("@/components/game/GameWrapperNew"), {
+const GameWrapper = dynamic(() => import("@/components/game/GameWrapper"), {
   ssr: false,
   loading: () => (
     <div className="flex items-center justify-center h-full bg-background">
@@ -26,7 +25,6 @@ interface ServerPageProps {
 }
 
 export default function ServerPage({ params }: ServerPageProps) {
-  const router = useRouter();
   const { id: serverId } = use(params);
 
   const [userId, setUserId] = useState("");
