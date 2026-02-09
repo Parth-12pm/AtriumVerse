@@ -1,0 +1,118 @@
+
+================================================================================
+ATRIUMVERSE - PROJECT DOCUMENTATION
+================================================================================
+
+1. PROJECT OVERVIEW
+--------------------------------------------------------------------------------
+AtriumVerse is a 2D Metaverse application where users can interactive in a virtual 
+office-like environment. It features real-time multiplayer movement, chat (global, 
+channel, direct, and proximity), and zone-based interactions.
+
+2. TECHNOLOGY STACK
+--------------------------------------------------------------------------------
+FRONTEND:
+- Framework: Next.js 14+ (App Router)
+- UI Library: React 18+
+- Styling: Tailwind CSS 4.0, Shadcn UI
+- Game Engine: Phaser 3.90.0
+- Game Plugin: Grid Engine 2.48.2 (for grid-based movement)
+- State Management: React Hooks, Context API
+- Icons: Lucide React
+- HTTP Client: Fetch API (with custom wrapper)
+- WebSocket: Native WebSocket API
+
+BACKEND:
+- Framework: FastAPI (Python 3.10+)
+- Server: Uvicorn (ASGI)
+- Database: PostgreSQL (AsyncPG driver)
+- ORM: SQLAlchemy (Async)
+- Real-time State: Redis (Pub/Sub & Key-Value store)
+- Authentication: JWT (JSON Web Tokens)
+- Password Hashing: Argon2 / Bcrypt
+
+3. PROJECT STRUCTURE & WORKFLOW
+--------------------------------------------------------------------------------
+
+A. AUTHENTICATION FLOW
+   1. User Register: POST /users/register -> Creates user in DB.
+   2. User Login: POST /users/login -> Returns JWT Access Token.
+   3. Token Storage: Frontend stores token in localStorage.
+   4. Protected Routes: Middleware checks token for dashboard/game access.
+
+B. DASHBOARD & SERVER SELECTION
+   1. Dashboard loads: GET /servers -> Lists available virtual spaces.
+   2. Create Server: POST /servers -> Creates a new space/map.
+   3. Join Server: User clicks a server -> Navigates to /server/[id].
+
+C. GAME INITIALIZATION (server/[id]/page.tsx)
+   1. Page loads user data from localStorage.
+   2. sidebar/BaseSidebar loads channels & active users.
+   3. game/GameWrapper initializes Phaser game instance.
+   4. game/scenes/MainScene.ts:
+      - Loads assets (tilesets, maps, sprites).
+      - Connects to WebSocket (ws://localhost:8000/ws/{server_id}).
+      - Initializes GridEngine for movement.
+
+D. REAL-TIME MULTIPLAYER (WebSocket)
+   1. Connection: backend/app/api/ws.py accepts connection only with valid JWT.
+   2. Initial State: Server sends "user_list" with all current players from Redis.
+   3. Movement:
+      - Client sends "player_move" (x, y).
+      - Server updates Redis "user:{id}" hash.
+      - Server broadcasts "player_move" to all other clients.
+      - Other clients update the specific player's sprite position using GridEngine.
+   4. Disconnect:
+      - Server removes user from Redis set.
+      - Server saves final position to PostgreSQL (server_members table).
+      - Server broadcasts "user_left".
+
+E. CHAT SYSTEMS
+   1. Global Chat: Broadcasts to everyone in the server.
+   2. Channel Chat: Filtered by channel_id (e.g., #general, #random).
+   3. Direct Messages: Private messages between two users (stored in DB).
+   4. Proximity Chat: (Concept) Messages only visible to nearby players.
+   5. ZoneChat: Messages only visible to players in the same Zone/Room.
+
+4. ASSETS & RESOURCES
+--------------------------------------------------------------------------------
+All game assets are located in: frontend/public/phaser_assets/
+
+A. MAPS (Tiled JSON Format)
+   - Location: public/phaser_assets/maps/
+   - File: final_map.json (Main game world map)
+     - Layers: Floor, Walls, Furniture, Collision, Zones (Object Layer)
+
+B. TILESETS (Images used to build the map)
+   - Location: public/phaser_assets/Interiors_free/32x32/
+     - Interiors_free_32x32.png
+     - Room_Builder_free_32x32.png
+   
+   - Location: public/phaser_assets/Old/
+     - Tileset_32x32_1.png
+     - Tileset_32x32_2.png
+     - Tileset_32x32_16.png (Used for various props)
+
+C. SPRITES (Characters)
+   - Location: public/
+     - NPC_test.png: Used as the main player sprite. 
+       - Sliced dynamically in MainScene.ts into a 4x4 spritesheet.
+       - Animations: walk-down, walk-left, walk-right, walk-up.
+
+5. DATABASE SCHEMA (Key Tables)
+--------------------------------------------------------------------------------
+- users: id, username, email, hashed_password
+- servers: id, name, owner_id, map_config
+- server_members: user_id, server_id, role, last_position_x, last_position_y
+- channels: id, server_id, name, type
+- messages: id, channel_id, user_id, content
+- direct_messages: sender_id, receiver_id, content
+
+6. DEPLOYMENT & SCALING NOTES
+--------------------------------------------------------------------------------
+- The current setup uses a single Redis instance for state.
+- For scaling, the WebSocket manager uses Redis Pub/Sub to sync across multiple
+  backend workers (if scaled horizontally).
+- Frontend is static exportable but relies on Next.js server features for routing.
+
+================================================================================
