@@ -349,16 +349,20 @@ export class MainScene extends Scene {
     });
     EventBus.on("ui:blur", () => {
       this.inputEnabled = true;
-      // Re-enable keyboard capture
-      if (this.input.keyboard) {
+      // Re-enable keyboard capture - with safety checks
+      if (this.input && this.input.keyboard) {
         this.input.keyboard.enabled = true;
-        // Recreate WASD keys
-        this.wasd = {
-          up: this.input.keyboard.addKey("W"),
-          down: this.input.keyboard.addKey("S"),
-          left: this.input.keyboard.addKey("A"),
-          right: this.input.keyboard.addKey("D"),
-        };
+        // Recreate WASD keys only if keyboard is available
+        try {
+          this.wasd = {
+            up: this.input.keyboard.addKey("W"),
+            down: this.input.keyboard.addKey("S"),
+            left: this.input.keyboard.addKey("A"),
+            right: this.input.keyboard.addKey("D"),
+          };
+        } catch (e) {
+          console.warn("[MainScene] Could not recreate WASD keys:", e);
+        }
       }
     });
 

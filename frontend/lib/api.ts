@@ -26,9 +26,9 @@ export async function fetchAPI(endpoint: string, options: RequestInit = {}) {
   return response.json();
 }
 
-// Axios-like wrapper around fetchAPI
+// Axios-like wrapper around fetchAPI with generic type support
 export const apiClient = {
-  get: async (url: string, options?: { params?: Record<string, any> }) => {
+  get: async <T = any>(url: string, options?: { params?: Record<string, any> }): Promise<{ data: T }> => {
     let finalUrl = url;
     if (options?.params) {
       const searchParams = new URLSearchParams();
@@ -45,28 +45,28 @@ export const apiClient = {
     const data = await fetchAPI(finalUrl, { method: "GET" });
     return { data };
   },
-  post: async (url: string, body: any) => {
+  post: async <T = any>(url: string, body: any): Promise<{ data: T }> => {
     const data = await fetchAPI(url, {
       method: "POST",
       body: JSON.stringify(body),
     });
     return { data };
   },
-  put: async (url: string, body: any) => {
+  put: async <T = any>(url: string, body: any): Promise<{ data: T }> => {
     const data = await fetchAPI(url, {
       method: "PUT",
       body: JSON.stringify(body),
     });
     return { data };
   },
-  patch: async (url: string, body: any) => {
+  patch: async <T = any>(url: string, body: any): Promise<{ data: T }> => {
     const data = await fetchAPI(url, {
       method: "PATCH",
       body: JSON.stringify(body),
     });
     return { data };
   },
-  delete: async (url: string) => {
+  delete: async <T = any>(url: string): Promise<{ data: T }> => {
     const data = await fetchAPI(url, { method: "DELETE" });
     return { data };
   },

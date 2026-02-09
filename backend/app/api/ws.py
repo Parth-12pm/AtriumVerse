@@ -79,7 +79,7 @@ async def websocket_endpoint(
             default_x = 15
             default_y = 15
 
-        await redis_client.r.hset(f"user:{user_id}", mapping={
+        await redis_client.r.hmset(f"user:{user_id}", {
             "x": str(default_x),
             "y": str(default_y),
             "username": username,
@@ -156,7 +156,7 @@ async def websocket_endpoint(
                 }, server_id, websocket)
 
                 if redis_client.r:
-                    asyncio.create_task(redis_client.r.hset(f"user:{user_id}", mapping={
+                    asyncio.create_task(redis_client.r.hmset(f"user:{user_id}", {
                         "x": str(data["x"]),
                         "y": str(data["y"]),
                         "server_id": server_id,
