@@ -57,7 +57,15 @@ export default function PeopleExpandedView({
         x: u.x || 0,
         y: u.y || 0,
       }));
-      setOnlineUsers(userObjects);
+
+      // Merge with existing users instead of replacing
+      setOnlineUsers((prev) => {
+        const userMap = new Map(prev.map((u) => [u.id, u]));
+        userObjects.forEach((user) => {
+          userMap.set(user.id, user);
+        });
+        return Array.from(userMap.values());
+      });
     };
 
     const handleRemoteMove = (data: {
@@ -72,8 +80,13 @@ export default function PeopleExpandedView({
       );
     };
 
+    const handleUserLeft = (data: { user_id: string }) => {
+      setOnlineUsers((prev) => prev.filter((u) => u.id !== data.user_id));
+    };
+
     EventBus.on(GameEvents.PLAYER_LIST_UPDATE, handleUserListUpdate);
     EventBus.on(GameEvents.REMOTE_PLAYER_MOVED, handleRemoteMove);
+    EventBus.on(GameEvents.PLAYER_LEFT, handleUserLeft);
 
     // Request current user list when component mounts
     EventBus.emit(GameEvents.REQUEST_USER_LIST);
@@ -81,6 +94,7 @@ export default function PeopleExpandedView({
     return () => {
       EventBus.off(GameEvents.PLAYER_LIST_UPDATE, handleUserListUpdate);
       EventBus.off(GameEvents.REMOTE_PLAYER_MOVED, handleRemoteMove);
+      EventBus.off(GameEvents.PLAYER_LEFT, handleUserLeft);
     };
   }, []);
 

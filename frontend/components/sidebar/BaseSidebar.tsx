@@ -88,7 +88,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
       {/* Icon Sidebar - Always Visible */}
       <div className="fixed left-0 top-0 h-full w-19 bg-white border-r-4 border-black z-50 flex flex-col items-center py-4 gap-4">
         {/* Logo */}
-        <div className="w-12 h-12 bg-purple-500 border-3 border-black rounded-lg flex items-center justify-center mb-4">
+        <div className="w-12 h-12 bg-blue-500 border-3 border-black rounded-lg flex items-center justify-center mb-4">
           <span className="text-white font-black text-xl">AV</span>
         </div>
 

@@ -19,6 +19,19 @@ export async function fetchAPI(endpoint: string, options: RequestInit = {}) {
   });
 
   if (!response.ok) {
+    // Handle 401 Unauthorized - token expired or invalid
+    if (response.status === 401) {
+      if (typeof window !== "undefined") {
+        // Clear authentication data
+        localStorage.removeItem("token");
+        localStorage.removeItem("username");
+        localStorage.removeItem("user_id");
+
+        // Redirect to login page
+        window.location.href = "/login";
+      }
+    }
+
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.detail || "API request failed");
   }
