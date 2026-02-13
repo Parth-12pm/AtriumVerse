@@ -2,6 +2,10 @@ import * as Phaser from "phaser";
 import { Scene } from "phaser";
 import { GridEngine, Direction } from "grid-engine";
 import EventBus, { GameEvents } from "../EventBus";
+import {
+  getCharacterById,
+  CharacterAnimationSet,
+} from "@/types/advance_char_config";
 
 export class MainScene extends Scene {
   private gridEngine!: GridEngine;
@@ -11,6 +15,11 @@ export class MainScene extends Scene {
     string,
     { sprite: Phaser.GameObjects.Sprite; text: Phaser.GameObjects.Text }
   > = new Map();
+
+  private characterConfig!: CharacterAnimationSet;
+  private characterId: string = "bob";
+  private currentAnimationState: "idle" | "run" | "sit" = "idle";
+  private currentDirection: "up" | "down" | "left" | "right" = "down";
 
   private socket: WebSocket | null = null;
   private myId: string = "";
@@ -39,12 +48,90 @@ export class MainScene extends Scene {
     super({ key: "MainScene" });
   }
 
+  /**
+   * Create frames for a sprite sheet with specific dimensions
+   */
+  private createSpriteSheetFrames(sheet: any) {
+    const fullKey = sheet.key + "_full";
+
+    if (!this.textures.exists(fullKey)) {
+      console.warn(`Texture ${fullKey} not loaded`);
+      return;
+    }
+
+    const sourceTexture = this.textures.get(fullKey);
+    const source = sourceTexture.getSourceImage() as HTMLImageElement;
+
+    // Calculate grid if not provided
+    const gridCols =
+      sheet.gridColumns || Math.floor(source.width / sheet.frameWidth);
+    const gridRows =
+      sheet.gridRows || Math.floor(source.height / sheet.frameHeight);
+
+    console.log(
+      `Creating frames for ${sheet.key}: ${gridCols}x${gridRows} grid, ` +
+        `${sheet.frameWidth}x${sheet.frameHeight}px frames`,
+    );
+
+    // Create canvas texture with exact source dimensions
+    const texture = this.textures.createCanvas(
+      sheet.key,
+      source.width,
+      source.height,
+    );
+
+    if (texture) {
+      texture.draw(0, 0, source);
+
+      // Generate frames for this sprite sheet
+      let frameIndex = 0;
+      for (let row = 0; row < gridRows; row++) {
+        for (let col = 0; col < gridCols; col++) {
+          texture.add(
+            frameIndex,
+            0,
+            col * sheet.frameWidth,
+            row * sheet.frameHeight,
+            sheet.frameWidth,
+            sheet.frameHeight,
+          );
+          frameIndex++;
+        }
+      }
+
+      console.log(`Created ${frameIndex} frames for ${sheet.key}`);
+    }
+  }
+
+  /**
+   * Play animation for a sprite based on state and direction
+   */
+  private playAnimation(
+    sprite: Phaser.GameObjects.Sprite,
+    state: string,
+    direction: string,
+  ) {
+    const animKey = `${state}-${direction}`;
+
+    if (this.anims.exists(animKey)) {
+      sprite.play(animKey, true);
+    } else {
+      console.warn(`Animation ${animKey} not found`);
+      // Try fallback to idle
+      const fallback = `idle-${direction}`;
+      if (this.anims.exists(fallback)) {
+        sprite.play(fallback, true);
+      }
+    }
+  }
+
   init(data: any) {
     if (data) {
       this.myId = data.userId;
       this.myUsername = data.username;
       this.myServerId = data.serverId;
       this.token = data.token;
+      this.characterId = data.characterId || "bob";
       if (data.apiUrl) this.apiUrl = data.apiUrl;
     }
   }
@@ -79,51 +166,30 @@ export class MainScene extends Scene {
       this.load.image("tileset16", "/phaser_assets/Old/Tileset_32x32_16.png");
     }
 
-    // Load NPC sprite as image to handle dynamic dimensions
-    if (!this.textures.exists("player_full")) {
-      this.load.image("player_full", "/NPC_test.png");
+    // Load character configuration
+    const charConfig = getCharacterById(this.characterId);
+    if (!charConfig) {
+      console.error(`Character ${this.characterId} not found, using default`);
+      this.characterConfig = getCharacterById("bob")!;
+    } else {
+      this.characterConfig = charConfig;
     }
+    // Load ALL sprite sheets for this character
+    this.characterConfig.sheets.forEach((sheet) => {
+      const fullKey = sheet.key + "_full";
+      if (!this.textures.exists(fullKey)) {
+        console.log(
+          `Loading sprite sheet: ${sheet.key} from ${sheet.spritePath}`,
+        );
+        this.load.image(fullKey, sheet.spritePath);
+      }
+    });
   }
 
   create() {
-    // Generate valid sprite sheet from image
-    if (!this.textures.exists("player")) {
-      const playerTexture = this.textures.get("player_full");
-      const source = playerTexture.getSourceImage();
-
-      // Assume 4x4 grid
-      const frameWidth = source.width / 4;
-      const frameHeight = source.height / 4;
-
-      if (frameWidth > 0 && frameHeight > 0) {
-        const texture = this.textures.createCanvas(
-          "player",
-          source.width,
-          source.height,
-        );
-        if (texture) {
-          texture.draw(0, 0, source as HTMLImageElement);
-
-          // Add frames 0-15
-          for (let y = 0; y < 4; y++) {
-            for (let x = 0; x < 4; x++) {
-              const i = y * 4 + x;
-              texture.add(
-                i,
-                0,
-                x * frameWidth,
-                y * frameHeight,
-                frameWidth,
-                frameHeight,
-              );
-            }
-          }
-          console.log(
-            `[MainScene] Created dynamic spritesheet: ${frameWidth}x${frameHeight} frames`,
-          );
-        }
-      }
-    }
+    this.characterConfig.sheets.forEach((sheet) => {
+      this.createSpriteSheetFrames(sheet);
+    });
 
     const map = this.make.tilemap({ key: "main_map" });
 
@@ -187,12 +253,33 @@ export class MainScene extends Scene {
       }
     }
 
-    // Create player sprite
-    // Default to frame 0
-    this.playerSprite = this.add.sprite(0, 0, "player", 0);
-    this.playerSprite.setScale(1.6);
+    this.characterConfig.animations.forEach((animConfig) => {
+      if (!this.anims.exists(animConfig.animationKey)) {
+        this.anims.create({
+          key: animConfig.animationKey,
+          frames: animConfig.frames.map((frameNum) => ({
+            key: animConfig.sheetKey,
+            frame: frameNum,
+          })),
+          frameRate: animConfig.frameRate,
+          repeat: animConfig.repeat,
+        });
+      }
+    });
+    console.log(`Created ${this.characterConfig.animations.length} animations`);
+
+    // Create player sprite using first sheet
+    const firstSheet = this.characterConfig.sheets[0];
+    this.playerSprite = this.add.sprite(0, 0, firstSheet.key, 0);
+    this.playerSprite.setScale(2); // Adjust scale as needed
     this.playerSprite.setDepth(100);
-    this.playerSprite.setOrigin(0, 0);
+    this.playerSprite.setOrigin(0.5, 1);
+
+    // Play default idle animation
+    const defaultAnim = this.characterConfig.defaultAnimation || "idle-down";
+    if (this.anims.exists(defaultAnim)) {
+      this.playerSprite.play(defaultAnim);
+    }
 
     this.usernameText = this.add.text(0, 0, this.myUsername, {
       fontSize: "11px",
@@ -203,39 +290,6 @@ export class MainScene extends Scene {
     });
     this.usernameText.setOrigin(0.6, -3);
     this.usernameText.setDepth(101);
-
-    // Animation setup for 4x4 sprite sheet
-    // Row 0 (0-3): walk_down
-    this.anims.create({
-      key: "walk-down",
-      frames: this.anims.generateFrameNumbers("player", { start: 0, end: 3 }),
-      frameRate: 8,
-      repeat: -1,
-    });
-
-    // Row 1 (4-7): walk_right
-    this.anims.create({
-      key: "walk-right",
-      frames: this.anims.generateFrameNumbers("player", { start: 4, end: 7 }),
-      frameRate: 8,
-      repeat: -1,
-    });
-
-    // Row 2 (8-11): walk_up
-    this.anims.create({
-      key: "walk-up",
-      frames: this.anims.generateFrameNumbers("player", { start: 8, end: 11 }),
-      frameRate: 8,
-      repeat: -1,
-    });
-
-    // Row 3 (12-15): walk_left
-    this.anims.create({
-      key: "walk-left",
-      frames: this.anims.generateFrameNumbers("player", { start: 12, end: 15 }),
-      frameRate: 8,
-      repeat: -1,
-    });
 
     const gridEngineConfig = {
       characters: [
@@ -268,9 +322,10 @@ export class MainScene extends Scene {
       const sprite = this.getSpriteById(charId);
       if (!sprite) return;
 
-      sprite.play(`walk-${direction}`);
-
       if (charId === "hero") {
+        // Use "run" animations instead of "walk"
+        this.playAnimation(sprite, "run", direction);
+
         const pos = this.gridEngine.getPosition("hero");
         EventBus.emit(GameEvents.PLAYER_POSITION, {
           x: pos.x,
@@ -279,6 +334,9 @@ export class MainScene extends Scene {
         });
         this.sendMovementToServer(pos.x, pos.y);
         this.checkZoneEntry(pos.x, pos.y);
+      } else {
+        // Other players also use run animations
+        this.playAnimation(sprite, "run", direction);
       }
     });
 
@@ -286,19 +344,19 @@ export class MainScene extends Scene {
       const sprite = this.getSpriteById(charId);
       if (!sprite) return;
 
-      sprite.stop();
-      sprite.setFrame(this.getIdleFrame(direction));
-
       if (charId === "hero") {
+        this.playAnimation(this.playerSprite, "idle", direction);
         const pos = this.gridEngine.getPosition("hero");
         this.sendMovementToServer(pos.x, pos.y);
+      } else {
+        this.playAnimation(sprite, "idle", direction);
       }
     });
 
     this.gridEngine.directionChanged().subscribe(({ charId, direction }) => {
       const sprite = this.getSpriteById(charId);
       if (!sprite || this.gridEngine.isMoving(charId)) return;
-      sprite.setFrame(this.getIdleFrame(direction));
+      this.playAnimation(sprite, "idle", direction);
     });
 
     EventBus.on(GameEvents.SEND_CHAT_MESSAGE, (data: any) => {
@@ -447,22 +505,6 @@ export class MainScene extends Scene {
   private getSpriteById(charId: string): Phaser.GameObjects.Sprite | undefined {
     if (charId === "hero") return this.playerSprite;
     return this.otherPlayers.get(charId)?.sprite;
-  }
-
-  // Updated idle frames for 4x4 sprite sheet
-  private getIdleFrame(direction: string): number {
-    switch (direction) {
-      case "down":
-        return 1; // Row 0, frame 1
-      case "right":
-        return 5; // Row 1, frame 1
-      case "up":
-        return 9; // Row 2, frame 1
-      case "left":
-        return 13; // Row 3, frame 1
-      default:
-        return 1;
-    }
   }
 
   private sendMovementToServer(x: number, y: number) {
@@ -642,8 +684,9 @@ export class MainScene extends Scene {
   ) {
     if (this.otherPlayers.has(userId)) return;
 
-    const sprite = this.add.sprite(0, 0, "player", 1);
-    sprite.setScale(1.6);
+    const firstSheet = this.characterConfig.sheets[0];
+    const sprite = this.add.sprite(0, 0, firstSheet.key, 0);
+    sprite.setScale(2);
     sprite.setDepth(100);
     sprite.setOrigin(0.5, 1);
 
