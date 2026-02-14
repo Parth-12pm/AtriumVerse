@@ -5,13 +5,6 @@ Run this to add the direct_messages table.
 """
 import asyncio
 from app.core.database import engine, Base
-from app.models.user import User
-from app.models.server import Server
-from app.models.zone import Zone
-from app.models.server_member import ServerMember
-from app.models.channel import Channel
-from app.models.message import Message
-from app.models.direct_message import DirectMessage
 
 
 async def run_migration():
