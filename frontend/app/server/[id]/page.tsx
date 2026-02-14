@@ -5,6 +5,8 @@ import { useEffect, useState, use } from "react";
 import BaseSidebar from "@/components/sidebar/BaseSidebar";
 import ProximityChat from "@/components/game/ProximityChat";
 import ServerDock from "@/components/navigation/ServerDock";
+import CharacterSelector from "@/components/game/CharacterSelector";
+import { Button } from "@/components/ui/button";
 
 const GameWrapper = dynamic(() => import("@/components/game/GameWrapper"), {
   ssr: false,
@@ -31,6 +33,10 @@ export default function ServerPage({ params }: ServerPageProps) {
   const [username, setUsername] = useState("Player");
   const [token, setToken] = useState("");
   const [mounted, setMounted] = useState(false);
+  const [selectedCharacter, setSelectedCharacter] = useState<string | null>(
+    null,
+  );
+  const [showCharacterSelect, setShowCharacterSelect] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -40,16 +46,59 @@ export default function ServerPage({ params }: ServerPageProps) {
         localStorage.getItem("username") ||
         "Player" + Math.floor(Math.random() * 1000);
       const storedToken = localStorage.getItem("token") || "";
+      const storedCharacter = localStorage.getItem("selectedCharacter");
 
       setUserId(storedUserId);
       setUsername(storedUsername);
       setToken(storedToken);
 
+      if (storedCharacter) {
+        setSelectedCharacter(storedCharacter);
+      }
+
       if (!storedToken) {
         console.warn("No token found. WebSocket may fail.");
       }
+
+      // Track this server as recently visited
+      trackServerVisit(serverId);
     }
-  }, []);
+  }, [serverId]);
+
+  const trackServerVisit = (serverIdToTrack: string) => {
+    try {
+      const stored = localStorage.getItem("recentServers");
+      let recent: Array<{ id: string; name: string; lastVisited: number }> =
+        stored ? JSON.parse(stored) : [];
+
+      // Remove if already exists
+      recent = recent.filter((s) => s.id !== serverIdToTrack);
+
+      // Add to front (we'll update the name later via API if needed)
+      recent.unshift({
+        id: serverIdToTrack,
+        name: `Server ${serverIdToTrack.slice(0, 8)}`, // Placeholder name
+        lastVisited: Date.now(),
+      });
+
+      // Keep only last 10
+      recent = recent.slice(0, 10);
+
+      localStorage.setItem("recentServers", JSON.stringify(recent));
+    } catch (error) {
+      console.error("Failed to track server visit:", error);
+    }
+  };
+
+  const handleCharacterSelect = (characterId: string) => {
+    setSelectedCharacter(characterId);
+    localStorage.setItem("selectedCharacter", characterId);
+    setShowCharacterSelect(false);
+  };
+
+  const handleChangeCharacter = () => {
+    setShowCharacterSelect(true);
+  };
 
   if (!mounted) {
     return (
@@ -62,17 +111,58 @@ export default function ServerPage({ params }: ServerPageProps) {
     );
   }
 
+  // Show character selection if no character selected or user wants to change
+  if (!selectedCharacter || showCharacterSelect) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+        <div className="max-w-4xl w-full mx-auto p-6">
+          <div className="mb-6 text-center">
+            <h1 className="text-3xl font-bold text-white mb-2">
+              Welcome to the Space!
+            </h1>
+            <p className="text-gray-400">
+              Choose your character to get started
+            </p>
+          </div>
+          <CharacterSelector
+            onSelect={handleCharacterSelect}
+            currentCharacter={selectedCharacter || "bob"}
+          />
+          {selectedCharacter && (
+            <div className="mt-4 text-center">
+              <Button
+                variant="neutral"
+                onClick={() => setShowCharacterSelect(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative w-full h-screen">
       <ServerDock />
       <div className="ml-16">
         <BaseSidebar serverId={serverId} />
         <div className="ml-16 w-[calc(100%-8rem)] h-full">
+          {/* Character change button */}
+          <button
+            onClick={handleChangeCharacter}
+            className="absolute top-4 right-4 z-50 bg-gray-800/90 hover:bg-gray-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-700"
+          >
+            Change Character
+          </button>
+
           <GameWrapper
             userId={userId}
             username={username}
             serverId={serverId}
             token={token}
+            characterId={selectedCharacter}
           />
         </div>
       </div>

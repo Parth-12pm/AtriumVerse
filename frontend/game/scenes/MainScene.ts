@@ -13,13 +13,17 @@ export class MainScene extends Scene {
   private usernameText!: Phaser.GameObjects.Text;
   private otherPlayers: Map<
     string,
-    { sprite: Phaser.GameObjects.Sprite; text: Phaser.GameObjects.Text }
+    {
+      sprite: Phaser.GameObjects.Sprite;
+      text: Phaser.GameObjects.Text;
+      characterId: string;
+    }
   > = new Map();
 
   private characterConfig!: CharacterAnimationSet;
   private characterId: string = "bob";
-  private currentAnimationState: "idle" | "run" | "sit" = "idle";
-  private currentDirection: "up" | "down" | "left" | "right" = "down";
+  private characterAnimations: Map<string, CharacterAnimationSet> = new Map(); // Track loaded characters
+  private animationStates: Map<string, "idle" | "run" | "sit"> = new Map(); // Track animation state per character
 
   private socket: WebSocket | null = null;
   private myId: string = "";
@@ -110,15 +114,24 @@ export class MainScene extends Scene {
     sprite: Phaser.GameObjects.Sprite,
     state: string,
     direction: string,
+    characterId?: string, // Optional character ID for  remote players
   ) {
-    const animKey = `${state}-${direction}`;
+    // Use character-specific animations if character ID provided
+    const charConfig = characterId
+      ? this.characterAnimations.get(characterId)
+      : null;
+    const animKey = charConfig
+      ? `${characterId}_${state}-${direction}` // Remote player animation
+      : `${state}-${direction}`; // Local player animation
 
     if (this.anims.exists(animKey)) {
       sprite.play(animKey, true);
     } else {
-      console.warn(`Animation ${animKey} not found`);
+      console.warn(`Animation ${animKey} not found, trying fallback`);
       // Try fallback to idle
-      const fallback = `idle-${direction}`;
+      const fallback = charConfig
+        ? `${characterId}_idle-${direction}`
+        : `idle-${direction}`;
       if (this.anims.exists(fallback)) {
         sprite.play(fallback, true);
       }
@@ -335,8 +348,11 @@ export class MainScene extends Scene {
         this.sendMovementToServer(pos.x, pos.y);
         this.checkZoneEntry(pos.x, pos.y);
       } else {
-        // Other players also use run animations
-        this.playAnimation(sprite, "run", direction);
+        // Other players also use run animations with their character ID
+        const player = this.otherPlayers.get(charId);
+        if (player) {
+          this.playAnimation(sprite, "run", direction, player.characterId);
+        }
       }
     });
 
@@ -349,14 +365,25 @@ export class MainScene extends Scene {
         const pos = this.gridEngine.getPosition("hero");
         this.sendMovementToServer(pos.x, pos.y);
       } else {
-        this.playAnimation(sprite, "idle", direction);
+        const player = this.otherPlayers.get(charId);
+        if (player) {
+          this.playAnimation(sprite, "idle", direction, player.characterId);
+        }
       }
     });
 
     this.gridEngine.directionChanged().subscribe(({ charId, direction }) => {
       const sprite = this.getSpriteById(charId);
       if (!sprite || this.gridEngine.isMoving(charId)) return;
-      this.playAnimation(sprite, "idle", direction);
+
+      if (charId === "hero") {
+        this.playAnimation(sprite, "idle", direction);
+      } else {
+        const player = this.otherPlayers.get(charId);
+        if (player) {
+          this.playAnimation(sprite, "idle", direction, player.characterId);
+        }
+      }
     });
 
     EventBus.on(GameEvents.SEND_CHAT_MESSAGE, (data: any) => {
@@ -515,6 +542,7 @@ export class MainScene extends Scene {
         x,
         y,
         username: this.myUsername,
+        character_id: this.characterId, // Include character ID
       }),
     );
   }
@@ -614,7 +642,13 @@ export class MainScene extends Scene {
             user.user_id !== this.myId &&
             !this.otherPlayers.has(user.user_id)
           ) {
-            this.spawnRemotePlayer(user.user_id, user.username, user.x, user.y);
+            this.spawnRemotePlayer(
+              user.user_id,
+              user.username,
+              user.x,
+              user.y,
+              user.character_id, // Pass character ID
+            );
           }
         });
         if (this.gridEngine.hasCharacter("hero")) {
@@ -630,6 +664,7 @@ export class MainScene extends Scene {
             data.x,
             data.y,
             data.username || "Player",
+            data.character_id, // Pass character ID
           );
         }
         break;
@@ -644,6 +679,7 @@ export class MainScene extends Scene {
             data.username || "Player",
             data.x ?? 15,
             data.y ?? 15,
+            data.character_id, // Pass character ID
           );
         }
         break;
@@ -681,11 +717,132 @@ export class MainScene extends Scene {
     username: string,
     x: number,
     y: number,
+    characterId?: string,
   ) {
     if (this.otherPlayers.has(userId)) return;
 
-    const firstSheet = this.characterConfig.sheets[0];
-    const sprite = this.add.sprite(0, 0, firstSheet.key, 0);
+    // Default to bob if no character specified
+    const remoteCharId = characterId || "bob";
+
+    // Load character config
+    let remoteCharConfig = this.characterAnimations.get(remoteCharId);
+    if (!remoteCharConfig) {
+      remoteCharConfig = getCharacterById(remoteCharId);
+      if (remoteCharConfig) {
+        this.characterAnimations.set(remoteCharId, remoteCharConfig);
+
+        // Load sprite sheets for this character
+        remoteCharConfig.sheets.forEach((sheet) => {
+          const fullKey = `${remoteCharId}_${sheet.key}_full`;
+          if (!this.textures.exists(fullKey)) {
+            this.load.image(fullKey, sheet.spritePath);
+          }
+        });
+
+        // Start loading and wait for it
+        this.load.once("complete", () => {
+          if (!remoteCharConfig) return;
+
+          // Create sprite sheet frames
+          remoteCharConfig.sheets.forEach((sheet) => {
+            const customKey = `${remoteCharId}_${sheet.key}`;
+            const fullKey = `${customKey}_full`;
+
+            if (this.textures.exists(customKey)) return;
+
+            const sourceTexture = this.textures.get(fullKey);
+            const source = sourceTexture.getSourceImage() as HTMLImageElement;
+
+            const gridCols =
+              sheet.gridColumns || Math.floor(source.width / sheet.frameWidth);
+            const gridRows =
+              sheet.gridRows || Math.floor(source.height / sheet.frameHeight);
+
+            const texture = this.textures.createCanvas(
+              customKey,
+              source.width,
+              source.height,
+            );
+            if (texture) {
+              texture.draw(0, 0, source);
+              let frameIndex = 0;
+              for (let row = 0; row < gridRows; row++) {
+                for (let col = 0; col < gridCols; col++) {
+                  texture.add(
+                    frameIndex,
+                    0,
+                    col * sheet.frameWidth,
+                    row * sheet.frameHeight,
+                    sheet.frameWidth,
+                    sheet.frameHeight,
+                  );
+                  frameIndex++;
+                }
+              }
+            }
+          });
+
+          // Create animations
+          remoteCharConfig.animations.forEach((animConfig) => {
+            const customAnimKey = `${remoteCharId}_${animConfig.animationKey}`;
+            const customSheetKey = `${remoteCharId}_${animConfig.sheetKey}`;
+
+            if (!this.anims.exists(customAnimKey)) {
+              this.anims.create({
+                key: customAnimKey,
+                frames: animConfig.frames.map((frameNum) => ({
+                  key: customSheetKey,
+                  frame: frameNum,
+                })),
+                frameRate: animConfig.frameRate,
+                repeat: animConfig.repeat,
+              });
+            }
+          });
+
+          // Now spawn the sprite
+          this.finishSpawningRemotePlayer(
+            userId,
+            username,
+            x,
+            y,
+            remoteCharId,
+            remoteCharConfig,
+          );
+        });
+
+        this.load.start();
+        return;
+      }
+    }
+
+    // Character already loaded, spawn immediately
+    this.finishSpawningRemotePlayer(
+      userId,
+      username,
+      x,
+      y,
+      remoteCharId,
+      remoteCharConfig,
+    );
+  }
+
+  private finishSpawningRemotePlayer(
+    userId: string,
+    username: string,
+    x: number,
+    y: number,
+    characterId: string,
+    charConfig: CharacterAnimationSet | undefined,
+  ) {
+    if (!charConfig) {
+      console.error(`Failed to load character ${characterId}`);
+      return;
+    }
+
+    const firstSheet = charConfig.sheets[0];
+    const sheetKey = `${characterId}_${firstSheet.key}`;
+    const sprite = this.add.sprite(0, 0, sheetKey, 0);
     sprite.setScale(2);
     sprite.setDepth(100);
     sprite.setOrigin(0.5, 1);
@@ -708,7 +865,13 @@ export class MainScene extends Scene {
       offsetY: 0,
     });
 
-    this.otherPlayers.set(userId, { sprite, text });
+    this.otherPlayers.set(userId, { sprite, text, characterId });
+
+    // Play default animation for this character
+    const defaultAnim = `${characterId}_idle-down`;
+    if (this.anims.exists(defaultAnim)) {
+      sprite.play(defaultAnim);
+    }
   }
 
   private updateRemotePlayerPosition(
@@ -716,11 +879,12 @@ export class MainScene extends Scene {
     x: number,
     y: number,
     username?: string,
+    characterId?: string,
   ) {
     const player = this.otherPlayers.get(userId);
 
     if (!player) {
-      this.spawnRemotePlayer(userId, username || "Player", x, y);
+      this.spawnRemotePlayer(userId, username || "Player", x, y, characterId);
       return;
     }
 
