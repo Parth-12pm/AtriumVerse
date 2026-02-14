@@ -13,6 +13,7 @@ class User(Base):
     username = Column(String, unique=True, index=True,nullable=False)
     email = Column(String, unique=True,index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
+    character_id = Column(String, default="bob", nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 

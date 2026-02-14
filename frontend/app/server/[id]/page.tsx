@@ -54,6 +54,9 @@ export default function ServerPage({ params }: ServerPageProps) {
 
       if (storedCharacter) {
         setSelectedCharacter(storedCharacter);
+      } else {
+        // No character selected yet, will show selector
+        setSelectedCharacter(null);
       }
 
       if (!storedToken) {
@@ -94,10 +97,6 @@ export default function ServerPage({ params }: ServerPageProps) {
     setSelectedCharacter(characterId);
     localStorage.setItem("selectedCharacter", characterId);
     setShowCharacterSelect(false);
-  };
-
-  const handleChangeCharacter = () => {
-    setShowCharacterSelect(true);
   };
 
   if (!mounted) {
@@ -149,14 +148,6 @@ export default function ServerPage({ params }: ServerPageProps) {
       <div className="ml-16">
         <BaseSidebar serverId={serverId} />
         <div className="ml-16 w-[calc(100%-8rem)] h-full">
-          {/* Character change button */}
-          <button
-            onClick={handleChangeCharacter}
-            className="absolute top-4 right-4 z-50 bg-gray-800/90 hover:bg-gray-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-700"
-          >
-            Change Character
-          </button>
-
           <GameWrapper
             userId={userId}
             username={username}

@@ -23,8 +23,8 @@ export class MainScene extends Scene {
   private characterConfig!: CharacterAnimationSet;
   private characterId: string = "bob";
   private characterAnimations: Map<string, CharacterAnimationSet> = new Map(); // Track loaded characters
-  private animationStates: Map<string, "idle" | "run" | "sit"> = new Map(); // Track animation state per character
-
+  private lastDirection: Map<string, "up" | "down" | "left" | "right"> =
+    new Map();
   private socket: WebSocket | null = null;
   private myId: string = "";
   private myUsername: string = "";
@@ -123,6 +123,12 @@ export class MainScene extends Scene {
     const animKey = charConfig
       ? `${characterId}_${state}-${direction}` // Remote player animation
       : `${state}-${direction}`; // Local player animation
+
+    // Check if already playing this animation to prevent flickering
+    const currentAnim = sprite.anims.currentAnim;
+    if (currentAnim && currentAnim.key === animKey && sprite.anims.isPlaying) {
+      return; // Already playing the correct animation
+    }
 
     if (this.anims.exists(animKey)) {
       sprite.play(animKey, true);
@@ -298,11 +304,12 @@ export class MainScene extends Scene {
       fontSize: "11px",
       fontFamily: "Arial, sans-serif",
       color: "#ffffff",
-      backgroundColor: "#000000cc",
-      padding: { x: 5, y: 0 },
+      backgroundColor: "#6366f1",
+      align: "center",
+      padding: { x: 5, y: 2 },
     });
-    this.usernameText.setOrigin(0.6, -3);
-    this.usernameText.setDepth(101);
+    this.usernameText.setOrigin(0.1, -4);
+    this.usernameText.setDepth(100);
 
     const gridEngineConfig = {
       characters: [
@@ -336,6 +343,12 @@ export class MainScene extends Scene {
       if (!sprite) return;
 
       if (charId === "hero") {
+        // Track direction for hero
+        this.lastDirection.set(
+          "hero",
+          direction as "up" | "down" | "left" | "right",
+        );
+
         // Use "run" animations instead of "walk"
         this.playAnimation(sprite, "run", direction);
 
@@ -361,7 +374,21 @@ export class MainScene extends Scene {
       if (!sprite) return;
 
       if (charId === "hero") {
-        this.playAnimation(this.playerSprite, "idle", direction);
+        // Check if any movement keys are still pressed
+        const leftPressed = this.cursors?.left.isDown || this.wasd?.left.isDown;
+        const rightPressed =
+          this.cursors?.right.isDown || this.wasd?.right.isDown;
+        const upPressed = this.cursors?.up.isDown || this.wasd?.up.isDown;
+        const downPressed = this.cursors?.down.isDown || this.wasd?.down.isDown;
+        const anyKeyPressed =
+          leftPressed || rightPressed || upPressed || downPressed;
+
+        // Only play idle if NO keys are pressed
+        if (!anyKeyPressed) {
+          const heroDirection = this.lastDirection.get("hero") || "down";
+          this.playAnimation(this.playerSprite, "idle", heroDirection);
+        }
+
         const pos = this.gridEngine.getPosition("hero");
         this.sendMovementToServer(pos.x, pos.y);
       } else {
@@ -437,13 +464,17 @@ export class MainScene extends Scene {
       // Re-enable keyboard capture
       if (this.input.keyboard) {
         this.input.keyboard.enabled = true;
-        // Recreate WASD keys
-        this.wasd = {
-          up: this.input.keyboard.addKey("W"),
-          down: this.input.keyboard.addKey("S"),
-          left: this.input.keyboard.addKey("A"),
-          right: this.input.keyboard.addKey("D"),
-        };
+        // Recreate WASD keys with error handling
+        try {
+          this.wasd = {
+            up: this.input.keyboard.addKey("W"),
+            down: this.input.keyboard.addKey("S"),
+            left: this.input.keyboard.addKey("A"),
+            right: this.input.keyboard.addKey("D"),
+          };
+        } catch (error) {
+          console.warn("Failed to recreate WASD keys:", error);
+        }
       }
     });
 
@@ -521,6 +552,7 @@ export class MainScene extends Scene {
       );
     }
 
+    // Update labels for remote players
     this.otherPlayers.forEach((player) => {
       player.text.setPosition(
         player.sprite.x,
@@ -637,6 +669,13 @@ export class MainScene extends Scene {
     switch (data.type) {
       case "user_list":
         EventBus.emit(GameEvents.PLAYER_LIST_UPDATE, data.users);
+        // Make sure myId is set before filtering
+        console.log(
+          "[user_list] myId:",
+          this.myId,
+          "users:",
+          data.users.map((u: any) => u.user_id),
+        );
         data.users.forEach((user: any) => {
           if (
             user.user_id !== this.myId &&
@@ -847,15 +886,16 @@ export class MainScene extends Scene {
     sprite.setDepth(100);
     sprite.setOrigin(0.5, 1);
 
+    // Gather.town style label using TextStyle properties
     const text = this.add.text(0, 0, username, {
       fontSize: "11px",
       fontFamily: "Arial, sans-serif",
-      color: "#00ff00",
-      backgroundColor: "#000000cc",
-      padding: { x: 4, y: 2 },
+      color: "#ffffff",
+      backgroundColor: "#6366f1",
+      padding: { x: 8, y: 3.6 },
     });
-    text.setOrigin(0.5, 1);
-    text.setDepth(101);
+    this.usernameText.setOrigin(0.2, -5.2);
+    this.usernameText.setDepth(100);
 
     this.gridEngine.addCharacter({
       id: userId,
