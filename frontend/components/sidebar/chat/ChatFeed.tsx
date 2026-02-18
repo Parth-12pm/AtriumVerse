@@ -257,7 +257,7 @@ export default function ChatFeed({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-white">
+    <div className="flex-1 flex flex-col min-h-0 bg-white">
       {/* Messages Area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 ? (
@@ -284,22 +284,29 @@ export default function ChatFeed({
           messages.map((msg) => {
             const username = getMessageUsername(msg);
             const userId = getMessageUserId(msg);
+            const isOwnMessage = userId === currentUserId;
 
             return (
               <div
                 key={msg.id}
-                className="flex gap-3 hover:bg-gray-50 -mx-2 px-2 py-2 rounded-lg group"
+                className={`flex gap-3 -mx-2 px-2 py-2 rounded-lg group ${isOwnMessage ? "flex-row-reverse" : "flex-row"}`}
               >
                 {/* Avatar */}
-                <Avatar className="w-10 h-10">
-                  <AvatarFallback className="bg-gradient-to-br from-purple-400 to-pink-400 text-white font-black">
+                <Avatar className="w-10 h-10 flex-shrink-0">
+                  <AvatarFallback
+                    className={`text-white font-black ${isOwnMessage ? "bg-gradient-to-br from-blue-500 to-blue-600" : "bg-gradient-to-br from-purple-400 to-pink-400"}`}
+                  >
                     {username.slice(0, 2).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
 
-                <div className="flex-1 min-w-0">
+                <div
+                  className={`flex flex-col max-w-[70%] ${isOwnMessage ? "items-end" : "items-start"}`}
+                >
                   {/* Message Header */}
-                  <div className="flex items-center gap-2 mb-1">
+                  <div
+                    className={`flex items-center gap-2 mb-1 ${isOwnMessage ? "flex-row-reverse" : "flex-row"}`}
+                  >
                     <span className="font-black text-sm">{username}</span>
                     <span className="text-xs text-gray-500">
                       {formatTime(msg.created_at)}
@@ -309,33 +316,11 @@ export default function ChatFeed({
                         (edited)
                       </span>
                     )}
-
-                    {/* Actions (only for own messages) */}
-                    {userId === currentUserId && (
-                      <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                        <Button
-                          onClick={() => startEdit(msg)}
-                          variant="neutral"
-                          size="icon"
-                          className="w-6 h-6 p-0"
-                        >
-                          <Edit2 className="w-3 h-3" />
-                        </Button>
-                        <Button
-                          onClick={() => deleteMessage(msg.id)}
-                          variant="neutral"
-                          size="icon"
-                          className="w-6 h-6 p-0 hover:bg-red-100"
-                        >
-                          <Trash2 className="w-3 h-3 text-red-600" />
-                        </Button>
-                      </div>
-                    )}
                   </div>
 
                   {/* Message Content */}
                   {editingId === msg.id ? (
-                    <div className="flex gap-2 mt-2">
+                    <div className="flex gap-2 mt-2 w-full">
                       <Input
                         value={editContent}
                         onChange={(e) => setEditContent(e.target.value)}
@@ -363,7 +348,37 @@ export default function ChatFeed({
                       </Button>
                     </div>
                   ) : (
-                    <p className="text-sm break-words">{msg.content}</p>
+                    <div
+                      className={`relative group/msg ${isOwnMessage ? "w-full flex justify-end" : "w-full"}`}
+                    >
+                      <div
+                        className={`inline-block px-4 py-2 rounded-2xl ${isOwnMessage ? "bg-blue-500 text-white rounded-br-sm" : "bg-gray-100 text-gray-900 rounded-bl-sm"}`}
+                      >
+                        <p className="text-sm break-words">{msg.content}</p>
+                      </div>
+
+                      {/* Actions (only for own messages) */}
+                      {isOwnMessage && (
+                        <div className="absolute top-0 right-0 -mt-6 opacity-0 group-hover/msg:opacity-100 transition-opacity flex gap-1">
+                          <Button
+                            onClick={() => startEdit(msg)}
+                            variant="neutral"
+                            size="icon"
+                            className="w-6 h-6 p-0"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </Button>
+                          <Button
+                            onClick={() => deleteMessage(msg.id)}
+                            variant="neutral"
+                            size="icon"
+                            className="w-6 h-6 p-0 hover:bg-red-100"
+                          >
+                            <Trash2 className="w-3 h-3 text-red-600" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
@@ -373,7 +388,7 @@ export default function ChatFeed({
       </div>
 
       {/* Message Input */}
-      <div className="p-4 border-t-4 border-black bg-gray-50">
+      <div className="p-4 border-t-4 border-black bg-gray-50 flex-shrink-0">
         <div className="flex gap-2">
           <Input
             type="text"
@@ -400,9 +415,6 @@ export default function ChatFeed({
             <Send className="w-5 h-5" />
           </Button>
         </div>
-        <p className="text-xs text-gray-500 mt-2">
-          Press Enter to send • Shift+Enter for new line
-        </p>
       </div>
     </div>
   );

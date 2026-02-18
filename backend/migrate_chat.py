@@ -5,12 +5,8 @@ Run this to add Channel and Message tables.
 """
 import asyncio
 from app.core.database import engine, Base
-from app.models.user import User
 from app.models.server import Server
-from app.models.zone import Zone
-from app.models.server_member import ServerMember
 from app.models.channel import Channel
-from app.models.message import Message
 
 
 async def run_migration():
@@ -33,7 +29,6 @@ async def create_default_channels():
     Create default channels for existing servers.
     """
     from sqlalchemy import select
-    from sqlalchemy.ext.asyncio import AsyncSession
     from app.core.database import SessionLocal
     
     async with SessionLocal() as session:

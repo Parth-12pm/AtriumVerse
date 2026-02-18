@@ -9,6 +9,7 @@ export default async function StartGame(
     username: string;
     serverId: string;
     token: string;
+    characterId?: string;
     apiUrl?: string;
   },
 ): Promise<Phaser.Game> {

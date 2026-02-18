@@ -54,7 +54,7 @@ async def list_messages(
         .join(User, Message.user_id == User.id)
         .where(
             Message.channel_id == channel_id,
-            not Message.is_deleted 
+            ~Message.is_deleted 
         )
         .order_by(desc(Message.created_at))
         .limit(limit)

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Users, MapPin } from "lucide-react";
+import { X, Users } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import EventBus, { GameEvents } from "@/game/EventBus";
@@ -57,7 +57,15 @@ export default function PeopleExpandedView({
         x: u.x || 0,
         y: u.y || 0,
       }));
-      setOnlineUsers(userObjects);
+
+      // Merge with existing users instead of replacing
+      setOnlineUsers((prev) => {
+        const userMap = new Map(prev.map((u) => [u.id, u]));
+        userObjects.forEach((user) => {
+          userMap.set(user.id, user);
+        });
+        return Array.from(userMap.values());
+      });
     };
 
     const handleRemoteMove = (data: {
@@ -72,8 +80,13 @@ export default function PeopleExpandedView({
       );
     };
 
+    const handleUserLeft = (data: { user_id: string }) => {
+      setOnlineUsers((prev) => prev.filter((u) => u.id !== data.user_id));
+    };
+
     EventBus.on(GameEvents.PLAYER_LIST_UPDATE, handleUserListUpdate);
     EventBus.on(GameEvents.REMOTE_PLAYER_MOVED, handleRemoteMove);
+    EventBus.on(GameEvents.PLAYER_LEFT, handleUserLeft);
 
     // Request current user list when component mounts
     EventBus.emit(GameEvents.REQUEST_USER_LIST);
@@ -81,27 +94,28 @@ export default function PeopleExpandedView({
     return () => {
       EventBus.off(GameEvents.PLAYER_LIST_UPDATE, handleUserListUpdate);
       EventBus.off(GameEvents.REMOTE_PLAYER_MOVED, handleRemoteMove);
+      EventBus.off(GameEvents.PLAYER_LEFT, handleUserLeft);
     };
   }, []);
 
   return (
-    <div className="fixed left-16 top-0 h-full w-80 bg-white border-r-4 border-black z-40 flex flex-col">
+    <div className="fixed left-16 top-0 h-full w-64 bg-white border-r-4 border-black z-40 flex flex-col">
       {/* Header */}
-      <div className="p-4 border-b-4 border-black bg-purple-500 flex items-center justify-between">
-        <h2 className="text-xl font-black text-white">People</h2>
+      <div className="p-3 border-b-4 border-black bg-purple-500 flex items-center justify-between">
+        <h2 className="text-lg font-black text-white">People</h2>
         <Button
           onClick={onClose}
           variant="neutral"
           size="icon"
-          className="bg-white hover:bg-gray-100"
+          className="h-8 w-8 bg-white hover:bg-gray-100"
         >
-          <X className="w-5 h-5" />
+          <X className="w-4 h-4" />
         </Button>
       </div>
 
       {/* User List */}
-      <div className="flex-1 overflow-y-auto p-4">
-        <div className="space-y-2">
+      <div className="flex-1 overflow-y-auto p-2">
+        <div className="space-y-1">
           {onlineUsers.map((user) => {
             const currentUserId = localStorage.getItem("user_id");
             const isCurrentUser = user.id === currentUserId;
@@ -109,12 +123,13 @@ export default function PeopleExpandedView({
             return (
               <div
                 key={user.id}
-                className={`flex items-center gap-3 p-3 bg-gray-50 border-2 border-black rounded-lg transition-colors ${
-                  isCurrentUser ? "" : "hover:bg-gray-100 cursor-pointer"
+                className={`flex items-center gap-2 p-2 rounded-lg transition-colors ${
+                  isCurrentUser
+                    ? "bg-purple-50"
+                    : "hover:bg-gray-100 cursor-pointer"
                 }`}
                 onClick={() => {
                   if (!isCurrentUser) {
-                    // Use callback if provided, otherwise emit event
                     if (onStartDM) {
                       onStartDM(user.id, user.username);
                     } else {
@@ -127,27 +142,21 @@ export default function PeopleExpandedView({
                   }
                 }}
               >
-                <Avatar className="w-10 h-10">
-                  <AvatarFallback className="bg-gradient-to-br from-purple-400 to-pink-400 text-white font-black">
+                <Avatar className="w-8 h-8 border-2 border-black">
+                  <AvatarFallback className="bg-gradient-to-br from-purple-400 to-pink-400 text-white font-black text-xs">
                     {user.username.slice(0, 2).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
-                  <p className="font-black text-sm truncate">
-                    {user.username}{" "}
+                  <p className="font-bold text-sm truncate">
+                    {user.username}
                     {isCurrentUser && (
-                      <span className="text-gray-500">(you)</span>
+                      <span className="text-xs text-gray-500 ml-1">(you)</span>
                     )}
                   </p>
-                  <div className="flex items-center gap-1 text-xs text-gray-500">
-                    <MapPin className="w-3 h-3" />
-                    <span>
-                      ({user.x}, {user.y})
-                    </span>
-                  </div>
                 </div>
                 <div
-                  className={`w-3 h-3 rounded-full border-2 border-black ${
+                  className={`w-2 h-2 rounded-full ${
                     user.status === "online"
                       ? "bg-green-500"
                       : user.status === "away"
@@ -159,18 +168,18 @@ export default function PeopleExpandedView({
             );
           })}
           {onlineUsers.length === 0 && (
-            <div className="text-center py-12">
-              <Users className="w-12 h-12 mx-auto mb-3 text-gray-400" />
-              <p className="font-bold text-gray-500">No users online</p>
+            <div className="text-center py-8">
+              <Users className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+              <p className="text-sm font-bold text-gray-400">No users online</p>
             </div>
           )}
         </div>
       </div>
 
       {/* Footer */}
-      <div className="p-4 border-t-4 border-black bg-gray-50">
-        <p className="text-xs text-gray-500 text-center">
-          {onlineUsers.length} user{onlineUsers.length !== 1 ? "s" : ""} online
+      <div className="p-2 border-t-2 border-black bg-gray-50">
+        <p className="text-xs text-gray-500 text-center font-bold">
+          {onlineUsers.length} online
         </p>
       </div>
     </div>

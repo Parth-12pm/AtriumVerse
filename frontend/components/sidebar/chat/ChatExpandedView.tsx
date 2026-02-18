@@ -216,9 +216,9 @@ export default function ChatExpandedView({
       </div>
 
       {/* Right Card: Message Feed (Wide) */}
-      <div className="w-[600px] bg-white border-r-4 border-black flex flex-col">
+      <div className="w-[600px] bg-white border-r-4 border-black flex flex-col h-screen overflow-hidden">
         {/* Feed Header */}
-        <div className="p-4 border-b-4 border-black bg-gray-50 flex items-center gap-3">
+        <div className="p-4 border-b-4 border-black bg-gray-50 flex items-center gap-3 flex-shrink-0">
           {mode === "channel" && selectedChannel ? (
             <>
               <div className="w-10 h-10 bg-blue-500 border-3 border-black rounded-lg flex items-center justify-center">
@@ -254,27 +254,33 @@ export default function ChatExpandedView({
           )}
         </div>
 
-        {/* Message Feed */}
-        {mode === "channel" && selectedChannelId ? (
-          <ChatFeed
-            mode="channel"
-            channelId={selectedChannelId}
-            serverId={serverId}
-          />
-        ) : mode === "dm" && selectedDMUserId ? (
-          <ChatFeed mode="dm" dmUserId={selectedDMUserId} serverId={serverId} />
-        ) : (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center max-w-sm p-8 bg-gray-50 border-3 border-black rounded-lg">
-              <p className="text-gray-500 font-bold text-lg mb-2">
-                💬 Welcome to Chat!
-              </p>
-              <p className="text-gray-600 text-sm">
-                Select a channel or start a direct message to begin chatting.
-              </p>
+        {/* Message Feed - Takes remaining height */}
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          {mode === "channel" && selectedChannelId ? (
+            <ChatFeed
+              mode="channel"
+              channelId={selectedChannelId}
+              serverId={serverId}
+            />
+          ) : mode === "dm" && selectedDMUserId ? (
+            <ChatFeed
+              mode="dm"
+              dmUserId={selectedDMUserId}
+              serverId={serverId}
+            />
+          ) : (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center max-w-sm p-8 bg-gray-50 border-3 border-black rounded-lg">
+                <p className="text-gray-500 font-bold text-lg mb-2">
+                  💬 Welcome to Chat!
+                </p>
+                <p className="text-gray-600 text-sm">
+                  Select a channel or start a direct message to begin chatting.
+                </p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

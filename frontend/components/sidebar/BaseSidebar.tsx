@@ -16,6 +16,8 @@ import ChatExpandedView from "@/components/sidebar/chat/ChatExpandedView";
 import PeopleExpandedView from "@/components/sidebar/people/PeopleExpandedView";
 import EventBus, { GameEvents } from "@/game/EventBus";
 import { serversAPI } from "@/lib/services/api.service";
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 
 interface BaseSidebarProps {
   serverId: string;
@@ -34,20 +36,44 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
   const [currentView, setCurrentView] = useState<SidebarView>("collapsed");
   const [currentZone, setCurrentZone] = useState("Hall");
   const [isServerOwner, setIsServerOwner] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
 
-  // Fetch server data to determine ownership
+  // Fetch server data to determine ownership and pending requests
   useEffect(() => {
     const checkOwnership = async () => {
       try {
         const response = await serversAPI.get(serverId);
         const userId = localStorage.getItem("user_id");
-        setIsServerOwner(response.data.owner_id === userId);
+        const isOwner = response.data.owner_id === userId;
+        setIsServerOwner(isOwner);
+
+        // If owner, also check for pending members
+        if (isOwner) {
+          try {
+            const membersResponse = await serversAPI.listMembers(serverId);
+            const pending = membersResponse.data.filter(
+              (m: any) => m.status === "pending",
+            );
+            setPendingCount(pending.length);
+          } catch (error) {
+            console.error("Failed to load pending members:", error);
+          }
+        }
       } catch (error) {
         console.error("Failed to check server ownership:", error);
       }
     };
     checkOwnership();
-  }, [serverId]);
+
+    // Refresh pending count every 30 seconds if owner
+    const interval = setInterval(() => {
+      if (isServerOwner) {
+        checkOwnership();
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [serverId, isServerOwner]);
 
   // Listen to zone changes via EventBus
   useEffect(() => {
@@ -88,7 +114,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
       {/* Icon Sidebar - Always Visible */}
       <div className="fixed left-0 top-0 h-full w-19 bg-white border-r-4 border-black z-50 flex flex-col items-center py-4 gap-4">
         {/* Logo */}
-        <div className="w-12 h-12 bg-purple-500 border-3 border-black rounded-lg flex items-center justify-center mb-4">
+        <div className="w-12 h-12 bg-blue-500 border-3 border-black rounded-lg flex items-center justify-center mb-4">
           <span className="text-white font-black text-xl">AV</span>
         </div>
 
@@ -169,7 +195,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
           onClick={() => toggleView("settings")}
           variant="neutral"
           size="icon"
-          className={`w-12 h-12 rounded-lg ${
+          className={`w-12 h-12 rounded-lg relative ${
             currentView === "settings"
               ? "bg-gray-800 text-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
               : "bg-gray-100 hover:bg-gray-200"
@@ -177,6 +203,11 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
           title="Settings"
         >
           <Settings className="w-6 h-6" />
+          {pendingCount > 0 && (
+            <Badge className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center bg-red-500 text-white text-xs border-2 border-black">
+              {pendingCount}
+            </Badge>
+          )}
         </Button>
       </div>
 
@@ -275,20 +306,53 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
 
           {/* Settings Content */}
           <div className="flex-1 p-4 overflow-auto flex flex-col gap-4">
-            {/* Leave Server (All Users) */}
+            {/* Exit Game (No API call) */}
+            <div className="bg-blue-50 border-3 border-blue-500 rounded-lg p-4">
+              <h3 className="font-black text-blue-700 mb-2 flex items-center gap-2">
+                <LogOut className="w-5 h-5" />
+                Exit Game
+              </h3>
+              <p className="text-sm text-gray-700 mb-3">
+                Return to dashboard. You'll remain a member of this server and
+                can rejoin anytime.
+              </p>
+              <Button
+                onClick={() => {
+                  router.push("/dashboard");
+                }}
+                variant="neutral"
+                className="w-full bg-blue-500 hover:bg-blue-600 text-white border-3 border-black"
+              >
+                <LogOut className="w-4 h-4 mr-2" />
+                Exit to Dashboard
+              </Button>
+            </div>
+
+            {/* Leave Server (API call) */}
             <div className="bg-orange-50 border-3 border-orange-500 rounded-lg p-4">
               <h3 className="font-black text-orange-700 mb-2 flex items-center gap-2">
                 <LogOut className="w-5 h-5" />
                 Leave Server
               </h3>
               <p className="text-sm text-gray-700 mb-3">
-                You&apos;ll lose access to all channels. You can rejoin later if
-                invited.
+                Remove yourself from this server. You&apos;ll need to be
+                re-invited to join again.
               </p>
               <Button
-                onClick={() => {
-                  if (confirm("Are you sure you want to leave this server?")) {
-                    router.push("/dashboard");
+                onClick={async () => {
+                  if (
+                    confirm(
+                      "Are you sure you want to leave this server? You'll need to be re-invited to join again.",
+                    )
+                  ) {
+                    try {
+                      await serversAPI.leave(serverId);
+                      toast.success("Left server successfully");
+                      router.push("/dashboard");
+                    } catch (error) {
+                      toast.error("Failed to leave server. Please try again.");
+                      console.error("Leave server error:", error);
+                    }
                   }
                 }}
                 variant="neutral"

@@ -240,9 +240,6 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
             <Send className="h-4 w-4" />
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground mt-2">
-          Press Enter to send • Shift+Enter for new line
-        </p>
       </div>
     </div>
   );

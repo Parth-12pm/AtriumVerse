@@ -2,6 +2,10 @@ import * as Phaser from "phaser";
 import { Scene } from "phaser";
 import { GridEngine, Direction } from "grid-engine";
 import EventBus, { GameEvents } from "../EventBus";
+import {
+  getCharacterById,
+  CharacterAnimationSet,
+} from "@/types/advance_char_config";
 
 export class MainScene extends Scene {
   private gridEngine!: GridEngine;
@@ -9,9 +13,19 @@ export class MainScene extends Scene {
   private usernameText!: Phaser.GameObjects.Text;
   private otherPlayers: Map<
     string,
-    { sprite: Phaser.GameObjects.Sprite; text: Phaser.GameObjects.Text }
+    {
+      sprite: Phaser.GameObjects.Sprite;
+      text: Phaser.GameObjects.Text;
+      characterId: string;
+      lastDirection: "up" | "down" | "left" | "right";
+    }
   > = new Map();
 
+  private characterConfig!: CharacterAnimationSet;
+  private characterId: string = "bob";
+  private characterAnimations: Map<string, CharacterAnimationSet> = new Map(); // Track loaded characters
+  private lastDirection: Map<string, "up" | "down" | "left" | "right"> =
+    new Map();
   private socket: WebSocket | null = null;
   private myId: string = "";
   private myUsername: string = "";
@@ -35,8 +49,107 @@ export class MainScene extends Scene {
   // UI input control - disable game input when UI is focused
   private inputEnabled: boolean = true;
 
+  // Throttled movement broadcast — send at ~20Hz
+  private lastSentX: number = -1;
+  private lastSentY: number = -1;
+  private lastSentDirection: string = "";
+  private lastSentTime: number = 0;
+  private readonly SEND_INTERVAL_MS = 50; // 20 updates/sec
+
   constructor() {
     super({ key: "MainScene" });
+  }
+
+  /**
+   * Create frames for a sprite sheet with specific dimensions
+   */
+  private createSpriteSheetFrames(sheet: any) {
+    const fullKey = sheet.key + "_full";
+
+    if (!this.textures.exists(fullKey)) {
+      console.warn(`Texture ${fullKey} not loaded`);
+      return;
+    }
+
+    const sourceTexture = this.textures.get(fullKey);
+    const source = sourceTexture.getSourceImage() as HTMLImageElement;
+
+    // Calculate grid if not provided
+    const gridCols =
+      sheet.gridColumns || Math.floor(source.width / sheet.frameWidth);
+    const gridRows =
+      sheet.gridRows || Math.floor(source.height / sheet.frameHeight);
+
+    console.log(
+      `Creating frames for ${sheet.key}: ${gridCols}x${gridRows} grid, ` +
+      `${sheet.frameWidth}x${sheet.frameHeight}px frames`,
+    );
+
+    // Create canvas texture with exact source dimensions
+    const texture = this.textures.createCanvas(
+      sheet.key,
+      source.width,
+      source.height,
+    );
+
+    if (texture) {
+      texture.draw(0, 0, source);
+
+      // Generate frames for this sprite sheet
+      let frameIndex = 0;
+      for (let row = 0; row < gridRows; row++) {
+        for (let col = 0; col < gridCols; col++) {
+          texture.add(
+            frameIndex,
+            0,
+            col * sheet.frameWidth,
+            row * sheet.frameHeight,
+            sheet.frameWidth,
+            sheet.frameHeight,
+          );
+          frameIndex++;
+        }
+      }
+
+      console.log(`Created ${frameIndex} frames for ${sheet.key}`);
+    }
+  }
+
+  /**
+   * Play animation for a sprite based on state and direction
+   */
+  private playAnimation(
+    sprite: Phaser.GameObjects.Sprite,
+    state: string,
+    direction: string,
+    characterId?: string, // Optional character ID for  remote players
+  ) {
+    // Use character-specific animations if character ID provided
+    const charConfig = characterId
+      ? this.characterAnimations.get(characterId)
+      : null;
+    const animKey = charConfig
+      ? `${characterId}_${state}-${direction}` // Remote player animation
+      : `${state}-${direction}`; // Local player animation
+
+    // Check if already playing this animation to prevent flickering
+    const currentAnim = sprite.anims.currentAnim;
+    if (currentAnim && currentAnim.key === animKey && sprite.anims.isPlaying) {
+      return; // Already playing the correct animation
+    }
+
+    if (this.anims.exists(animKey)) {
+      sprite.play(animKey, true);
+    } else {
+      console.warn(`Animation ${animKey} not found, trying fallback`);
+      // Try fallback to idle
+      const fallback = charConfig
+        ? `${characterId}_idle-${direction}`
+        : `idle-${direction}`;
+      if (this.anims.exists(fallback)) {
+        sprite.play(fallback, true);
+      }
+    }
   }
 
   init(data: any) {
@@ -45,6 +158,7 @@ export class MainScene extends Scene {
       this.myUsername = data.username;
       this.myServerId = data.serverId;
       this.token = data.token;
+      this.characterId = data.characterId || "bob";
       if (data.apiUrl) this.apiUrl = data.apiUrl;
     }
   }
@@ -79,51 +193,30 @@ export class MainScene extends Scene {
       this.load.image("tileset16", "/phaser_assets/Old/Tileset_32x32_16.png");
     }
 
-    // Load NPC sprite as image to handle dynamic dimensions
-    if (!this.textures.exists("player_full")) {
-      this.load.image("player_full", "/NPC_test.png");
+    // Load character configuration
+    const charConfig = getCharacterById(this.characterId);
+    if (!charConfig) {
+      console.error(`Character ${this.characterId} not found, using default`);
+      this.characterConfig = getCharacterById("bob")!;
+    } else {
+      this.characterConfig = charConfig;
     }
+    // Load ALL sprite sheets for this character
+    this.characterConfig.sheets.forEach((sheet) => {
+      const fullKey = sheet.key + "_full";
+      if (!this.textures.exists(fullKey)) {
+        console.log(
+          `Loading sprite sheet: ${sheet.key} from ${sheet.spritePath}`,
+        );
+        this.load.image(fullKey, sheet.spritePath);
+      }
+    });
   }
 
   create() {
-    // Generate valid sprite sheet from image
-    if (!this.textures.exists("player")) {
-      const playerTexture = this.textures.get("player_full");
-      const source = playerTexture.getSourceImage();
-
-      // Assume 4x4 grid
-      const frameWidth = source.width / 4;
-      const frameHeight = source.height / 4;
-
-      if (frameWidth > 0 && frameHeight > 0) {
-        const texture = this.textures.createCanvas(
-          "player",
-          source.width,
-          source.height,
-        );
-        if (texture) {
-          texture.draw(0, 0, source as HTMLImageElement);
-
-          // Add frames 0-15
-          for (let y = 0; y < 4; y++) {
-            for (let x = 0; x < 4; x++) {
-              const i = y * 4 + x;
-              texture.add(
-                i,
-                0,
-                x * frameWidth,
-                y * frameHeight,
-                frameWidth,
-                frameHeight,
-              );
-            }
-          }
-          console.log(
-            `[MainScene] Created dynamic spritesheet: ${frameWidth}x${frameHeight} frames`,
-          );
-        }
-      }
-    }
+    this.characterConfig.sheets.forEach((sheet) => {
+      this.createSpriteSheetFrames(sheet);
+    });
 
     const map = this.make.tilemap({ key: "main_map" });
 
@@ -187,55 +280,44 @@ export class MainScene extends Scene {
       }
     }
 
-    // Create player sprite
-    // Default to frame 0
-    this.playerSprite = this.add.sprite(0, 0, "player", 0);
-    this.playerSprite.setScale(1.6);
+    this.characterConfig.animations.forEach((animConfig) => {
+      if (!this.anims.exists(animConfig.animationKey)) {
+        this.anims.create({
+          key: animConfig.animationKey,
+          frames: animConfig.frames.map((frameNum) => ({
+            key: animConfig.sheetKey,
+            frame: frameNum,
+          })),
+          frameRate: animConfig.frameRate,
+          repeat: animConfig.repeat,
+        });
+      }
+    });
+    console.log(`Created ${this.characterConfig.animations.length} animations`);
+
+    // Create player sprite using first sheet
+    const firstSheet = this.characterConfig.sheets[0];
+    this.playerSprite = this.add.sprite(0, 0, firstSheet.key, 0);
+    this.playerSprite.setScale(2); // Adjust scale as needed
     this.playerSprite.setDepth(100);
-    this.playerSprite.setOrigin(0, 0);
+    this.playerSprite.setOrigin(0.5, 1);
+
+    // Play default idle animation
+    const defaultAnim = this.characterConfig.defaultAnimation || "idle-down";
+    if (this.anims.exists(defaultAnim)) {
+      this.playerSprite.play(defaultAnim);
+    }
 
     this.usernameText = this.add.text(0, 0, this.myUsername, {
       fontSize: "11px",
-      fontFamily: "Arial, sans-serif",
+      fontFamily: "'Arial Rounded MT Bold', Arial, sans-serif",
       color: "#ffffff",
-      backgroundColor: "#000000cc",
-      padding: { x: 5, y: 0 },
+      backgroundColor: "#5b5ea6",
+      align: "center",
+      padding: { x: 8, y: 4 },
     });
-    this.usernameText.setOrigin(0.6, -3);
-    this.usernameText.setDepth(101);
-
-    // Animation setup for 4x4 sprite sheet
-    // Row 0 (0-3): walk_down
-    this.anims.create({
-      key: "walk-down",
-      frames: this.anims.generateFrameNumbers("player", { start: 0, end: 3 }),
-      frameRate: 8,
-      repeat: -1,
-    });
-
-    // Row 1 (4-7): walk_right
-    this.anims.create({
-      key: "walk-right",
-      frames: this.anims.generateFrameNumbers("player", { start: 4, end: 7 }),
-      frameRate: 8,
-      repeat: -1,
-    });
-
-    // Row 2 (8-11): walk_up
-    this.anims.create({
-      key: "walk-up",
-      frames: this.anims.generateFrameNumbers("player", { start: 8, end: 11 }),
-      frameRate: 8,
-      repeat: -1,
-    });
-
-    // Row 3 (12-15): walk_left
-    this.anims.create({
-      key: "walk-left",
-      frames: this.anims.generateFrameNumbers("player", { start: 12, end: 15 }),
-      frameRate: 8,
-      repeat: -1,
-    });
+    this.usernameText.setOrigin(0.5, 1);
+    this.usernameText.setDepth(200);
 
     const gridEngineConfig = {
       characters: [
@@ -268,17 +350,30 @@ export class MainScene extends Scene {
       const sprite = this.getSpriteById(charId);
       if (!sprite) return;
 
-      sprite.play(`walk-${direction}`);
-
       if (charId === "hero") {
+        // Track direction for hero
+        this.lastDirection.set(
+          "hero",
+          direction as "up" | "down" | "left" | "right",
+        );
+        // Play run animation immediately (no server round-trip needed)
+        this.playAnimation(sprite, "run", direction);
+
         const pos = this.gridEngine.getPosition("hero");
         EventBus.emit(GameEvents.PLAYER_POSITION, {
           x: pos.x,
           y: pos.y,
           direction: direction as "up" | "down" | "left" | "right",
         });
-        this.sendMovementToServer(pos.x, pos.y);
+        // Zone check still happens on tile start
         this.checkZoneEntry(pos.x, pos.y);
+        // NOTE: position broadcast is now handled by the throttled update() loop
+      } else {
+        // Remote players: animate from direction received in packet
+        const player = this.otherPlayers.get(charId);
+        if (player) {
+          this.playAnimation(sprite, "run", direction, player.characterId);
+        }
       }
     });
 
@@ -286,19 +381,43 @@ export class MainScene extends Scene {
       const sprite = this.getSpriteById(charId);
       if (!sprite) return;
 
-      sprite.stop();
-      sprite.setFrame(this.getIdleFrame(direction));
-
       if (charId === "hero") {
-        const pos = this.gridEngine.getPosition("hero");
-        this.sendMovementToServer(pos.x, pos.y);
+        // Check if any movement keys are still pressed
+        const leftPressed = this.cursors?.left.isDown || this.wasd?.left.isDown;
+        const rightPressed =
+          this.cursors?.right.isDown || this.wasd?.right.isDown;
+        const upPressed = this.cursors?.up.isDown || this.wasd?.up.isDown;
+        const downPressed = this.cursors?.down.isDown || this.wasd?.down.isDown;
+        const anyKeyPressed =
+          leftPressed || rightPressed || upPressed || downPressed;
+
+        // Only play idle if NO keys are pressed
+        if (!anyKeyPressed) {
+          const heroDirection = this.lastDirection.get("hero") || "down";
+          this.playAnimation(this.playerSprite, "idle", heroDirection);
+        }
+        // NOTE: final position is sent by the throttled update() loop
+      } else {
+        const player = this.otherPlayers.get(charId);
+        if (player) {
+          player.lastDirection = direction as "up" | "down" | "left" | "right";
+          this.playAnimation(sprite, "idle", direction, player.characterId);
+        }
       }
     });
 
     this.gridEngine.directionChanged().subscribe(({ charId, direction }) => {
       const sprite = this.getSpriteById(charId);
       if (!sprite || this.gridEngine.isMoving(charId)) return;
-      sprite.setFrame(this.getIdleFrame(direction));
+
+      if (charId === "hero") {
+        this.playAnimation(sprite, "idle", direction);
+      } else {
+        const player = this.otherPlayers.get(charId);
+        if (player) {
+          this.playAnimation(sprite, "idle", direction, player.characterId);
+        }
+      }
     });
 
     EventBus.on(GameEvents.SEND_CHAT_MESSAGE, (data: any) => {
@@ -352,7 +471,7 @@ export class MainScene extends Scene {
       // Re-enable keyboard capture - with safety checks
       if (this.input && this.input.keyboard) {
         this.input.keyboard.enabled = true;
-        // Recreate WASD keys only if keyboard is available
+        // Recreate WASD keys with error handling
         try {
           this.wasd = {
             up: this.input.keyboard.addKey("W"),
@@ -360,8 +479,8 @@ export class MainScene extends Scene {
             left: this.input.keyboard.addKey("A"),
             right: this.input.keyboard.addKey("D"),
           };
-        } catch (e) {
-          console.warn("[MainScene] Could not recreate WASD keys:", e);
+        } catch (error) {
+          console.warn("Failed to recreate WASD keys:", error);
         }
       }
     });
@@ -386,9 +505,9 @@ export class MainScene extends Scene {
 
       // Add other players from local cache
       this.otherPlayers.forEach((player, oderId) => {
-        const charId = `player_${oderId}`;
-        if (this.gridEngine?.hasCharacter(charId)) {
-          const pos = this.gridEngine.getPosition(charId);
+        // gridEngine character ID is the userId directly (not player_${userId})
+        if (this.gridEngine?.hasCharacter(oderId)) {
+          const pos = this.gridEngine.getPosition(oderId);
           cachedUsers.push({
             user_id: oderId,
             username: player.text.text,
@@ -433,17 +552,43 @@ export class MainScene extends Scene {
       this.gridEngine.move("hero", Direction.DOWN);
     }
 
+    // ── Throttled position broadcast at 20Hz ──────────────────────────────
+    if (this.gridEngine.hasCharacter("hero")) {
+      const now = Date.now();
+      if (now - this.lastSentTime >= this.SEND_INTERVAL_MS) {
+        const pos = this.gridEngine.getPosition("hero");
+        const dir = this.lastDirection.get("hero") || "down";
+        const isMoving = this.gridEngine.isMoving("hero");
+
+        // Only send if position or direction changed, or if we just stopped
+        if (
+          pos.x !== this.lastSentX ||
+          pos.y !== this.lastSentY ||
+          dir !== this.lastSentDirection
+        ) {
+          this.sendMovementToServer(pos.x, pos.y, dir, isMoving);
+          this.lastSentX = pos.x;
+          this.lastSentY = pos.y;
+          this.lastSentDirection = dir;
+          this.lastSentTime = now;
+        }
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────
+
     if (this.playerSprite && this.usernameText) {
+      // Position label centered above the sprite's head
       this.usernameText.setPosition(
         this.playerSprite.x,
-        this.playerSprite.y - this.playerSprite.displayHeight - 4,
+        this.playerSprite.y - this.playerSprite.displayHeight - 6,
       );
     }
 
+    // Update labels for remote players
     this.otherPlayers.forEach((player) => {
       player.text.setPosition(
         player.sprite.x,
-        player.sprite.y - player.sprite.displayHeight - 4,
+        player.sprite.y - player.sprite.displayHeight - 6,
       );
     });
   }
@@ -453,30 +598,22 @@ export class MainScene extends Scene {
     return this.otherPlayers.get(charId)?.sprite;
   }
 
-  // Updated idle frames for 4x4 sprite sheet
-  private getIdleFrame(direction: string): number {
-    switch (direction) {
-      case "down":
-        return 1; // Row 0, frame 1
-      case "right":
-        return 5; // Row 1, frame 1
-      case "up":
-        return 9; // Row 2, frame 1
-      case "left":
-        return 13; // Row 3, frame 1
-      default:
-        return 1;
-    }
-  }
-
-  private sendMovementToServer(x: number, y: number) {
+  private sendMovementToServer(
+    x: number,
+    y: number,
+    direction: string = "down",
+    moving: boolean = false,
+  ) {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
     this.socket.send(
       JSON.stringify({
         type: "player_move",
         x,
         y,
+        direction,
+        moving,
         username: this.myUsername,
+        character_id: this.characterId,
       }),
     );
   }
@@ -571,12 +708,25 @@ export class MainScene extends Scene {
     switch (data.type) {
       case "user_list":
         EventBus.emit(GameEvents.PLAYER_LIST_UPDATE, data.users);
+        // Make sure myId is set before filtering
+        console.log(
+          "[user_list] myId:",
+          this.myId,
+          "users:",
+          data.users.map((u: any) => u.user_id),
+        );
         data.users.forEach((user: any) => {
           if (
             user.user_id !== this.myId &&
             !this.otherPlayers.has(user.user_id)
           ) {
-            this.spawnRemotePlayer(user.user_id, user.username, user.x, user.y);
+            this.spawnRemotePlayer(
+              user.user_id,
+              user.username,
+              user.x,
+              user.y,
+              user.character_id, // Pass character ID
+            );
           }
         });
         if (this.gridEngine.hasCharacter("hero")) {
@@ -592,6 +742,9 @@ export class MainScene extends Scene {
             data.x,
             data.y,
             data.username || "Player",
+            data.character_id,
+            data.direction, // ← drive animation immediately
+            data.moving, // ← run vs idle
           );
         }
         break;
@@ -606,6 +759,7 @@ export class MainScene extends Scene {
             data.username || "Player",
             data.x ?? 15,
             data.y ?? 15,
+            data.character_id, // Pass character ID
           );
         }
         break;
@@ -643,23 +797,147 @@ export class MainScene extends Scene {
     username: string,
     x: number,
     y: number,
+    characterId?: string,
   ) {
     if (this.otherPlayers.has(userId)) return;
 
-    const sprite = this.add.sprite(0, 0, "player", 1);
-    sprite.setScale(1.6);
+    // Default to bob if no character specified
+    const remoteCharId = characterId || "bob";
+
+    // Load character config
+    let remoteCharConfig = this.characterAnimations.get(remoteCharId);
+    if (!remoteCharConfig) {
+      remoteCharConfig = getCharacterById(remoteCharId);
+      if (remoteCharConfig) {
+        this.characterAnimations.set(remoteCharId, remoteCharConfig);
+
+        // Load sprite sheets for this character
+        remoteCharConfig.sheets.forEach((sheet) => {
+          const fullKey = `${remoteCharId}_${sheet.key}_full`;
+          if (!this.textures.exists(fullKey)) {
+            this.load.image(fullKey, sheet.spritePath);
+          }
+        });
+
+        // Start loading and wait for it
+        this.load.once("complete", () => {
+          if (!remoteCharConfig) return;
+
+          // Create sprite sheet frames
+          remoteCharConfig.sheets.forEach((sheet) => {
+            const customKey = `${remoteCharId}_${sheet.key}`;
+            const fullKey = `${customKey}_full`;
+
+            if (this.textures.exists(customKey)) return;
+
+            const sourceTexture = this.textures.get(fullKey);
+            const source = sourceTexture.getSourceImage() as HTMLImageElement;
+
+            const gridCols =
+              sheet.gridColumns || Math.floor(source.width / sheet.frameWidth);
+            const gridRows =
+              sheet.gridRows || Math.floor(source.height / sheet.frameHeight);
+
+            const texture = this.textures.createCanvas(
+              customKey,
+              source.width,
+              source.height,
+            );
+            if (texture) {
+              texture.draw(0, 0, source);
+              let frameIndex = 0;
+              for (let row = 0; row < gridRows; row++) {
+                for (let col = 0; col < gridCols; col++) {
+                  texture.add(
+                    frameIndex,
+                    0,
+                    col * sheet.frameWidth,
+                    row * sheet.frameHeight,
+                    sheet.frameWidth,
+                    sheet.frameHeight,
+                  );
+                  frameIndex++;
+                }
+              }
+            }
+          });
+
+          // Create animations
+          remoteCharConfig.animations.forEach((animConfig) => {
+            const customAnimKey = `${remoteCharId}_${animConfig.animationKey}`;
+            const customSheetKey = `${remoteCharId}_${animConfig.sheetKey}`;
+
+            if (!this.anims.exists(customAnimKey)) {
+              this.anims.create({
+                key: customAnimKey,
+                frames: animConfig.frames.map((frameNum) => ({
+                  key: customSheetKey,
+                  frame: frameNum,
+                })),
+                frameRate: animConfig.frameRate,
+                repeat: animConfig.repeat,
+              });
+            }
+          });
+
+          // Now spawn the sprite
+          this.finishSpawningRemotePlayer(
+            userId,
+            username,
+            x,
+            y,
+            remoteCharId,
+            remoteCharConfig,
+          );
+        });
+
+        this.load.start();
+        return;
+      }
+    }
+
+    // Character already loaded, spawn immediately
+    this.finishSpawningRemotePlayer(
+      userId,
+      username,
+      x,
+      y,
+      remoteCharId,
+      remoteCharConfig,
+    );
+  }
+
+  private finishSpawningRemotePlayer(
+    userId: string,
+    username: string,
+    x: number,
+    y: number,
+    characterId: string,
+    charConfig: CharacterAnimationSet | undefined,
+  ) {
+    if (!charConfig) {
+      console.error(`Failed to load character ${characterId}`);
+      return;
+    }
+
+    const firstSheet = charConfig.sheets[0];
+    const sheetKey = `${characterId}_${firstSheet.key}`;
+    const sprite = this.add.sprite(0, 0, sheetKey, 0);
+    sprite.setScale(2);
     sprite.setDepth(100);
     sprite.setOrigin(0.5, 1);
 
+    // Gather.town style label — centered pill above the sprite
     const text = this.add.text(0, 0, username, {
       fontSize: "11px",
-      fontFamily: "Arial, sans-serif",
-      color: "#00ff00",
-      backgroundColor: "#000000cc",
-      padding: { x: 4, y: 2 },
+      fontFamily: "'Arial Rounded MT Bold', Arial, sans-serif",
+      color: "#ffffff",
+      backgroundColor: "#5b5ea6",
+      align: "center",
+      padding: { x: 8, y: 4 },
     });
     text.setOrigin(0.5, 1);
-    text.setDepth(101);
+    text.setDepth(200);
 
     this.gridEngine.addCharacter({
       id: userId,
@@ -669,7 +947,18 @@ export class MainScene extends Scene {
       offsetY: 0,
     });
 
-    this.otherPlayers.set(userId, { sprite, text });
+    this.otherPlayers.set(userId, {
+      sprite,
+      text,
+      characterId,
+      lastDirection: "down",
+    });
+
+    // Play default animation for this character
+    const defaultAnim = `${characterId}_idle-down`;
+    if (this.anims.exists(defaultAnim)) {
+      sprite.play(defaultAnim);
+    }
   }
 
   private updateRemotePlayerPosition(
@@ -677,29 +966,60 @@ export class MainScene extends Scene {
     x: number,
     y: number,
     username?: string,
+    characterId?: string,
+    direction?: string,
+    moving?: boolean,
   ) {
     const player = this.otherPlayers.get(userId);
 
     if (!player) {
-      this.spawnRemotePlayer(userId, username || "Player", x, y);
+      this.spawnRemotePlayer(userId, username || "Player", x, y, characterId);
       return;
     }
 
+    // Update label text if username changed
     if (username && player.text.text !== username) {
       player.text.setText(username);
     }
 
+    // If the remote player switched avatar, re-spawn them with the new character
+    if (characterId && characterId !== player.characterId) {
+      this.removeRemotePlayer(userId);
+      this.spawnRemotePlayer(
+        userId,
+        username || player.text.text,
+        x,
+        y,
+        characterId,
+      );
+      return;
+    }
+
     if (!this.gridEngine.hasCharacter(userId)) return;
+
+    // ── Animate immediately from direction in packet (no round-trip wait) ──
+    const dir = direction || player.lastDirection || "down";
+    if (direction) {
+      player.lastDirection = direction as "up" | "down" | "left" | "right";
+    }
+    if (moving) {
+      this.playAnimation(player.sprite, "run", dir, player.characterId);
+    } else {
+      this.playAnimation(player.sprite, "idle", dir, player.characterId);
+    }
+    // ──────────────────────────────────────────────────────────────────────
 
     const currentPos = this.gridEngine.getPosition(userId);
     if (currentPos.x === x && currentPos.y === y) return;
 
     const distance = Math.abs(currentPos.x - x) + Math.abs(currentPos.y - y);
 
-    if (distance > 3) {
+    if (distance > 5) {
+      // Large gap: teleport to avoid rubber-banding
       this.gridEngine.setPosition(userId, { x, y });
     } else {
-      const speed = distance > 1 ? 8 : 4;
+      // Smooth catch-up: speed scales with distance
+      const speed = distance > 2 ? 10 : 6;
       this.gridEngine.setSpeed(userId, speed);
       this.gridEngine.moveTo(userId, { x, y });
     }

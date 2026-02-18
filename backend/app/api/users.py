@@ -6,7 +6,8 @@ from app.models.user import User
 from app.schemas.user import UserCreate,UserResponse
 from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordRequestForm
-from app.core.security import create_access_token
+from app.core.security import create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
+from datetime import timedelta
 
 
 
@@ -49,8 +50,12 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends() , db: AsyncSess
     if not user or not pwd_context.verify(form_data.password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect username or password")
 
-
-    access_token = create_access_token(data={"sub": user.username})
+    # Create access token with explicit expiration
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.username}, 
+        expires_delta=access_token_expires
+    )
 
     return {
         "access_token": access_token, 

@@ -7,6 +7,7 @@ interface GameWrapperProps {
   username: string;
   serverId: string;
   token: string;
+  characterId?: string;
 }
 
 let globalGameInstance: Phaser.Game | null = null;
@@ -17,6 +18,7 @@ export default function GameWrapper({
   username,
   serverId,
   token,
+  characterId = "bob",
 }: GameWrapperProps) {
   const gameRef = useRef<Phaser.Game | null>(null);
   const [isGameReady, setIsGameReady] = useState(false);
@@ -61,6 +63,7 @@ export default function GameWrapper({
         username,
         serverId,
         token,
+        characterId,
         apiUrl: process.env.NEXT_PUBLIC_API_URL,
       });
 

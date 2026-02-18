@@ -79,11 +79,15 @@ async def websocket_endpoint(
             default_x = 15
             default_y = 15
 
-        await redis_client.r.hmset(f"user:{user_id}", {
+        # Get character selection from user model
+        character_id = user_obj.character_id if user_obj.character_id else "bob"
+        
+        await redis_client.r.hset(f"user:{user_id}", mapping={
             "x": str(default_x),
             "y": str(default_y),
             "username": username,
-            "server_id": server_id
+            "server_id": server_id,
+            "character_id": character_id
         })
         await redis_client.r.sadd(f"server:{server_id}:users", user_id)
 
@@ -99,7 +103,8 @@ async def websocket_endpoint(
                     "user_id": uid,
                     "x": int(pos_data.get("x", 0)),
                     "y": int(pos_data.get("y", 0)),
-                    "username": pos_data.get("username", "Player")
+                    "username": pos_data.get("username", "Player"),
+                    "character_id": pos_data.get("character_id", "bob")
                 })
 
         await websocket.send_json({"type": "user_list", "users": user_positions})
@@ -109,13 +114,14 @@ async def websocket_endpoint(
             "user_id": user_id,
             "x": default_x,
             "y": default_y,
-            "username": username
+            "username": username,
+            "character_id": character_id
         }, server_id, websocket)
 
     async def periodic_save():
         while True:
             try:
-                await asyncio.sleep(10)
+                await asyncio.sleep(100)
                 if redis_client.r:
                     pos = await redis_client.r.hgetall(f"user:{user_id}")
                     if pos:
@@ -146,22 +152,35 @@ async def websocket_endpoint(
             if data.get("type") == "player_move":
                 zone = spatial_manager.check_zone(data["x"], data["y"], server_id)
 
+                # Get character_id from incoming message or from Redis
+                character_id = data.get("character_id")
+                if not character_id and redis_client.r:
+                    user_data = await redis_client.r.hgetall(f"user:{user_id}")
+                    character_id = user_data.get("character_id", "bob")
+                
                 await manager.broadcast({
                     "type": "player_move",
                     "user_id": user_id,
                     "x": data["x"],
                     "y": data["y"],
+                    "direction": data.get("direction", "down"),
+                    "moving": data.get("moving", False),
                     "username": data.get("username", "Player"),
+                    "character_id": character_id or "bob",
                     "zone": zone["name"] if zone else "Open Space"
                 }, server_id, websocket)
 
                 if redis_client.r:
-                    asyncio.create_task(redis_client.r.hmset(f"user:{user_id}", {
+                    mapping = {
                         "x": str(data["x"]),
                         "y": str(data["y"]),
                         "server_id": server_id,
                         "username": data.get("username", "Player")
-                    }))
+                    }
+                    # Update character_id if provided
+                    if character_id:
+                        mapping["character_id"] = character_id
+                    asyncio.create_task(redis_client.r.hset(f"user:{user_id}", mapping=mapping))
 
             # NEW: Zone lifecycle events
             elif data.get("type") == "zone_enter":
