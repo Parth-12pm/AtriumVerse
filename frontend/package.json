@@ -5,11 +5,13 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:cloudflare": "npx opennextjs-cloudflare build",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
     "@next/env": "^16.1.6",
+    "@opennextjs/cloudflare": "^1.16.5",
     "@radix-ui/react-avatar": "^1.1.11",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-dialog": "^1.1.15",
