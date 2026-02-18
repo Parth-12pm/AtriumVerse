@@ -50,7 +50,7 @@ app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[NEXT_PUBLIC_URL],
+    allow_origins=[NEXT_PUBLIC_URL,"https://atriumverse.parthsmahadik12027.workers.dev"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
