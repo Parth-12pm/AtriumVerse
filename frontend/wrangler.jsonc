@@ -8,5 +8,10 @@
     "assets": {
         "directory": ".open-next/assets",
         "binding": "ASSETS"
+    },
+    "build": {
+        "minify": {
+            "keep_names": false
+        }
     }
 }
