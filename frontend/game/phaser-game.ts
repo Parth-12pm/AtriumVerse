@@ -1,25 +1,17 @@
-import * as Phaser from "phaser";
-import { GridEngine } from "grid-engine";
-import { MainScene } from "./scenes/MainScene";
+import * as Phaser from 'phaser';
+import { GridEngine } from 'grid-engine';
+import { MainScene } from './scenes/MainScene';
 
 export default async function StartGame(
   parent: string,
-  sceneData: {
-    userId: string;
-    username: string;
-    serverId: string;
-    token: string;
-    characterId?: string;
-    apiUrl?: string;
-  },
+  sceneData?: { userId: string; username: string; roomId: string; token: string }
 ): Promise<Phaser.Game> {
   const config: Phaser.Types.Core.GameConfig = {
     type: Phaser.AUTO,
     width: 1200,
     height: 800,
     parent: parent,
-    backgroundColor: "#1a1a1a",
-
+    backgroundColor: '#1a1a1a',
     pixelArt: true,
     antialias: false,
     roundPixels: true,
@@ -27,9 +19,9 @@ export default async function StartGame(
     plugins: {
       scene: [
         {
-          key: "gridEngine",
+          key: 'gridEngine',
           plugin: GridEngine,
-          mapping: "gridEngine",
+          mapping: 'gridEngine',
         },
       ],
     },
@@ -37,19 +29,19 @@ export default async function StartGame(
     scale: {
       mode: Phaser.Scale.RESIZE,
       autoCenter: Phaser.Scale.CENTER_BOTH,
+      width: '100%',
+      height: '100%',
+      expandParent: true
     },
 
     scene: [MainScene],
-    fps: {
-      target: 60,
-      forceSetTimeOut: true,
-    },
+
+    callbacks: sceneData ? {
+      preBoot: (game) => {
+        (game.registry as any).sceneData = sceneData;
+      }
+    } : undefined,
   };
 
-  const game = new Phaser.Game(config);
-
-  // Pass data to scene via scene.start with data parameter
-  game.scene.start("MainScene", sceneData);
-
-  return game;
+  return new Phaser.Game(config);
 }

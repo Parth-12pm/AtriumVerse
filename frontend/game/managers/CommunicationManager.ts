@@ -3,57 +3,39 @@
  *
  * Handles all communication logic:
  * - WebSocket chat messages (permanent channels, persistent DMs, temporary zone chat)
+ * - REAL-TIME PLAYER MOVEMENT & SYNC
  * - Zone-based chat routing
- * - Future: LiveKit WebRTC integration
  *
- * Separated from MainScene.ts to keep game logic clean.
+ * Centralized relay for both Phaser (MainScene) and React (UI components).
  */
 
-import EventBus from "@/game/EventBus";
+import EventBus, { GameEvents } from "@/game/EventBus";
 import { apiClient } from "@/lib/api";
-
-interface Message {
-  id?: string;
-  type: "chat_message" | "dm_received" | "dm_updated" | "dm_deleted";
-  sender: string;
-  username: string;
-  scope: "channel" | "direct" | "zone";
-  text: string;
-  timestamp: string;
-  channel_id?: string;
-  zone_id?: string;
-  temporary?: boolean;
-  receiver_id?: string;
-}
-
-interface ZoneInfo {
-  id: string;
-  name: string;
-  members: string[];
-}
 
 export class CommunicationManager {
   private ws: WebSocket | null = null;
   private serverId: string;
   private token: string;
-  private currentZone: ZoneInfo | null = null;
+  private userId: string;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
 
   constructor(serverId: string, token: string) {
     this.serverId = serverId;
     this.token = token;
+    this.userId = localStorage.getItem("user_id") || "unknown";
 
     // Listen to zone events from MainScene
-    EventBus.on("zone:entered", this.handleZoneEntered.bind(this));
-    EventBus.on("zone:exited", this.handleZoneExited.bind(this));
+    EventBus.on(GameEvents.ZONE_ENTER, this.handleZoneEnter.bind(this));
+    EventBus.on(GameEvents.ZONE_EXIT, this.handleZoneExit.bind(this));
+
+    // Listen to local movement from MainScene to relay to WS
+    EventBus.on("hero:move", this.sendMovement.bind(this));
   }
 
-  /**
-   * Connect to WebSocket
-   */
   public async connect(): Promise<void> {
     const wsUrl = `${process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000"}/ws/${this.serverId}?token=${this.token}`;
+    console.log(`[COMM-MANAGER] Connecting to: ${wsUrl}`);
 
     this.ws = new WebSocket(wsUrl);
 
@@ -64,13 +46,12 @@ export class CommunicationManager {
     };
 
     this.ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      this.handleWebSocketMessage(data);
-    };
-
-    this.ws.onerror = (error) => {
-      console.error("❌ CommunicationManager: WebSocket error:", error);
-      EventBus.emit("ws:error", error);
+      try {
+        const data = JSON.parse(event.data);
+        this.handleWebSocketMessage(data);
+      } catch (err) {
+        console.error("WS Parse Error:", err);
+      }
     };
 
     this.ws.onclose = () => {
@@ -80,339 +61,86 @@ export class CommunicationManager {
     };
   }
 
-  /**
-   * Handle incoming WebSocket messages
-   */
   private handleWebSocketMessage(data: any): void {
+    // Relay everything from WS to the EventBus for MainScene and UI
     switch (data.type) {
+      case "user_list":
+        EventBus.emit(GameEvents.PLAYER_LIST_UPDATE, data.users);
+        break;
+      case "user_joined":
+        EventBus.emit(GameEvents.PLAYER_JOINED, data);
+        break;
+      case "player_move":
+        // data contains user_id, x, y, direction, moving
+        EventBus.emit(GameEvents.REMOTE_PLAYER_MOVED, {
+          userId: data.user_id,
+          x: data.x,
+          y: data.y,
+          direction: data.direction,
+          moving: data.moving
+        });
+        break;
+      case "user_left":
+        EventBus.emit(GameEvents.PLAYER_LEFT, { user_id: data.user_id });
+        break;
       case "chat_message":
-        this.handleChatMessage(data);
+        EventBus.emit(GameEvents.CHAT_MESSAGE, data);
         break;
-
-      case "dm_received":
-        this.handleDMReceived(data);
-        break;
-
-      case "dm_updated":
-        this.handleDMUpdated(data);
-        break;
-
-      case "dm_deleted":
-        this.handleDMDeleted(data);
-        break;
-
-      case "zone_entered":
-        this.handleZoneEnteredConfirmation(data);
-        break;
-
-      case "zone_exited":
-        this.handleZoneExitedConfirmation(data);
-        break;
-
       default:
-        // Pass through other messages to EventBus for MainScene
+        // Generic relay
         EventBus.emit("ws:message", data);
     }
   }
 
-  /**
-   * Handle chat messages (channel, zone, or temporary direct)
-   */
-  private handleChatMessage(data: Message): void {
-    if (data.scope === "channel") {
-      // Permanent channel message
-      EventBus.emit("chat:channel_message", data);
-    } else if (data.scope === "zone") {
-      // Temporary zone chat
-      EventBus.emit("chat:zone_message", data);
-    } else if (data.scope === "direct" && data.temporary) {
-      // Temporary direct message (non-persistent)
-      EventBus.emit("chat:temp_direct_message", data);
+  private handleZoneEnter(data: any) {
+    this.send({ type: "zone_enter", zone_id: data.zoneId });
+  }
+
+  private handleZoneExit(data: any) {
+    this.send({ type: "zone_exit", zone_id: data.zoneId });
+  }
+
+  private sendMovement(data: any) {
+    this.send({
+      type: "player_move",
+      user_id: this.userId,
+      x: data.x,
+      y: data.y,
+      direction: data.direction,
+      moving: data.moving
+    });
+  }
+
+  private send(message: any): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(message));
     }
   }
 
-  /**
-   * Handle persistent DM received
-   */
-  private handleDMReceived(data: any): void {
-    EventBus.emit("dm:received", data.message);
-  }
-
-  /**
-   * Handle persistent DM updated
-   */
-  private handleDMUpdated(data: any): void {
-    EventBus.emit("dm:updated", data.message);
-  }
-
-  /**
-   * Handle persistent DM deleted
-   */
-  private handleDMDeleted(data: any): void {
-    EventBus.emit("dm:deleted", { message_id: data.message_id });
-  }
-
-  /**
-   * Handle zone entered confirmation from server
-   */
-  private handleZoneEnteredConfirmation(data: any): void {
-    this.currentZone = {
-      id: data.zone_id,
-      name: data.zone_name || "Unknown Zone",
-      members: data.members || [],
-    };
-
-    EventBus.emit("zone:confirmed_entry", this.currentZone);
-  }
-
-  /**
-   * Handle zone exited confirmation from server
-   */
-  private handleZoneExitedConfirmation(data: any): void {
-    this.currentZone = null;
-    EventBus.emit("zone:confirmed_exit", { zone_id: data.zone_id });
-  }
-
-  /**
-   * Handle zone entered event from MainScene
-   */
-  private handleZoneEntered(zoneData: {
-    id: string;
-    name: string;
-    type: string;
-  }): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.warn("⚠️ Cannot send zone_enter: WebSocket not connected");
-      return;
-    }
-
-    this.ws.send(
-      JSON.stringify({
-        type: "zone_enter",
-        zone_id: zoneData.id,
-        zone_type: zoneData.type || "PUBLIC",
-      }),
-    );
-  }
-
-  /**
-   * Handle zone exited event from MainScene
-   */
-  private handleZoneExited(zoneData: { id: string }): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      return;
-    }
-
-    this.ws.send(
-      JSON.stringify({
-        type: "zone_exit",
-        zone_id: zoneData.id,
-      }),
-    );
-  }
-
-  /**
-   * Send a channel message (permanent, saved to DB)
-   */
-  public async sendChannelMessage(
-    channelId: string,
-    content: string,
-  ): Promise<void> {
-    try {
-      // Send via REST API to save in DB
-      const response = await apiClient.post(
-        `/messages/channels/${channelId}/messages`,
-        {
-          content,
-        },
-      );
-
-      // WebSocket real-time broadcast happens automatically via backend
-      return response.data;
-    } catch (error) {
-      console.error("❌ Failed to send channel message:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Send a zone message (temporary, NOT saved to DB)
-   */
-  public sendZoneMessage(content: string): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.warn("⚠️ Cannot send zone message: WebSocket not connected");
-      return;
-    }
-
-    if (!this.currentZone) {
-      console.warn("⚠️ Cannot send zone message: Not in a zone");
-      return;
-    }
-
-    this.ws.send(
-      JSON.stringify({
-        type: "chat_message",
-        scope: "zone",
-        message: content,
-      }),
-    );
-  }
-
-  /**
-   * Send a persistent DM (saved to DB)
-   */
-  public async sendDirectMessage(
-    receiverId: string,
-    content: string,
-  ): Promise<any> {
-    try {
-      // Send via REST API to save in DB
-      const response = await apiClient.post("/api/direct-messages/messages", {
-        receiver_id: receiverId,
-        content,
-      });
-
-      // Notify target via WebSocket
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        this.ws.send(
-          JSON.stringify({
-            type: "dm_sent",
-            target_id: receiverId,
-            message: response.data,
-          }),
-        );
-      }
-
-      return response.data;
-    } catch (error) {
-      console.error("❌ Failed to send DM:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Edit a persistent DM
-   */
-  public async editDirectMessage(
-    messageId: string,
-    content: string,
-    receiverId: string,
-  ): Promise<any> {
-    try {
-      const response = await apiClient.patch(
-        `/api/direct-messages/messages/${messageId}`,
-        {
-          content,
-        },
-      );
-
-      // Notify target via WebSocket
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        this.ws.send(
-          JSON.stringify({
-            type: "dm_edited",
-            target_id: receiverId,
-            message: response.data,
-          }),
-        );
-      }
-
-      return response.data;
-    } catch (error) {
-      console.error("❌ Failed to edit DM:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Delete a persistent DM
-   */
-  public async deleteDirectMessage(
-    messageId: string,
-    receiverId: string,
-  ): Promise<void> {
-    try {
-      await apiClient.delete(`/api/direct-messages/messages/${messageId}`);
-
-      // Notify target via WebSocket
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        this.ws.send(
-          JSON.stringify({
-            type: "dm_deleted",
-            target_id: receiverId,
-            message_id: messageId,
-          }),
-        );
-      }
-    } catch (error) {
-      console.error("❌ Failed to delete DM:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get current zone info
-   */
-  public getCurrentZone(): ZoneInfo | null {
-    return this.currentZone;
-  }
-
-  /**
-   * Check if in a zone
-   */
-  public isInZone(): boolean {
-    return this.currentZone !== null;
-  }
-
-  /**
-   * Attempt to reconnect WebSocket
-   */
   private attemptReconnect(): void {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error("❌ Max reconnection attempts reached");
-      EventBus.emit("ws:max_reconnect_failed");
-      return;
+    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+      this.reconnectAttempts++;
+      setTimeout(() => this.connect(), 2000 * this.reconnectAttempts);
     }
-
-    this.reconnectAttempts++;
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
-
-    console.log(
-      `🔄 Attempting reconnection ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms...`,
-    );
-
-    setTimeout(() => {
-      this.connect();
-    }, delay);
   }
 
-  /**
-   * Disconnect WebSocket
-   */
   public disconnect(): void {
     if (this.ws) {
       this.ws.close();
       this.ws = null;
     }
-
-    // Remove event listeners
-    EventBus.off("zone:entered", this.handleZoneEntered.bind(this));
-    EventBus.off("zone:exited", this.handleZoneExited.bind(this));
+    EventBus.off(GameEvents.ZONE_ENTER, this.handleZoneEnter.bind(this));
+    EventBus.off(GameEvents.ZONE_EXIT, this.handleZoneExit.bind(this));
+    EventBus.off("hero:move", this.sendMovement.bind(this));
   }
 }
 
-// Singleton instance
 let communicationManagerInstance: CommunicationManager | null = null;
 
-export function initCommunicationManager(
-  serverId: string,
-  token: string,
-): CommunicationManager {
-  if (communicationManagerInstance) {
-    communicationManagerInstance.disconnect();
-  }
-
+export function initCommunicationManager(serverId: string, token: string): CommunicationManager {
+  if (communicationManagerInstance) communicationManagerInstance.disconnect();
   communicationManagerInstance = new CommunicationManager(serverId, token);
+  communicationManagerInstance.connect();
   return communicationManagerInstance;
 }
 

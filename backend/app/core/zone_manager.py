@@ -55,13 +55,13 @@ class ZoneManager:
                 "type": zone_type,
                 "name": zone_id
             }
-            logger.info(f"🏗️  Zone created: {zone_id} ({zone_type})")
+            logger.info(f"Zone created: {zone_id} ({zone_type})")
         
         # Add user to zone
         self.zones[zone_id].add(user_id)
         self.user_zones[user_id] = zone_id
         
-        logger.info(f"👋 {username} entered {zone_id} (now {len(self.zones[zone_id])} users)")
+        logger.info(f"User {username} entered {zone_id} (now {len(self.zones[zone_id])} users)")
         
         return {
             "zone_id": zone_id,
@@ -91,10 +91,10 @@ class ZoneManager:
         if not self.zones[zone_id]:
             del self.zones[zone_id]
             del self.zone_metadata[zone_id]
-            logger.info(f"🧹 Zone destroyed: {zone_id} (empty)")
+            logger.info(f"Zone destroyed: {zone_id} (empty)")
             return True
         
-        logger.info(f"👋 User left {zone_id} ({len(self.zones[zone_id])} remaining)")
+        logger.info(f"User left {zone_id} ({len(self.zones[zone_id])} remaining)")
         return False
     
     def get_zone_members(self, zone_id: str) -> Set[str]:

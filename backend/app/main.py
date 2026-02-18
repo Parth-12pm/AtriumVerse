@@ -1,4 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+import traceback
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.api import users,ws,servers,channels,messages,direct_messages
@@ -25,32 +27,48 @@ async def lifespan(app: FastAPI):
         # Optionally ping the DB to be sure
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
-        print("✅ Database Connected & Tables Verified")
+        print("Database Connected & Tables Verified")
     except Exception as e:
-        print(f"❌ Database Error: {e}")
+        print(f"Database Error: {e}")
+        print(traceback.format_exc())
 
     # 2. Initialize Redis
     try:
         await init_redis()
-        print("✅ Redis Connected")
+        print("Redis Connected")
     except Exception as e:
-        print(f"❌ Redis Error: {e}")
+        print(f"Redis Error: {e}")
+        print(traceback.format_exc())
 
     yield
 
     # 3. Shutdown
     await close_redis()
-    print("🛑 Shutdown complete")
-
-
-
+    print("Shutdown complete")
 
 
 app = FastAPI(lifespan=lifespan)
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    print(f"\n[GLOBAL ERROR] {exc}")
+    print(traceback.format_exc())
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Internal Server Error",
+            "message": str(exc),
+            "traceback": traceback.format_exc()
+        },
+    )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[NEXT_PUBLIC_URL, "http://localhost:3000", "https://atriumverse.parthsmahadik12027.workers.dev"],
+    allow_origins=[
+        NEXT_PUBLIC_URL, 
+        "http://localhost:3000", 
+        "https://atriumverse.parthsmahadik12027.workers.dev"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -67,5 +85,3 @@ app.include_router(direct_messages.router,prefix="/DM",tags=["Direct-Messages"])
 @app.get("/")
 async def hello():
     return {"message": "AtriumVerse Backend is Connected!"}
-
-

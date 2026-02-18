@@ -175,11 +175,11 @@ export function ChannelSidebar({
             <Button
               variant="noShadow"
               size="icon"
-              onClick={() => {}} // Could trigger expand
+              onClick={() => { }} // Could trigger expand
             >
               <MessageSquare className="h-2 w-2" />
             </Button>
-            <Button variant="noShadow" size="icon" onClick={() => {}}>
+            <Button variant="noShadow" size="icon" onClick={() => { }}>
               <Users className="h-2 w-2" />
             </Button>
           </div>

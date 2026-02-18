@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.zone import Zone
 from typing import Optional
 from collections import OrderedDict
+import uuid
 
 class SpatialManager:
     def __init__(self, max_servers=100):
@@ -11,25 +12,28 @@ class SpatialManager:
         self.zone_cache: OrderedDict = OrderedDict()
         self.max_servers = max_servers
 
-    async def load_zones(self, server_id: str, db: AsyncSession):
+    async def load_zones(self, server_id, db: AsyncSession):
         """
         Fetches zones from DB and caches them in memory (RAM).
         Call this when a user joins a server for the first time.
         """
+        sid_str = str(server_id)
+        sid_uuid = server_id if isinstance(server_id, uuid.UUID) else uuid.UUID(sid_str)
+
         # Optimization: Only load if not already in cache
-        if server_id in self.zone_cache:
-            self.zone_cache.move_to_end(server_id) # Mark as recently used
+        if sid_str in self.zone_cache:
+            self.zone_cache.move_to_end(sid_str) # Mark as recently used
             return
 
-        print(f"🔄 Loading zones for server {server_id}...")
+        print(f"Loading zones for server {sid_str}...")
         
-        result = await db.execute(select(Zone).where(Zone.server_id == server_id))
+        result = await db.execute(select(Zone).where(Zone.server_id == sid_uuid))
         zones = result.scalars().all()
         
         # Enforce LRU Limit
         if len(self.zone_cache) >= self.max_servers:
             removed_id, _ = self.zone_cache.popitem(last=False) # Remove oldest (FIFO based on insertion/access)
-            print(f"🧹 Evicted server {removed_id} from zone cache")
+            print(f"Evicted server {removed_id} from zone cache")
 
         # We convert to a simple dict so accessing bounds is fast
         zone_list = []
@@ -43,7 +47,7 @@ class SpatialManager:
             
         self.zone_cache[str(server_id)] = zone_list
             
-        print(f"✅ Cached {len(zones)} zones for {server_id}")
+        print(f"Cached {len(zones)} zones for {server_id}")
 
     def check_zone(self, x: float, y: float, server_id: str) -> Optional[dict]:
         """Checks if (x,y) is inside any cached zone."""
