@@ -12,9 +12,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-NEXT_PUBLIC_URL = os.getenv("NEXT_PUBLIC_URL")
+NEXT_PUBLIC_URL = (os.getenv("NEXT_PUBLIC_URL") or "").strip()
 if not NEXT_PUBLIC_URL:
-    raise ValueError("NEXT_PUBLIC_URL is not set")
+    NEXT_PUBLIC_URL = "http://localhost:3000"
 
 
 @asynccontextmanager
@@ -50,7 +50,7 @@ app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[NEXT_PUBLIC_URL,"https://atriumverse.parthsmahadik12027.workers.dev"],
+    allow_origins=[NEXT_PUBLIC_URL, "http://localhost:3000", "https://atriumverse.parthsmahadik12027.workers.dev"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
