@@ -17,6 +17,7 @@ export class MainScene extends Scene {
       sprite: Phaser.GameObjects.Sprite;
       text: Phaser.GameObjects.Text;
       characterId: string;
+      lastDirection: "up" | "down" | "left" | "right";
     }
   > = new Map();
 
@@ -47,6 +48,13 @@ export class MainScene extends Scene {
 
   // UI input control - disable game input when UI is focused
   private inputEnabled: boolean = true;
+
+  // Throttled movement broadcast — send at ~20Hz
+  private lastSentX: number = -1;
+  private lastSentY: number = -1;
+  private lastSentDirection: string = "";
+  private lastSentTime: number = 0;
+  private readonly SEND_INTERVAL_MS = 50; // 20 updates/sec
 
   constructor() {
     super({ key: "MainScene" });
@@ -302,14 +310,14 @@ export class MainScene extends Scene {
 
     this.usernameText = this.add.text(0, 0, this.myUsername, {
       fontSize: "11px",
-      fontFamily: "Arial, sans-serif",
+      fontFamily: "'Arial Rounded MT Bold', Arial, sans-serif",
       color: "#ffffff",
-      backgroundColor: "#6366f1",
+      backgroundColor: "#5b5ea6",
       align: "center",
-      padding: { x: 5, y: 2 },
+      padding: { x: 8, y: 4 },
     });
-    this.usernameText.setOrigin(0.1, -4);
-    this.usernameText.setDepth(100);
+    this.usernameText.setOrigin(0.5, 1);
+    this.usernameText.setDepth(200);
 
     const gridEngineConfig = {
       characters: [
@@ -348,8 +356,7 @@ export class MainScene extends Scene {
           "hero",
           direction as "up" | "down" | "left" | "right",
         );
-
-        // Use "run" animations instead of "walk"
+        // Play run animation immediately (no server round-trip needed)
         this.playAnimation(sprite, "run", direction);
 
         const pos = this.gridEngine.getPosition("hero");
@@ -358,10 +365,11 @@ export class MainScene extends Scene {
           y: pos.y,
           direction: direction as "up" | "down" | "left" | "right",
         });
-        this.sendMovementToServer(pos.x, pos.y);
+        // Zone check still happens on tile start
         this.checkZoneEntry(pos.x, pos.y);
+        // NOTE: position broadcast is now handled by the throttled update() loop
       } else {
-        // Other players also use run animations with their character ID
+        // Remote players: animate from direction received in packet
         const player = this.otherPlayers.get(charId);
         if (player) {
           this.playAnimation(sprite, "run", direction, player.characterId);
@@ -388,12 +396,11 @@ export class MainScene extends Scene {
           const heroDirection = this.lastDirection.get("hero") || "down";
           this.playAnimation(this.playerSprite, "idle", heroDirection);
         }
-
-        const pos = this.gridEngine.getPosition("hero");
-        this.sendMovementToServer(pos.x, pos.y);
+        // NOTE: final position is sent by the throttled update() loop
       } else {
         const player = this.otherPlayers.get(charId);
         if (player) {
+          player.lastDirection = direction as "up" | "down" | "left" | "right";
           this.playAnimation(sprite, "idle", direction, player.characterId);
         }
       }
@@ -498,9 +505,9 @@ export class MainScene extends Scene {
 
       // Add other players from local cache
       this.otherPlayers.forEach((player, oderId) => {
-        const charId = `player_${oderId}`;
-        if (this.gridEngine?.hasCharacter(charId)) {
-          const pos = this.gridEngine.getPosition(charId);
+        // gridEngine character ID is the userId directly (not player_${userId})
+        if (this.gridEngine?.hasCharacter(oderId)) {
+          const pos = this.gridEngine.getPosition(oderId);
           cachedUsers.push({
             user_id: oderId,
             username: player.text.text,
@@ -545,10 +552,35 @@ export class MainScene extends Scene {
       this.gridEngine.move("hero", Direction.DOWN);
     }
 
+    // ── Throttled position broadcast at 20Hz ──────────────────────────────
+    if (this.gridEngine.hasCharacter("hero")) {
+      const now = Date.now();
+      if (now - this.lastSentTime >= this.SEND_INTERVAL_MS) {
+        const pos = this.gridEngine.getPosition("hero");
+        const dir = this.lastDirection.get("hero") || "down";
+        const isMoving = this.gridEngine.isMoving("hero");
+
+        // Only send if position or direction changed, or if we just stopped
+        if (
+          pos.x !== this.lastSentX ||
+          pos.y !== this.lastSentY ||
+          dir !== this.lastSentDirection
+        ) {
+          this.sendMovementToServer(pos.x, pos.y, dir, isMoving);
+          this.lastSentX = pos.x;
+          this.lastSentY = pos.y;
+          this.lastSentDirection = dir;
+          this.lastSentTime = now;
+        }
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────
+
     if (this.playerSprite && this.usernameText) {
+      // Position label centered above the sprite's head
       this.usernameText.setPosition(
         this.playerSprite.x,
-        this.playerSprite.y - this.playerSprite.displayHeight - 4,
+        this.playerSprite.y - this.playerSprite.displayHeight - 6,
       );
     }
 
@@ -556,7 +588,7 @@ export class MainScene extends Scene {
     this.otherPlayers.forEach((player) => {
       player.text.setPosition(
         player.sprite.x,
-        player.sprite.y - player.sprite.displayHeight - 4,
+        player.sprite.y - player.sprite.displayHeight - 6,
       );
     });
   }
@@ -566,15 +598,22 @@ export class MainScene extends Scene {
     return this.otherPlayers.get(charId)?.sprite;
   }
 
-  private sendMovementToServer(x: number, y: number) {
+  private sendMovementToServer(
+    x: number,
+    y: number,
+    direction: string = "down",
+    moving: boolean = false,
+  ) {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
     this.socket.send(
       JSON.stringify({
         type: "player_move",
         x,
         y,
+        direction,
+        moving,
         username: this.myUsername,
-        character_id: this.characterId, // Include character ID
+        character_id: this.characterId,
       }),
     );
   }
@@ -703,7 +742,9 @@ export class MainScene extends Scene {
             data.x,
             data.y,
             data.username || "Player",
-            data.character_id, // Pass character ID
+            data.character_id,
+            data.direction, // ← drive animation immediately
+            data.moving, // ← run vs idle
           );
         }
         break;
@@ -886,16 +927,17 @@ export class MainScene extends Scene {
     sprite.setDepth(100);
     sprite.setOrigin(0.5, 1);
 
-    // Gather.town style label using TextStyle properties
+    // Gather.town style label — centered pill above the sprite
     const text = this.add.text(0, 0, username, {
       fontSize: "11px",
-      fontFamily: "Arial, sans-serif",
+      fontFamily: "'Arial Rounded MT Bold', Arial, sans-serif",
       color: "#ffffff",
-      backgroundColor: "#6366f1",
-      padding: { x: 8, y: 3.6 },
+      backgroundColor: "#5b5ea6",
+      align: "center",
+      padding: { x: 8, y: 4 },
     });
-    this.usernameText.setOrigin(0.2, -5.2);
-    this.usernameText.setDepth(100);
+    text.setOrigin(0.5, 1);
+    text.setDepth(200);
 
     this.gridEngine.addCharacter({
       id: userId,
@@ -905,7 +947,12 @@ export class MainScene extends Scene {
       offsetY: 0,
     });
 
-    this.otherPlayers.set(userId, { sprite, text, characterId });
+    this.otherPlayers.set(userId, {
+      sprite,
+      text,
+      characterId,
+      lastDirection: "down",
+    });
 
     // Play default animation for this character
     const defaultAnim = `${characterId}_idle-down`;
@@ -920,6 +967,8 @@ export class MainScene extends Scene {
     y: number,
     username?: string,
     characterId?: string,
+    direction?: string,
+    moving?: boolean,
   ) {
     const player = this.otherPlayers.get(userId);
 
@@ -928,21 +977,49 @@ export class MainScene extends Scene {
       return;
     }
 
+    // Update label text if username changed
     if (username && player.text.text !== username) {
       player.text.setText(username);
     }
 
+    // If the remote player switched avatar, re-spawn them with the new character
+    if (characterId && characterId !== player.characterId) {
+      this.removeRemotePlayer(userId);
+      this.spawnRemotePlayer(
+        userId,
+        username || player.text.text,
+        x,
+        y,
+        characterId,
+      );
+      return;
+    }
+
     if (!this.gridEngine.hasCharacter(userId)) return;
+
+    // ── Animate immediately from direction in packet (no round-trip wait) ──
+    const dir = direction || player.lastDirection || "down";
+    if (direction) {
+      player.lastDirection = direction as "up" | "down" | "left" | "right";
+    }
+    if (moving) {
+      this.playAnimation(player.sprite, "run", dir, player.characterId);
+    } else {
+      this.playAnimation(player.sprite, "idle", dir, player.characterId);
+    }
+    // ──────────────────────────────────────────────────────────────────────
 
     const currentPos = this.gridEngine.getPosition(userId);
     if (currentPos.x === x && currentPos.y === y) return;
 
     const distance = Math.abs(currentPos.x - x) + Math.abs(currentPos.y - y);
 
-    if (distance > 3) {
+    if (distance > 5) {
+      // Large gap: teleport to avoid rubber-banding
       this.gridEngine.setPosition(userId, { x, y });
     } else {
-      const speed = distance > 1 ? 8 : 4;
+      // Smooth catch-up: speed scales with distance
+      const speed = distance > 2 ? 10 : 6;
       this.gridEngine.setSpeed(userId, speed);
       this.gridEngine.moveTo(userId, { x, y });
     }

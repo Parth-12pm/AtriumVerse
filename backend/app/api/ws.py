@@ -121,7 +121,7 @@ async def websocket_endpoint(
     async def periodic_save():
         while True:
             try:
-                await asyncio.sleep(10)
+                await asyncio.sleep(100)
                 if redis_client.r:
                     pos = await redis_client.r.hgetall(f"user:{user_id}")
                     if pos:
@@ -163,6 +163,8 @@ async def websocket_endpoint(
                     "user_id": user_id,
                     "x": data["x"],
                     "y": data["y"],
+                    "direction": data.get("direction", "down"),
+                    "moving": data.get("moving", False),
                     "username": data.get("username", "Player"),
                     "character_id": character_id or "bob",
                     "zone": zone["name"] if zone else "Open Space"
