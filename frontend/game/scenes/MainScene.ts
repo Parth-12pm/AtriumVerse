@@ -11,13 +11,19 @@ export class MainScene extends Scene {
   private gridEngine!: GridEngine;
   private playerSprite!: Phaser.GameObjects.Sprite;
   private usernameText!: Phaser.GameObjects.Text;
+  private usernameBg!: Phaser.GameObjects.Graphics;
   private otherPlayers: Map<
     string,
     {
       sprite: Phaser.GameObjects.Sprite;
-      text: Phaser.GameObjects.Text;
+      labelBg: Phaser.GameObjects.Graphics;
+      labelText: Phaser.GameObjects.Text;
       characterId: string;
       lastDirection: "up" | "down" | "left" | "right";
+      /** true once finishSpawningRemotePlayer has fully completed */
+      ready: boolean;
+      /** position/anim update received before spawn finished */
+      pendingUpdate: Parameters<MainScene["updateRemotePlayerPosition"]> | null;
     }
   > = new Map();
 
@@ -308,16 +314,16 @@ export class MainScene extends Scene {
       this.playerSprite.play(defaultAnim);
     }
 
+    // Local player — native Phaser rounded label (world-space)
     this.usernameText = this.add.text(0, 0, this.myUsername, {
       fontSize: "11px",
-      fontFamily: "'Arial Rounded MT Bold', Arial, sans-serif",
+      fontFamily: "Arial, sans-serif",
       color: "#ffffff",
-      backgroundColor: "#5b5ea6",
-      align: "center",
-      padding: { x: 8, y: 4 },
     });
-    this.usernameText.setOrigin(0.5, 1);
-    this.usernameText.setDepth(200);
+    this.usernameText.setOrigin(0.5, 0.5);
+    this.usernameText.setDepth(201);
+    this.usernameBg = this.add.graphics();
+    this.usernameBg.setDepth(200);
 
     const gridEngineConfig = {
       characters: [
@@ -457,21 +463,16 @@ export class MainScene extends Scene {
     // Listen for UI focus events to disable game input
     EventBus.on("ui:focus", () => {
       this.inputEnabled = false;
-      // Disable keyboard capture so WASD can be typed in inputs
-      if (this.input.keyboard) {
+      if (this.input?.keyboard) {
         this.input.keyboard.enabled = false;
-        // Reset all key states to prevent stuck movement
+        // resetKeys clears state without destroying the keyboard manager
         this.input.keyboard.resetKeys();
-        // Also remove key captures
-        this.input.keyboard.removeAllKeys(true);
       }
     });
     EventBus.on("ui:blur", () => {
       this.inputEnabled = true;
-      // Re-enable keyboard capture
-      if (this.input.keyboard) {
+      if (this.input?.keyboard) {
         this.input.keyboard.enabled = true;
-        // Recreate WASD keys with error handling
         try {
           this.wasd = {
             up: this.input.keyboard.addKey("W"),
@@ -510,7 +511,7 @@ export class MainScene extends Scene {
           const pos = this.gridEngine.getPosition(oderId);
           cachedUsers.push({
             user_id: oderId,
-            username: player.text.text,
+            username: player.labelText.text ?? "",
             x: pos.x,
             y: pos.y,
           });
@@ -576,21 +577,40 @@ export class MainScene extends Scene {
     }
     // ─────────────────────────────────────────────────────────────────────
 
-    if (this.playerSprite && this.usernameText) {
-      // Position label centered above the sprite's head
-      this.usernameText.setPosition(
-        this.playerSprite.x,
-        this.playerSprite.y - this.playerSprite.displayHeight - 6,
-      );
-    }
-
     // Update labels for remote players
     this.otherPlayers.forEach((player) => {
-      player.text.setPosition(
-        player.sprite.x,
-        player.sprite.y - player.sprite.displayHeight - 6,
+      const lw = player.labelText.width;
+      const lh = player.labelText.height;
+      const tx = player.sprite.x + 15;
+      const ty = player.sprite.y - -4;
+      player.labelText.setPosition(tx, ty);
+      player.labelBg.clear();
+      player.labelBg.fillStyle(0x6366f1, 1);
+      player.labelBg.fillRoundedRect(
+        tx - lw / 2 - 5,
+        ty - lh / 2 - 2,
+        lw + 10,
+        lh + 4,
+        6,
       );
     });
+
+    if (this.playerSprite && this.usernameText) {
+      const lw = this.usernameText.width;
+      const lh = this.usernameText.height;
+      const tx = this.playerSprite.x + 15;
+      const ty = this.playerSprite.y - -4; // fixed: ~50px above feet puts label at head level
+      this.usernameText.setPosition(tx, ty);
+      this.usernameBg.clear();
+      this.usernameBg.fillStyle(0xcc3333, 1);
+      this.usernameBg.fillRoundedRect(
+        tx - lw / 2 - 5,
+        ty - lh / 2 - 2,
+        lw + 10,
+        lh + 4,
+        6,
+      );
+    }
   }
 
   private getSpriteById(charId: string): Phaser.GameObjects.Sprite | undefined {
@@ -927,17 +947,17 @@ export class MainScene extends Scene {
     sprite.setDepth(100);
     sprite.setOrigin(0.5, 1);
 
-    // Gather.town style label — centered pill above the sprite
-    const text = this.add.text(0, 0, username, {
+    // Gather.town style label — RexUI rounded pill above the sprite
+    // Native Phaser label: Graphics bg + Text (world-space, follows camera correctly)
+    const labelText = this.add.text(0, 0, username, {
       fontSize: "11px",
-      fontFamily: "'Arial Rounded MT Bold', Arial, sans-serif",
+      fontFamily: "Arial, sans-serif",
       color: "#ffffff",
-      backgroundColor: "#5b5ea6",
-      align: "center",
-      padding: { x: 8, y: 4 },
     });
-    text.setOrigin(0.5, 1);
-    text.setDepth(200);
+    labelText.setOrigin(0.5, 0.5);
+    labelText.setDepth(201);
+    const labelBg = this.add.graphics();
+    labelBg.setDepth(200);
 
     this.gridEngine.addCharacter({
       id: userId,
@@ -949,15 +969,28 @@ export class MainScene extends Scene {
 
     this.otherPlayers.set(userId, {
       sprite,
-      text,
+      labelBg,
+      labelText,
       characterId,
       lastDirection: "down",
+      ready: false,
+      pendingUpdate: null,
     });
 
     // Play default animation for this character
     const defaultAnim = `${characterId}_idle-down`;
     if (this.anims.exists(defaultAnim)) {
       sprite.play(defaultAnim);
+    }
+
+    // Mark ready and replay any queued update
+    const entry = this.otherPlayers.get(userId);
+    if (entry) {
+      entry.ready = true;
+      if (entry.pendingUpdate) {
+        this.updateRemotePlayerPosition(...entry.pendingUpdate);
+        entry.pendingUpdate = null;
+      }
     }
   }
 
@@ -977,9 +1010,23 @@ export class MainScene extends Scene {
       return;
     }
 
+    // If spawn hasn't finished yet, queue update for later
+    if (!player.ready) {
+      player.pendingUpdate = [
+        userId,
+        x,
+        y,
+        username,
+        characterId,
+        direction,
+        moving,
+      ];
+      return;
+    }
+
     // Update label text if username changed
-    if (username && player.text.text !== username) {
-      player.text.setText(username);
+    if (username && player.labelText.text !== username) {
+      player.labelText.setText(username);
     }
 
     // If the remote player switched avatar, re-spawn them with the new character
@@ -987,7 +1034,7 @@ export class MainScene extends Scene {
       this.removeRemotePlayer(userId);
       this.spawnRemotePlayer(
         userId,
-        username || player.text.text,
+        username || player.labelText.text || "Player",
         x,
         y,
         characterId,
@@ -1036,7 +1083,8 @@ export class MainScene extends Scene {
     }
 
     player.sprite.destroy();
-    player.text.destroy();
+    player.labelText.destroy();
+    player.labelBg.destroy();
     this.otherPlayers.delete(userId);
   }
 

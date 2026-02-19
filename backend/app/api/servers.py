@@ -1,19 +1,20 @@
-from fastapi import APIRouter, Depends , HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from typing import List 
+from typing import List
 from uuid import UUID
 from app.core.database import get_db
 from app.models.server import Server
 from app.models.user import User
 from app.models.zone import Zone
-from app.models.server_member import ServerMember , MemberRole , MemberStatus
-from app.schemas.server import ServerCreate , ServerResponse
+from app.models.server_member import ServerMember, MemberRole, MemberStatus
+from app.schemas.server import ServerCreate, ServerUpdate, ServerResponse
 from app.schemas.zone import ZoneResponse
 from app.api.deps import get_current_user
 from app.utils.map_parser import parse_map_zones
 import os
+
 
 # Robust directory resolution
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -26,9 +27,22 @@ async def get_servers(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    result = await db.execute(select(Server))
+    result = await db.execute(
+        select(Server).options(selectinload(Server.owner))
+    )
     servers = result.scalars().all()
-    return servers
+    out = []
+    for s in servers:
+        d = ServerResponse(
+            id=s.id,
+            name=s.name,
+            owner_id=s.owner_id,
+            owner_username=s.owner.username if s.owner else None,
+            created_at=s.created_at,
+            access_type=s.access_type,
+        )
+        out.append(d)
+    return out
 
 @router.post("/create-server", response_model=ServerResponse)
 async def create_server(
@@ -112,17 +126,58 @@ async def create_server(
 
 @router.get("/{server_id}", response_model=ServerResponse)
 async def get_server(
-    server_id: UUID, 
-    db : AsyncSession =  Depends(get_db),
+    server_id: UUID,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
-): 
-    result = await db.execute(select(Server).where(Server.id == server_id))
+):
+    result = await db.execute(
+        select(Server)
+        .where(Server.id == server_id)
+        .options(selectinload(Server.owner))
+    )
     server = result.scalars().first()
-
     if not server:
         raise HTTPException(status_code=404, detail="Server not found")
-    
-    return server
+    return ServerResponse(
+        id=server.id,
+        name=server.name,
+        owner_id=server.owner_id,
+        owner_username=server.owner.username if server.owner else None,
+        created_at=server.created_at,
+        access_type=server.access_type,
+    )
+
+
+@router.patch("/{server_id}", response_model=ServerResponse)
+async def update_server(
+    server_id: UUID,
+    payload: ServerUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Rename a server (owner only)."""
+    result = await db.execute(
+        select(Server)
+        .where(Server.id == server_id)
+        .options(selectinload(Server.owner))
+    )
+    server = result.scalars().first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server not found")
+    if server.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the owner can rename this server")
+    if payload.name:
+        server.name = payload.name
+    await db.commit()
+    await db.refresh(server)
+    return ServerResponse(
+        id=server.id,
+        name=server.name,
+        owner_id=server.owner_id,
+        owner_username=server.owner.username if server.owner else None,
+        created_at=server.created_at,
+        access_type=server.access_type,
+    )
 
 
 @router.post("/{server_id}/join")

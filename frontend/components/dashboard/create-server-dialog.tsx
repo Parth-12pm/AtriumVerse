@@ -46,7 +46,7 @@ export function CreateServerDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button>
+        <Button variant="reverse">
           <Plus className="mr-2 h-4 w-4" /> Create Server
         </Button>
       </DialogTrigger>

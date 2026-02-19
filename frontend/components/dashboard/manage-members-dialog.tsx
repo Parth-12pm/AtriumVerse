@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -87,6 +88,9 @@ export function ManageMembersDialog({ serverId }: ManageMembersDialogProps) {
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Server Members</DialogTitle>
+          <DialogDescription className="sr-only">
+            Manage server members and pending join requests.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 max-h-[60vh] overflow-y-auto">

@@ -1,6 +1,7 @@
 import * as Phaser from "phaser";
 import { GridEngine } from "grid-engine";
 import { MainScene } from "./scenes/MainScene";
+import UIPlugin from "phaser3-rex-plugins/templates/ui/ui-plugin.js";
 
 export default async function StartGame(
   parent: string,
@@ -30,6 +31,11 @@ export default async function StartGame(
           key: "gridEngine",
           plugin: GridEngine,
           mapping: "gridEngine",
+        },
+        {
+          key: "rexUI",
+          plugin: UIPlugin,
+          mapping: "rexUI",
         },
       ],
     },
