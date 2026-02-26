@@ -4,14 +4,12 @@ from typing import Dict
 
 class ConnectionManger: 
     def __init__(self):
-        # Changed to Dict[server_id, Dict[user_id, WebSocket]] for direct addressing
         self.active_connections: Dict[str, Dict[str, WebSocket]] = {}
 
     async def connect(self, websocket: WebSocket, server_id: str, user_id: str):
         await websocket.accept()
         if server_id not in self.active_connections:
             self.active_connections[server_id] = {}
-        # Store by user_id
         self.active_connections[server_id][user_id] = websocket
 
     async def disconnect(self, websocket: WebSocket, server_id: str, user_id: str):
@@ -29,8 +27,6 @@ class ConnectionManger:
                 try:
                     await target_ws.send_json(message)
                 except Exception:
-                     # Clean up dead connection potentially?
-                     # Let the read loop handle disconnects usually.
                      pass
 
     async def broadcast(self, message: dict, server_id: str, sender: WebSocket):
@@ -39,16 +35,12 @@ class ConnectionManger:
 
         async def safe_send(ws: WebSocket):
             try:
-                # 500ms timeout prevents slow clients from blocking
                 await asyncio.wait_for(ws.send_json(message), timeout=0.5)
             except asyncio.TimeoutError:
                 pass
             except Exception:
-                # We can't easily disconnect here without user_id if we don't have it
-                # But typically the read loop handles the close.
                 pass
 
-        # Fire all sends concurrently
         for target_ws in self.active_connections[server_id].values():
             if target_ws != sender:
                 asyncio.create_task(safe_send(target_ws))
