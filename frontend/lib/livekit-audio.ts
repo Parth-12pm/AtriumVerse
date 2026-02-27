@@ -2,8 +2,8 @@ import {
   Room,
   RoomEvent,
   RemoteParticipant,
-  RemoteTrackPublication,
   Track,
+  type RemoteAudioTrack,
 } from "livekit-client";
 import EventBus, { GameEvents } from "@/game/EventBus";
 import { fetchLiveKitToken, getLiveKitUrl } from "@/lib/livekit";
@@ -21,8 +21,17 @@ interface Position {
 export class ProximityAudioManager {
   private room: Room | null = null;
   private myPos: Position = { x: 0, y: 0 };
-  // Maps participant identity (user_id) → their latest tile position
+  /** Maps participant identity → their latest tile position */
   private otherPositions = new Map<string, Position>();
+  /**
+   * Maps participant identity → their attached HTMLAudioElement.
+   *
+   * livekit-client v2 does NOT auto-attach audio tracks to DOM elements.
+   * Without a DOM <audio> element, participant.setVolume() is a no-op because
+   * it iterates attachedElements (which is empty) and never sets el.volume.
+   * We manage these elements explicitly.
+   */
+  private audioElements = new Map<string, HTMLAudioElement>();
   private connected = false;
   private isConnecting = false;
   private micEnabled = false; // starts muted; user enables via dock
@@ -40,7 +49,6 @@ export class ProximityAudioManager {
         disconnectOnPageLeave: true,
       });
 
-      // Fired when TRULY connected (including after regional failover)
       this.room.on(RoomEvent.Connected, async () => {
         await this.room?.localParticipant.setMicrophoneEnabled(this.micEnabled);
         this.connected = true;
@@ -49,13 +57,25 @@ export class ProximityAudioManager {
         console.log("🎙️ Proximity audio connected to:", roomName);
       });
 
-      // When a remote audio track arrives: set initial volume + subscription
-      this.room.on(RoomEvent.TrackSubscribed, (_track, pub, participant) => {
+      // v2: attach audio element manually on subscription
+      this.room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
         if (pub.kind !== Track.Kind.Audio) return;
+        this.attachAudio(participant, track as RemoteAudioTrack);
         this.applyProximity(participant);
       });
 
-      // Chrome autoplay policy: resume AudioContext on first click
+      // Clean up audio element when track goes away
+      this.room.on(RoomEvent.TrackUnsubscribed, (_track, pub, participant) => {
+        if (pub.kind !== Track.Kind.Audio) return;
+        const el = this.audioElements.get(participant.identity);
+        if (el) {
+          el.pause();
+          el.remove();
+        }
+        this.audioElements.delete(participant.identity);
+      });
+
+      // Resume AudioContext on first user gesture (Chrome autoplay policy)
       const resumeAudio = () => {
         this.room?.startAudio();
         document.removeEventListener("click", resumeAudio);
@@ -70,6 +90,29 @@ export class ProximityAudioManager {
       console.error("❌ Proximity audio failed to connect:", err);
       this.isConnecting = false;
     }
+  }
+
+  // ── Attach audio track to a DOM <audio> element ──────────────────────────
+  private attachAudio(participant: RemoteParticipant, track: RemoteAudioTrack) {
+    // Remove stale element if re-subscribing
+    const old = this.audioElements.get(participant.identity);
+    if (old) {
+      old.pause();
+      old.remove();
+    }
+
+    const el = track.attach() as HTMLAudioElement;
+    el.volume = 0; // silent until proximity is calculated
+    el.autoplay = true;
+    el.style.display = "none";
+    document.body.appendChild(el);
+    this.audioElements.set(participant.identity, el);
+
+    // Attempt play; will succeed after startAudio() is called on first click
+    el.play().catch(() => {});
+    console.log(
+      `[LiveKit] 🔊 Attached audio for ${participant.identity.slice(0, 8)}`,
+    );
   }
 
   // ── Position handlers ────────────────────────────────────────────────────
@@ -101,46 +144,36 @@ export class ProximityAudioManager {
     }
   }
 
-  // ── Core: distance → volume + subscription ───────────────────────────────
-
+  // ── Core: distance → volume ──────────────────────────────────────────────
+  // Volume-only approach: no setSubscribed() calls.
+  // The <audio> element stays attached; we just set element.volume = 0 for silence.
+  // This eliminates the race condition where TrackSubscribed fires before
+  // any REMOTE_PLAYER_MOVED, causing the track to be permanently unsubscribed.
   private applyProximity(participant: RemoteParticipant) {
     const pos = this.otherPositions.get(participant.identity);
+    const el = this.audioElements.get(participant.identity);
 
-    // ── Position unknown ─────────────────────────────────────────────────────
-    // TrackSubscribed often fires BEFORE the first REMOTE_PLAYER_MOVED.
-    // Do NOT unsubscribe here — keep the track alive at default volume
-    // and let the next REMOTE_PLAYER_MOVED call recalculate properly.
     if (!pos) {
-      console.log(
-        `[Proximity] ❓ ${participant.identity.slice(0, 8)} — no position yet, keeping subscribed`,
-      );
-      participant.setVolume(0.1); // quiet but alive until position arrives
-      return; // do NOT touch setSubscribed
+      // Position not yet known — keep silent, don't disconnect
+      if (el) el.volume = 0;
+      return;
     }
 
     const dist = Math.sqrt(
       Math.pow(this.myPos.x - pos.x, 2) + Math.pow(this.myPos.y - pos.y, 2),
     );
-
-    const hearable = dist <= MAX_HEAR_RADIUS;
-    const volume = hearable ? Math.max(0, 1 - dist / MAX_HEAR_RADIUS) : 0;
+    const volume =
+      dist <= MAX_HEAR_RADIUS ? Math.max(0, 1 - dist / MAX_HEAR_RADIUS) : 0;
 
     console.log(
-      `[Proximity] ${participant.identity.slice(0, 8)} dist=${dist.toFixed(1)} vol=${volume.toFixed(2)} mic=${participant.audioLevel?.toFixed(2) ?? "?"}`,
+      `[Proximity] ${participant.identity.slice(0, 8)} dist=${dist.toFixed(1)} vol=${volume.toFixed(2)}`,
     );
 
-    // Set playback volume (0–1)
-    participant.setVolume(volume);
-
-    // Key optimisation from livekit-examples/spatial-audio:
-    // Only unsubscribe when we have a confirmed out-of-range position.
-    for (const pub of participant.trackPublications.values()) {
-      if (
-        pub.kind === Track.Kind.Audio &&
-        pub instanceof RemoteTrackPublication
-      ) {
-        pub.setSubscribed(hearable);
-      }
+    if (el) {
+      el.volume = volume; // direct DOM element volume — reliable in livekit-client v2
+    } else {
+      // Fallback if audio element isn't attached yet
+      participant.setVolume(volume);
     }
   }
 
@@ -168,17 +201,22 @@ export class ProximityAudioManager {
   getMyPosition(): Position {
     return this.myPos;
   }
-
-  isMicEnabled() {
+  isMicEnabled(): boolean {
     return this.micEnabled;
   }
-  isConnected() {
+  isConnected(): boolean {
     return this.connected;
   }
 
   async disconnect(): Promise<void> {
     EventBus.off(GameEvents.PLAYER_POSITION, this.handleMyMove);
     EventBus.off(GameEvents.REMOTE_PLAYER_MOVED, this.handleRemoteMove);
+    // Remove all audio elements from DOM
+    this.audioElements.forEach((el) => {
+      el.pause();
+      el.remove();
+    });
+    this.audioElements.clear();
     await this.room?.disconnect();
     this.room = null;
     this.connected = false;
