@@ -106,21 +106,34 @@ export class ProximityAudioManager {
   private applyProximity(participant: RemoteParticipant) {
     const pos = this.otherPositions.get(participant.identity);
 
-    // Linear falloff: full at 0 tiles, silent at MAX_HEAR_RADIUS
-    const dist = pos
-      ? Math.sqrt(
-          Math.pow(this.myPos.x - pos.x, 2) + Math.pow(this.myPos.y - pos.y, 2),
-        )
-      : Infinity;
+    // ── Position unknown ─────────────────────────────────────────────────────
+    // TrackSubscribed often fires BEFORE the first REMOTE_PLAYER_MOVED.
+    // Do NOT unsubscribe here — keep the track alive at default volume
+    // and let the next REMOTE_PLAYER_MOVED call recalculate properly.
+    if (!pos) {
+      console.log(
+        `[Proximity] ❓ ${participant.identity.slice(0, 8)} — no position yet, keeping subscribed`,
+      );
+      participant.setVolume(0.1); // quiet but alive until position arrives
+      return; // do NOT touch setSubscribed
+    }
+
+    const dist = Math.sqrt(
+      Math.pow(this.myPos.x - pos.x, 2) + Math.pow(this.myPos.y - pos.y, 2),
+    );
 
     const hearable = dist <= MAX_HEAR_RADIUS;
     const volume = hearable ? Math.max(0, 1 - dist / MAX_HEAR_RADIUS) : 0;
+
+    console.log(
+      `[Proximity] ${participant.identity.slice(0, 8)} dist=${dist.toFixed(1)} vol=${volume.toFixed(2)} mic=${participant.audioLevel?.toFixed(2) ?? "?"}`,
+    );
 
     // Set playback volume (0–1)
     participant.setVolume(volume);
 
     // Key optimisation from livekit-examples/spatial-audio:
-    // Stop RECEIVING the track entirely when out of range — saves bandwidth.
+    // Only unsubscribe when we have a confirmed out-of-range position.
     for (const pub of participant.trackPublications.values()) {
       if (
         pub.kind === Track.Kind.Audio &&
