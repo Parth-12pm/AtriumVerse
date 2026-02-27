@@ -21,6 +21,15 @@ export enum GameEvents {
   // Chat Events
   CHAT_MESSAGE = "chat-message",
   SEND_CHAT_MESSAGE = "send-chat-message",
+
+  // LiveKit Audio Events
+  PROXIMITY_AUDIO_CONNECTED = "proximity:audio:connected",
+  PROXIMITY_AUDIO_DISCONNECTED = "proximity:audio:disconnected",
+
+  // LiveKit Video Events
+  VIDEO_ROOM_JOINED = "video:room:joined",
+  VIDEO_ROOM_LEFT = "video:room:left",
+  
 }
 
 export interface PlayerPositionEvent {

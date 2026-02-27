@@ -6,6 +6,7 @@ import {
   getCharacterById,
   CharacterAnimationSet,
 } from "@/types/advance_char_config";
+import { SPEAKER_TILE_X, SPEAKER_TILE_Y } from "@/lib/game-constants";
 
 export class MainScene extends Scene {
   private gridEngine!: GridEngine;
@@ -286,6 +287,20 @@ export class MainScene extends Scene {
       }
     }
 
+    // Restore last saved position from localStorage (persists across reloads)
+    const savedPos = localStorage.getItem(`pos_${this.myServerId}`);
+    if (savedPos) {
+      try {
+        const { x, y } = JSON.parse(savedPos);
+        if (Number.isFinite(x) && Number.isFinite(y)) {
+          spawnX = x;
+          spawnY = y;
+        }
+      } catch (_) {
+        /* ignore corrupt data */
+      }
+    }
+
     this.characterConfig.animations.forEach((animConfig) => {
       if (!this.anims.exists(animConfig.animationKey)) {
         this.anims.create({
@@ -343,6 +358,51 @@ export class MainScene extends Scene {
     this.cameras.main.startFollow(this.playerSprite, true, 0.2, 0.2);
     this.cameras.main.setZoom(1.5);
     this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
+
+    // Expose camera to React overlay so the earshot ring can follow correctly
+    (window as any).__phaserCamera = this.cameras.main;
+
+    // ── Speaker / Proximity Test Entity ──────────────────────────────────
+    // A static "speaker" at tile (20, 20). Walk toward it to hear the ping.
+    // This emits a REMOTE_PLAYER_MOVED event periodically so the audio manager
+    // treats it like any other participant and updates volume accordingly.
+    // In production this would be a real LiveKit participant (JukeBox pattern).
+    const spkPx = SPEAKER_TILE_X * 32 + 16;
+    const spkPy = SPEAKER_TILE_Y * 32 + 16;
+
+    // Draw speaker circle
+    const speakerGfx = this.add.graphics();
+    speakerGfx.fillStyle(0x6366f1, 0.2);
+    speakerGfx.fillCircle(spkPx, spkPy, 14);
+    speakerGfx.lineStyle(2, 0xffffff, 1);
+    speakerGfx.strokeCircle(spkPx, spkPy, 14);
+    speakerGfx.setDepth(150);
+
+    // Speaker label
+    const speakerLabel = this.add.text(spkPx, spkPy - 24, "🔊 Speaker", {
+      fontSize: "11px",
+      fontFamily: "Arial, sans-serif",
+      color: "#ffffff",
+      stroke: "#000000",
+      strokeThickness: 3,
+    });
+    speakerLabel.setOrigin(0.5, 0.5);
+    speakerLabel.setDepth(151);
+
+    // Broadcast speaker position on EventBus so audio manager tracks it.
+    // Identity "speaker_0" will map to a LiveKit participant of the same name
+    // when the JukeBox feature is implemented (Step 6).
+    // For now this just lets you see the radius ring effect from the speaker.
+    const broadcastSpeaker = () => {
+      EventBus.emit(GameEvents.REMOTE_PLAYER_MOVED, {
+        userId: "speaker_0",
+        x: SPEAKER_TILE_X,
+        y: SPEAKER_TILE_Y,
+      });
+    };
+    broadcastSpeaker();
+    this.time.addEvent({ delay: 2000, callback: broadcastSpeaker, loop: true });
+    // ─────────────────────────────────────────────────────────────────────
 
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.wasd = this.input.keyboard!.addKeys({
@@ -568,6 +628,17 @@ export class MainScene extends Scene {
           dir !== this.lastSentDirection
         ) {
           this.sendMovementToServer(pos.x, pos.y, dir, isMoving);
+          // Persist position for next-reload restore
+          localStorage.setItem(
+            `pos_${this.myServerId}`,
+            JSON.stringify({ x: pos.x, y: pos.y }),
+          );
+          // Also broadcast locally so proximity audio can update volumes
+          EventBus.emit(GameEvents.PLAYER_POSITION, {
+            x: pos.x,
+            y: pos.y,
+            direction: dir,
+          });
           this.lastSentX = pos.x;
           this.lastSentY = pos.y;
           this.lastSentDirection = dir;
@@ -992,6 +1063,10 @@ export class MainScene extends Scene {
         entry.pendingUpdate = null;
       }
     }
+
+    // Notify proximity audio manager of this player's initial position.
+    // Without this, a stationary user's track stays unsubscribed until they move.
+    EventBus.emit(GameEvents.REMOTE_PLAYER_MOVED, { userId, x, y });
   }
 
   private updateRemotePlayerPosition(

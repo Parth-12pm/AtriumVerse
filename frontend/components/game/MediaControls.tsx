@@ -30,8 +30,8 @@ export function MediaControls({
   onExit,
   showMinimap = false,
 }: MediaControlsProps) {
-  const [audioEnabled, setAudioEnabled] = useState(true);
-  const [videoEnabled, setVideoEnabled] = useState(true);
+  const [audioEnabled, setAudioEnabled] = useState(false); // muted by default
+  const [videoEnabled, setVideoEnabled] = useState(false); // camera off by default
   const [screenShareEnabled, setScreenShareEnabled] = useState(false);
 
   const handleAudioToggle = () => {

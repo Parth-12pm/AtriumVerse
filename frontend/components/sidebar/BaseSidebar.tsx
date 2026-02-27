@@ -190,7 +190,6 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
         <div className="flex-1"></div>
 
         {/* Bottom Buttons */}
-
         <Button
           onClick={() => toggleView("settings")}
           variant="neutral"

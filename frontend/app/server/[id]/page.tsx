@@ -143,19 +143,21 @@ export default function ServerPage({ params }: ServerPageProps) {
   }
 
   return (
-    <div className="relative w-full h-screen">
+    <div className="relative w-full h-screen flex">
       <ServerDock />
-      <div className="ml-16">
+      {/* BaseSidebar is fixed w-16, so we create a placeholder spacer */}
+      <div className="w-16 shrink-0">
         <BaseSidebar serverId={serverId} />
-        <div className="ml-16 w-[calc(100%-8rem)] h-full">
-          <GameWrapper
-            userId={userId}
-            username={username}
-            serverId={serverId}
-            token={token}
-            characterId={selectedCharacter}
-          />
-        </div>
+      </div>
+      {/* Game area: takes all remaining horizontal space, full height */}
+      <div className="flex-1 h-screen min-w-0">
+        <GameWrapper
+          userId={userId}
+          username={username}
+          serverId={serverId}
+          token={token}
+          characterId={selectedCharacter}
+        />
       </div>
       <ProximityChat />
     </div>

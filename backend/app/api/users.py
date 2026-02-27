@@ -6,7 +6,7 @@ from app.models.user import User
 from app.schemas.user import UserCreate,UserResponse
 from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordRequestForm
-from app.core.security import create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
+from app.core.security import create_access_token,ACCESS_TOKEN_EXPIRE_WEEK
 from datetime import timedelta
 
 
@@ -51,7 +51,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends() , db: AsyncSess
         raise HTTPException(status_code=400, detail="Incorrect username or password")
 
     # Create access token with explicit expiration
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token_expires = timedelta(weeks=int(ACCESS_TOKEN_EXPIRE_WEEK))
     access_token = create_access_token(
         data={"sub": user.username}, 
         expires_delta=access_token_expires

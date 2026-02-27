@@ -12,10 +12,15 @@ from app.core.database import get_db, SessionLocal
 import asyncio
 import random
 import datetime
+import time
 from jose import jwt, JWTError
 from app.core.security import SECRET_KEY, ALGORITHM
 
 router = APIRouter()
+
+# Throttle map: user_id -> last DB save timestamp (avoids per-move DB writes)
+_last_db_save: dict[str, float] = {}
+DB_SAVE_THROTTLE_SECONDS = 10  # write to DB at most once per 10s per user
 
 async def get_user_from_token(token: str):
     try:
@@ -118,31 +123,39 @@ async def websocket_endpoint(
             "character_id": character_id
         }, server_id, websocket)
 
+    async def save_position_to_db(x: int, y: int):
+        """Write position to Postgres. Called throttled on move + always on disconnect."""
+        try:
+            async with SessionLocal() as session:
+                result = await session.execute(
+                    select(ServerMember).where(
+                        ServerMember.server_id == server_id,
+                        ServerMember.user_id == user_uuid
+                    )
+                )
+                rec = result.scalars().first()
+                if rec:
+                    rec.last_position_x = x
+                    rec.last_position_y = y
+                    rec.last_updated = datetime.datetime.utcnow()
+                    await session.commit()
+        except Exception as e:
+            print(f"[ws] DB position save failed for {user_id}: {e}")
+
     async def periodic_save():
+        """Fallback: flush Redis position to DB every 30 seconds."""
         while True:
             try:
-                await asyncio.sleep(100)
+                await asyncio.sleep(30)  # was 100s — tighter data-loss window
                 if redis_client.r:
                     pos = await redis_client.r.hgetall(f"user:{user_id}")
-                    if pos:
-                        async with SessionLocal() as session:
-                            result = await session.execute(
-                                select(ServerMember).where(
-                                    ServerMember.server_id == server_id,
-                                    ServerMember.user_id == user_uuid
-                                )
-                            )
-                            rec = result.scalars().first()
-                            if rec:
-                                rec.last_position_x = int(pos.get("x", 0))
-                                rec.last_position_y = int(pos.get("y", 0))
-                                rec.last_updated = datetime.datetime.utcnow()
-                                await session.commit()
+                    if pos and pos.get("x"):
+                        await save_position_to_db(int(pos["x"]), int(pos["y"]))
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                print(f"autosave error: {e}")
-    
+                print(f"[ws] periodic_save error for {user_id}: {e}")
+
     save_task = asyncio.create_task(periodic_save())
 
     try:
@@ -177,10 +190,15 @@ async def websocket_endpoint(
                         "server_id": server_id,
                         "username": data.get("username", "Player")
                     }
-                    # Update character_id if provided
                     if character_id:
                         mapping["character_id"] = character_id
                     asyncio.create_task(redis_client.r.hset(f"user:{user_id}", mapping=mapping))
+
+                    # Throttled DB write: at most once per DB_SAVE_THROTTLE_SECONDS
+                    now_ts = time.monotonic()
+                    if now_ts - _last_db_save.get(user_id, 0) >= DB_SAVE_THROTTLE_SECONDS:
+                        _last_db_save[user_id] = now_ts
+                        asyncio.create_task(save_position_to_db(data["x"], data["y"]))
 
             # NEW: Zone lifecycle events
             elif data.get("type") == "zone_enter":
