@@ -7,7 +7,7 @@
 export const TILE_PX = 32;
 
 /** Maximum hearing radius in tiles — beyond this, audio is silent and unsubscribed. */
-export const MAX_HEAR_RADIUS = 3;
+export const MAX_HEAR_RADIUS = 5;
 
 /** Speaker / JukeBox entity position (tile coordinates). */
 export const SPEAKER_TILE_X = 20;
