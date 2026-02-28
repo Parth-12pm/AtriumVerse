@@ -319,7 +319,7 @@ export class MainScene extends Scene {
     // Create player sprite using first sheet
     const firstSheet = this.characterConfig.sheets[0];
     this.playerSprite = this.add.sprite(0, 0, firstSheet.key, 0);
-    this.playerSprite.setScale(2); // Adjust scale as needed
+    this.playerSprite.setScale(2);
     this.playerSprite.setDepth(100);
     this.playerSprite.setOrigin(0.5, 1);
 
@@ -357,7 +357,44 @@ export class MainScene extends Scene {
 
     this.cameras.main.startFollow(this.playerSprite, true, 0.2, 0.2);
     this.cameras.main.setZoom(1.5);
-    this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
+
+    // Set a stylish void color (dark slate/navy) instead of default black
+    this.cameras.main.setBackgroundColor("#686eaaff");
+
+    // Expand bounds drastically so there is plenty of void space around the map
+    const voidPadding = 1500;
+    this.cameras.main.setBounds(
+      -voidPadding,
+      -voidPadding,
+      map.widthInPixels + voidPadding * 2,
+      map.heightInPixels + voidPadding * 2,
+    );
+
+    // ── Mouse Wheel Zoom ─────────────────────────────────────────────────
+    this.input.on(
+      "wheel",
+      (
+        pointer: Phaser.Input.Pointer,
+        gameObjects: any,
+        deltaX: number,
+        deltaY: number,
+      ) => {
+        // scroll down (deltaY > 0) -> zoom out
+        // scroll up (deltaY < 0) -> zoom in
+        const zoomDelta = deltaY > 0 ? -0.1 : 0.1;
+        const oldZoom = this.cameras.main.zoom;
+        const newZoom = Phaser.Math.Clamp(oldZoom + zoomDelta, 0.5, 3.0);
+
+        if (oldZoom !== newZoom) {
+          // Adjust scroll to zoom towards the pointer
+          this.cameras.main.scrollX +=
+            pointer.worldX - (pointer.worldX / oldZoom) * newZoom;
+          this.cameras.main.scrollY +=
+            pointer.worldY - (pointer.worldY / oldZoom) * newZoom;
+          this.cameras.main.setZoom(newZoom);
+        }
+      },
+    );
 
     // Expose camera to React overlay so the earshot ring can follow correctly
     (window as any).__phaserCamera = this.cameras.main;
