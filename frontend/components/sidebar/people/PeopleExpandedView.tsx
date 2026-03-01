@@ -99,7 +99,7 @@ export default function PeopleExpandedView({
   }, []);
 
   return (
-    <div className="fixed left-16 top-0 h-full w-64 bg-white border-r-4 border-black z-40 flex flex-col">
+    <div className="fixed  pl-19 w-[400px] top-0 h-full w-64 bg-white border-r-4 border-black z-40 flex flex-col">
       {/* Header */}
       <div className="p-3 border-b-4 border-black bg-purple-500 flex items-center justify-between">
         <h2 className="text-lg font-black text-white">People</h2>

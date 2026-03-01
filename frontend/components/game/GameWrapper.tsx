@@ -75,6 +75,28 @@ export default function GameWrapper({
     };
   }, []);
 
+  // ── Pause/Resume Phaser when video conference expands ─────────────────────
+  useEffect(() => {
+    const handlePause = () => {
+      const game = gameRef.current;
+      if (!game) return;
+      game.scene.getScenes(true).forEach((s) => s.scene.pause());
+    };
+    const handleResume = () => {
+      const game = gameRef.current;
+      if (!game) return;
+      game.scene.getScenes(false).forEach((s) => {
+        if (s.scene.isPaused()) s.scene.resume();
+      });
+    };
+    EventBus.on("game:pause", handlePause);
+    EventBus.on("game:resume", handleResume);
+    return () => {
+      EventBus.off("game:pause", handlePause);
+      EventBus.off("game:resume", handleResume);
+    };
+  }, []);
+
   // ── Speaker: /speaker.mp3 with full 3D spatial audio (HRTF) ──────────────
   // Uses Web Audio API PannerNode in HRTF mode — the browser simulates
   // binaural 3D audio. The speaker is positioned at (SPEAKER_TILE_X, 0,
@@ -293,7 +315,7 @@ export default function GameWrapper({
 
       {/* ── Media Control Dock ──────────────────────────────────────────── */}
       {isGameReady && (
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50 pointer-events-auto">
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-auto">
           <MediaControls
             onAudioToggle={(enabled) => {
               getProximityAudio().setMicEnabled(enabled);

@@ -126,20 +126,6 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
         {/* Divider */}
         <div className="w-8 h-1 bg-black"></div>
 
-        {/* Map Button */}
-        <Button
-          onClick={() => toggleView("map")}
-          variant="neutral"
-          size="icon"
-          className={`w-12 h-12 rounded-lg ${
-            currentView === "map"
-              ? "bg-purple-500 text-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
-              : "bg-gray-100 hover:bg-gray-200"
-          }`}
-          title="Map"
-        >
-          <Map className="w-6 h-6" />
-        </Button>
 
         {/* Chat Button */}
         <Button
@@ -169,21 +155,6 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
           title="People"
         >
           <Users className="w-6 h-6" />
-        </Button>
-
-        {/* Media Room Button (Future LiveKit) */}
-        <Button
-          onClick={() => toggleView("media")}
-          variant="neutral"
-          size="icon"
-          className={`w-12 h-12 rounded-lg ${
-            currentView === "media"
-              ? "bg-green-500 text-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
-              : "bg-gray-100 hover:bg-gray-200"
-          }`}
-          title="Media Room (Coming Soon)"
-        >
-          <Video className="w-6 h-6" />
         </Button>
 
         {/* Spacer */}

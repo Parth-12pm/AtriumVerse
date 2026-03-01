@@ -71,7 +71,7 @@ export default function ChannelList({
   return (
     <div className="flex-1 overflow-y-auto">
       {/* Channels Section */}
-      <div className="border-b-4 border-black">
+      <div className="border-b-4  border-black">
         <div className="w-full px-4 py-3 flex items-center justify-between border-b-3 border-black">
           <button
             onClick={() => setChannelsExpanded(!channelsExpanded)}

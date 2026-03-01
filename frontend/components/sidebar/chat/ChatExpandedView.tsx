@@ -181,7 +181,7 @@ export default function ChatExpandedView({
   );
 
   return (
-    <div className="fixed left-16 top-0 h-full flex z-40">
+    <div className="fixed left-19 top-0 h-full flex z-40">
       {/* Left Card: Channel/DM List (Slim) */}
       <div className="w-72 bg-white border-r-4 border-black flex flex-col">
         {/* Header with Close Button */}

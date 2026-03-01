@@ -1,11 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Send, Users, ChevronDown, ChevronUp } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import EventBus, { GameEvents } from "@/game/EventBus";
-import { format } from "date-fns";
+import { Send, X } from "lucide-react";
+import EventBus from "@/game/EventBus";
 
 interface ProximityMessage {
   sender: string;
@@ -14,41 +11,15 @@ interface ProximityMessage {
   timestamp: string;
 }
 
-const PROXIMITY_CHAT_RADIUS = 8; // must match backend constant
-const MAX_MESSAGES = 30;
+const MAX_MESSAGES = 50;
 
 export default function ProximityChat() {
   const [messages, setMessages] = useState<ProximityMessage[]>([]);
   const [newMessage, setNewMessage] = useState("");
-  const [isMinimized, setIsMinimized] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
-  const [nearbyCount, setNearbyCount] = useState(0);
-  const [myId, setMyId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  // Track nearby player count from PLAYER_LIST_UPDATE
-  useEffect(() => {
-    // Get local player id from EventBus meta (emitted by GameWrapper on connect)
-    const handlePlayerId = (id: string) => setMyId(id);
-    EventBus.on("game:my_id", handlePlayerId);
-    return () => {
-      EventBus.off("game:my_id", handlePlayerId);
-    };
-  }, []);
-
-  useEffect(() => {
-    const handlePlayerList = (users: any[]) => {
-      // Count players other than myself — the server already filtered by radius,
-      // but we also show the stat locally using the full list for display only.
-      setNearbyCount(Math.max(0, users.length - 1));
-    };
-    EventBus.on(GameEvents.PLAYER_LIST_UPDATE, handlePlayerList);
-    return () => {
-      EventBus.off(GameEvents.PLAYER_LIST_UPDATE, handlePlayerList);
-    };
-  }, []);
-
-  // Receive proximity messages from the server (already filtered by distance)
   useEffect(() => {
     const handleMessage = (data: ProximityMessage) => {
       setMessages((prev) => {
@@ -57,8 +28,7 @@ export default function ProximityChat() {
           ? updated.slice(-MAX_MESSAGES)
           : updated;
       });
-      // Auto-expand when a message arrives while minimized
-      setIsMinimized(false);
+      setIsVisible(true);
     };
     EventBus.on("chat:proximity_message", handleMessage);
     return () => {
@@ -66,16 +36,16 @@ export default function ProximityChat() {
     };
   }, []);
 
-  // Auto-scroll to bottom on new messages
   useEffect(() => {
-    if (scrollRef.current) {
+    if (scrollRef.current)
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, isVisible, isMinimized]); // Re-scroll when opened
+  }, [messages, isVisible]);
 
-  // Listen to dock chat toggle
   useEffect(() => {
-    const handleToggleChat = (visible: boolean) => setIsVisible(visible);
+    const handleToggleChat = (visible: boolean) => {
+      setIsVisible(visible);
+      if (visible) setTimeout(() => inputRef.current?.focus(), 50);
+    };
     EventBus.on("action:toggle_chat", handleToggleChat);
     return () => {
       EventBus.off("action:toggle_chat", handleToggleChat);
@@ -85,124 +55,89 @@ export default function ProximityChat() {
   const sendMessage = () => {
     const text = newMessage.trim();
     if (!text) return;
-
-    // Send via EventBus → MainScene pipes it to the WebSocket
     EventBus.emit("proximity:send_message", { message: text });
     setNewMessage("");
   };
 
-  const formatTime = (ts: string) => {
-    try {
-      return format(new Date(ts), "h:mm a");
-    } catch {
-      return "";
-    }
+  const stopKeys = (e: React.KeyboardEvent) => {
+    e.stopPropagation();
+    if (e.key === "Enter") sendMessage();
   };
 
   if (!isVisible) return null;
 
   return (
-    <div
-      className={`fixed bottom-24 right-4 bg-white border-4 border-black rounded-lg shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] transition-all ${
-        isMinimized ? "w-64" : "w-80"
-      }`}
-      style={{ zIndex: 30 }}
-    >
+    /*
+     * The dock is at `fixed bottom-4 left-1/2 -translate-x-1/2`.
+     * This panel uses `fixed bottom-4 right-4` to anchor to the right side
+     * of the viewport, appearing visually separated from but beside the dock.
+     * width: 288px (w-72).
+     */
+    <div className="fixed bottom-4 right-4 z-[70] pointer-events-auto w-72 flex flex-col rounded-xl overflow-hidden border border-white/15 bg-gray-900/95 backdrop-blur shadow-xl">
       {/* Header */}
-      <div className="p-3 border-b-4 border-black bg-violet-600 flex items-center justify-between rounded-t-lg">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 bg-white border-2 border-black rounded-full flex items-center justify-center">
-            <Users className="w-3 h-3 text-violet-600" />
-          </div>
-          <div>
-            <h3 className="font-black text-sm text-white">Nearby Chat</h3>
-            <p className="text-xs text-violet-200">
-              {nearbyCount > 0
-                ? `${nearbyCount} player${nearbyCount > 1 ? "s" : ""} nearby`
-                : "No one within earshot"}
-            </p>
-          </div>
-        </div>
-        <Button
-          onClick={() => setIsMinimized(!isMinimized)}
-          variant="neutral"
-          size="icon"
-          className="w-6 h-6 bg-white hover:bg-gray-100 p-0"
+      <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
+        <span className="text-white/60 text-[10px] font-mono font-bold tracking-wider uppercase">
+          Nearby Chat
+        </span>
+        <button
+          onClick={() => {
+            setIsVisible(false);
+            EventBus.emit("action:toggle_chat", false);
+          }}
+          className="text-white/30 hover:text-white/80 transition-colors"
         >
-          {isMinimized ? (
-            <ChevronUp className="w-3 h-3" />
-          ) : (
-            <ChevronDown className="w-3 h-3" />
-          )}
-        </Button>
+          <X className="w-3 h-3" />
+        </button>
       </div>
 
-      {!isMinimized && (
-        <>
-          {/* Messages */}
-          <div
-            ref={scrollRef}
-            className="h-44 overflow-y-auto p-3 space-y-2 bg-gradient-to-b from-violet-50 to-white"
-          >
-            {messages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-center">
-                <Users className="w-8 h-8 text-gray-300 mb-2" />
-                <p className="text-sm text-gray-500 font-bold">
-                  No messages yet
-                </p>
-                <p className="text-xs text-gray-400 mt-1">
-                  Only players within {PROXIMITY_CHAT_RADIUS} tiles can see your
-                  messages.
-                </p>
-              </div>
-            ) : (
-              messages.map((msg, idx) => (
-                <div
-                  key={idx}
-                  className="bg-white border-2 border-black rounded-lg p-2 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
-                >
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span className="font-black text-xs text-violet-700">
-                      {msg.username}
-                    </span>
-                    <span className="text-xs text-gray-400">
-                      {formatTime(msg.timestamp)}
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-700">{msg.text}</p>
-                </div>
-              ))
-            )}
-          </div>
-
-          {/* Input */}
-          <div className="p-3 border-t-4 border-black bg-gray-50 rounded-b-lg">
-            <div className="flex gap-2">
-              <Input
-                type="text"
-                placeholder="Say something nearby…"
-                value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-                className="flex-1 text-sm"
-                onFocus={() => EventBus.emit("ui:focus")}
-                onBlur={() => EventBus.emit("ui:blur")}
-              />
-              <Button
-                onClick={sendMessage}
-                disabled={!newMessage.trim()}
-                className="bg-violet-600 text-white hover:bg-violet-700 shrink-0"
-                size="icon"
-              >
-                <Send className="w-4 h-4" />
-              </Button>
+      {/* Message feed */}
+      <div
+        ref={scrollRef}
+        className="max-h-[180px] overflow-y-auto flex flex-col gap-[2px] p-2"
+        style={{ scrollbarWidth: "none" }}
+      >
+        {messages.length === 0 ? (
+          <p className="text-center text-[10px] text-white/25 font-mono py-3">
+            — no messages yet —
+          </p>
+        ) : (
+          messages.map((msg, idx) => (
+            <div
+              key={idx}
+              className="text-[12px] leading-snug px-2 py-[2px] text-white"
+            >
+              <span className="font-semibold text-violet-300">
+                {msg.username}
+              </span>
+              <span className="text-white/50">: </span>
+              <span className="text-white/80">{msg.text}</span>
             </div>
-            <p className="text-xs text-gray-400 mt-1.5">
-              Visible to players within {PROXIMITY_CHAT_RADIUS} tiles
-            </p>
-          </div>
-        </>
-      )}
+          ))
+        )}
+      </div>
+
+      {/* Input */}
+      <div className="flex items-center gap-2 px-2 py-2 border-t border-white/10">
+        <input
+          ref={inputRef}
+          type="text"
+          placeholder="Message nearby…"
+          value={newMessage}
+          onChange={(e) => setNewMessage(e.target.value)}
+          onKeyDown={stopKeys}
+          onKeyUp={(e) => e.stopPropagation()}
+          onFocus={() => EventBus.emit("ui:focus")}
+          onBlur={() => EventBus.emit("ui:blur")}
+          className="flex-1 bg-transparent text-white text-[12px] placeholder:text-white/25 outline-none min-w-0"
+        />
+        <button
+          onClick={sendMessage}
+          disabled={!newMessage.trim()}
+          className="w-6 h-6 flex items-center justify-center rounded-lg bg-violet-600 disabled:opacity-30 hover:bg-violet-500 transition-colors shrink-0"
+        >
+          <Send className="w-3 h-3 text-white" />
+        </button>
+      </div>
     </div>
   );
 }
