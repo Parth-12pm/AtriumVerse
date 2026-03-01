@@ -5,109 +5,162 @@
 
 :root {
   --radius: 10px;
-  
-  /* Neobrutalism base colors */
+
+  /* ── Core neobrutalism palette (light) ── */
   --background: oklch(94.61% 0.043 211.12);
+  /* teal-tinted off-white */
   --secondary-background: oklch(100% 0 0);
-  --foreground: oklch(0% 0 0);
+  /* pure white */
+  --foreground: oklch(8% 0 0);
+  /* near-black text */
   --main-foreground: oklch(0% 0 0);
+  /* text on primary */
   --main: oklch(76.89% 0.139164 219.13);
-  --border: oklch(0% 0 0);
-  --ring: oklch(0% 0 0);
-  --overlay: oklch(0% 0 0 / 0.8);
-  
-  /* Neobrutalism shadow */
+  /* brand teal */
+  --border: oklch(8% 0 0);
+  /* dark border */
+  --ring: oklch(8% 0 0);
+  --overlay: oklch(0% 0 0 / 0.75);
+
+  /* ── Shadow ── */
   --shadow: 4px 4px 0px 0px var(--border);
-  
-  /* Additional color mappings from default */
+
+  /* ── Semantic tokens ── */
   --card: oklch(100% 0 0);
-  --card-foreground: oklch(0% 0 0);
+  --card-foreground: oklch(8% 0 0);
   --popover: oklch(100% 0 0);
-  --popover-foreground: oklch(0% 0 0);
+  --popover-foreground: oklch(8% 0 0);
+
   --primary: oklch(76.89% 0.139164 219.13);
   --primary-foreground: oklch(0% 0 0);
+
   --secondary: oklch(94.61% 0.043 211.12);
-  --secondary-foreground: oklch(0% 0 0);
-  --muted: oklch(94.61% 0.043 211.12);
-  --muted-foreground: oklch(40% 0 0);
+  --secondary-foreground: oklch(8% 0 0);
+
+  --muted: oklch(92% 0.025 211);
+  --muted-foreground: oklch(42% 0 0);
+
   --accent: oklch(76.89% 0.139164 219.13);
   --accent-foreground: oklch(0% 0 0);
+
   --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(100% 0 0);
+
   --input: oklch(0% 0 0);
-  
-  /* Chart colors */
+  --input-bg: oklch(100% 0 0);
+
+  /* ── Game / sidebar raw palette (light) ── */
+  --game-sidebar-bg: oklch(100% 0 0);
+  /* BaseSidebar background */
+  --game-sidebar-border: oklch(8% 0 0);
+  --game-dock-bg: oklch(20% 0 0);
+  /* ServerDock (dark strip) */
+  --game-dock-text: oklch(96% 0 0);
+  --game-hover-bg: oklch(90% 0.025 211);
+  --game-active-bg: oklch(57.5% 0.18 219);
+  /* blue-500 equivalent */
+  --game-active-text: oklch(100% 0 0);
+
+  /* ── Chart ── */
   --chart-1: #00C8F0;
   --chart-2: #FF7A05;
   --chart-3: #7A83FF;
   --chart-4: #FF4D50;
   --chart-5: #FACC00;
   --chart-active-dot: #000;
-  
-  /* Sidebar colors */
+
+  /* ── Sidebar (nav sidebar component) ── */
   --sidebar: oklch(100% 0 0);
-  --sidebar-foreground: oklch(0% 0 0);
+  --sidebar-foreground: oklch(8% 0 0);
   --sidebar-primary: oklch(76.89% 0.139164 219.13);
   --sidebar-primary-foreground: oklch(0% 0 0);
   --sidebar-accent: oklch(94.61% 0.043 211.12);
-  --sidebar-accent-foreground: oklch(0% 0 0);
-  --sidebar-border: oklch(0% 0 0);
-  --sidebar-ring: oklch(0% 0 0);
+  --sidebar-accent-foreground: oklch(8% 0 0);
+  --sidebar-border: oklch(8% 0 0);
+  --sidebar-ring: oklch(8% 0 0);
 }
 
+/* ════════════════════════════════════════════
+   DARK MODE
+════════════════════════════════════════════ */
 .dark {
-  /* Neobrutalism dark colors */
-  --background: oklch(27.11% 0.0303 225.38);
-  --secondary-background: oklch(23.93% 0 0);
-  --foreground: oklch(92.49% 0 0);
+  /* ── Core palette (dark) ── */
+  --background: oklch(22% 0.025 225);
+  /* dark blue-gray */
+  --secondary-background: oklch(18% 0 0);
+  /* darker card */
+  --foreground: oklch(93% 0 0);
+  /* near-white text */
   --main-foreground: oklch(0% 0 0);
   --main: oklch(64.37% 0.1162 218.75);
   --border: oklch(0% 0 0);
-  --ring: oklch(100% 0 0);
-  
-  /* Neobrutalism dark shadow */
+  /* keep black borders — neobrutalism */
+  --ring: oklch(93% 0 0);
+  --overlay: oklch(0% 0 0 / 0.8);
+
+  /* ── Shadow stays black — neobrutalism ── */
   --shadow: 4px 4px 0px 0px var(--border);
-  
-  /* Additional dark color mappings */
-  --card: oklch(23.93% 0 0);
-  --card-foreground: oklch(92.49% 0 0);
-  --popover: oklch(23.93% 0 0);
-  --popover-foreground: oklch(92.49% 0 0);
+
+  /* ── Semantic tokens (dark) ── */
+  --card: oklch(19% 0.01 225);
+  --card-foreground: oklch(93% 0 0);
+  --popover: oklch(19% 0.01 225);
+  --popover-foreground: oklch(93% 0 0);
+
   --primary: oklch(64.37% 0.1162 218.75);
   --primary-foreground: oklch(0% 0 0);
-  --secondary: oklch(27.11% 0.0303 225.38);
-  --secondary-foreground: oklch(92.49% 0 0);
-  --muted: oklch(27.11% 0.0303 225.38);
-  --muted-foreground: oklch(70% 0 0);
+
+  --secondary: oklch(25% 0.02 225);
+  --secondary-foreground: oklch(93% 0 0);
+
+  --muted: oklch(25% 0.02 225);
+  --muted-foreground: oklch(66% 0 0);
+
   --accent: oklch(64.37% 0.1162 218.75);
   --accent-foreground: oklch(0% 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
+
+  --destructive: oklch(0.68 0.19 22);
+  --destructive-foreground: oklch(0% 0 0);
+
   --input: oklch(100% 0 0 / 15%);
-  
-  /* Chart colors dark */
+  --input-bg: oklch(25% 0.02 225);
+
+  /* ── Game / sidebar raw palette (dark) ── */
+  --game-sidebar-bg: oklch(19% 0.01 225);
+  --game-sidebar-border: oklch(0% 0 0);
+  --game-dock-bg: oklch(12% 0 0);
+  --game-dock-text: oklch(90% 0 0);
+  --game-hover-bg: oklch(30% 0.02 225);
+  --game-active-bg: oklch(50% 0.18 219);
+  --game-active-text: oklch(100% 0 0);
+
+  /* ── Chart (dark) ── */
   --chart-1: #009DBD;
   --chart-2: #EB6D00;
   --chart-3: #7A83FF;
   --chart-4: #FF6669;
   --chart-5: #E0B700;
   --chart-active-dot: #fff;
-  
-  /* Sidebar dark colors */
-  --sidebar: oklch(23.93% 0 0);
-  --sidebar-foreground: oklch(92.49% 0 0);
+
+  /* ── Sidebar component (dark) ── */
+  --sidebar: oklch(19% 0.01 225);
+  --sidebar-foreground: oklch(93% 0 0);
   --sidebar-primary: oklch(64.37% 0.1162 218.75);
   --sidebar-primary-foreground: oklch(0% 0 0);
-  --sidebar-accent: oklch(27.11% 0.0303 225.38);
-  --sidebar-accent-foreground: oklch(92.49% 0 0);
-  --sidebar-border: oklch(100% 0 0 / 10%);
-  --sidebar-ring: oklch(100% 0 0);
+  --sidebar-accent: oklch(25% 0.02 225);
+  --sidebar-accent-foreground: oklch(93% 0 0);
+  --sidebar-border: oklch(100% 0 0 / 12%);
+  --sidebar-ring: oklch(93% 0 0);
 }
 
+/* ════════════════════════════════════════════
+   THEME INLINE MAPPING
+════════════════════════════════════════════ */
 @theme inline {
-  /* Font variables from default */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  
-  /* Neobrutalism core colors */
+
+  /* Core */
   --color-main: var(--main);
   --color-background: var(--background);
   --color-secondary-background: var(--secondary-background);
@@ -116,8 +169,8 @@
   --color-border: var(--border);
   --color-overlay: var(--overlay);
   --color-ring: var(--ring);
-  
-  /* Additional colors from default */
+
+  /* Semantic */
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
@@ -132,15 +185,24 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-input: var(--input);
-  
-  /* Chart colors */
+
+  /* Game/Sidebar raw */
+  --color-game-sidebar-bg: var(--game-sidebar-bg);
+  --color-game-sidebar-border: var(--game-sidebar-border);
+  --color-game-dock-bg: var(--game-dock-bg);
+  --color-game-dock-text: var(--game-dock-text);
+  --color-game-hover-bg: var(--game-hover-bg);
+  --color-game-active-bg: var(--game-active-bg);
+  --color-game-active-text: var(--game-active-text);
+
+  /* Chart */
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
-  
-  /* Sidebar colors */
+
+  /* Sidebar nav */
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -149,14 +211,13 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-  
-  /* Neobrutalism spacing for shadows */
+
+  /* Shadow & radius */
   --spacing-boxShadowX: 4px;
   --spacing-boxShadowY: 4px;
   --spacing-reverseBoxShadowX: -4px;
   --spacing-reverseBoxShadowY: -4px;
-  
-  /* Neobrutalism radius */
+
   --radius-base: 10px;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -165,25 +226,185 @@
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
-  
-  /* Neobrutalism shadow */
+
   --shadow-shadow: var(--shadow);
-  
-  /* Neobrutalism font weights */
+
   --font-weight-base: 500;
   --font-weight-heading: 700;
 }
 
+/* ════════════════════════════════════════════
+   BASE LAYER
+════════════════════════════════════════════ */
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
-  
+
   body {
     @apply text-foreground font-base bg-background;
   }
-  
-  h1, h2, h3, h4, h5, h6 {
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
     @apply font-heading;
+  }
+
+  /* ── Game overlay components: override hardcoded white/gray/black ──
+     These selectors target the raw Tailwind classes used in BaseSidebar,
+     ServerDock, ProximityChat, ChatExpandedView, PeopleExpandedView etc.
+     that were written without theme awareness.                          */
+
+  /* ── Scope overrides to sidebar/game panels — NOT Shadcn UI primitives ──
+     Wrap in .lk-sidebar or the game root so switch/slider/nav thumbs stay white */
+
+  /* BaseSidebar, Chat, People, ProximityChat panels (white backgrounds) */
+  [data-game-sidebar="true"] .bg-white,
+  .game-panel.bg-white {
+    background-color: var(--game-sidebar-bg) !important;
+    color: var(--foreground) !important;
+  }
+
+  /* Apply to explicit game-overlay elements safely — direct children of fixed panels */
+  .fixed.bg-white {
+    background-color: var(--game-sidebar-bg) !important;
+    color: var(--foreground) !important;
+  }
+
+  /* ServerDock — dark strip */
+  .bg-gray-900 {
+    background-color: var(--game-dock-bg) !important;
+  }
+
+  .bg-gray-800 {
+    background-color: color-mix(in oklch, var(--game-dock-bg) 85%, var(--foreground) 15%) !important;
+  }
+
+  .bg-gray-700 {
+    background-color: color-mix(in oklch, var(--game-dock-bg) 70%, transparent 30%) !important;
+  }
+
+  .bg-gray-600 {
+    background-color: color-mix(in oklch, var(--game-dock-bg) 55%, transparent 45%) !important;
+  }
+
+  /* Text in game overlays */
+  .text-gray-300 {
+    color: oklch(75% 0 0) !important;
+  }
+
+  .text-gray-400 {
+    color: var(--muted-foreground) !important;
+  }
+
+  .text-gray-500 {
+    color: var(--muted-foreground) !important;
+  }
+
+  .text-gray-600 {
+    color: var(--muted-foreground) !important;
+  }
+
+  .text-gray-700 {
+    color: var(--foreground) !important;
+  }
+
+  .text-gray-800 {
+    color: var(--foreground) !important;
+  }
+
+  /* Hover states */
+  .hover\:bg-gray-100:hover {
+    background-color: var(--game-hover-bg) !important;
+  }
+
+  .hover\:bg-gray-50:hover {
+    background-color: var(--game-hover-bg) !important;
+  }
+
+  .hover\:bg-gray-200:hover {
+    background-color: var(--game-hover-bg) !important;
+  }
+
+  .hover\:bg-gray-600:hover {
+    background-color: color-mix(in oklch, var(--game-dock-bg) 75%, var(--foreground) 25%) !important;
+  }
+
+  /* Misc game bg tones */
+  .bg-gray-50 {
+    background-color: var(--game-hover-bg) !important;
+  }
+
+  .bg-gray-100 {
+    background-color: var(--game-hover-bg) !important;
+  }
+
+  /* Channel / DM list selected states */
+  .bg-blue-100 {
+    background-color: color-mix(in oklch, var(--primary) 18%, var(--card) 82%) !important;
+  }
+
+  .bg-purple-100 {
+    background-color: color-mix(in oklch, var(--accent) 18%, var(--card) 82%) !important;
+  }
+
+  .bg-purple-50 {
+    background-color: color-mix(in oklch, var(--accent) 10%, var(--card) 90%) !important;
+  }
+
+  /* ProximityChat panel */
+  .bg-green-50 {
+    background-color: color-mix(in oklch, #22c55e 12%, var(--card) 88%) !important;
+  }
+
+  /* Orange pending states — keep visible in dark */
+  .bg-orange-50 {
+    background-color: color-mix(in oklch, #f97316 10%, var(--card) 90%) !important;
+  }
+
+  .bg-orange-950\/20 {
+    background-color: color-mix(in oklch, #f97316 20%, transparent 80%) !important;
+  }
+
+  /* Red zone */
+  .bg-red-50 {
+    background-color: color-mix(in oklch, #ef4444 10%, var(--card) 90%) !important;
+  }
+
+  /* Force inner borders that are hardcoded to black to use theme border */
+  .border-black {
+    border-color: var(--border) !important;
+  }
+
+  .border-gray-600 {
+    border-color: color-mix(in oklch, var(--border) 50%, transparent 50%) !important;
+  }
+
+  .border-gray-700 {
+    border-color: color-mix(in oklch, var(--border) 40%, transparent 60%) !important;
+  }
+
+  /* Scrollbar theming */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--muted-foreground) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: var(--muted-foreground);
+    border-radius: 3px;
   }
 }

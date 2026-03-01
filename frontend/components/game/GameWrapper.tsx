@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { MediaControls } from "@/components/game/MediaControls";
+import { Minimap } from "@/components/game/Minimap";
+import ZoneVideoRoom from "@/components/video/ZoneVideoRoom";
 import { getProximityAudio, MAX_HEAR_RADIUS } from "@/lib/livekit-audio";
 import EventBus, { GameEvents } from "@/game/EventBus";
 import { TILE_PX, SPEAKER_TILE_X, SPEAKER_TILE_Y } from "@/lib/game-constants";
@@ -266,7 +268,6 @@ export default function GameWrapper({
       )}
 
       {/* ── Earshot Radius Ring ─────────────────────────────────────────── */}
-      {/* Translucent circle showing how far your voice (and hearing) reaches */}
       {isGameReady && ringPos && (
         <svg
           className="absolute inset-0 w-full h-full pointer-events-none"
@@ -284,6 +285,12 @@ export default function GameWrapper({
         </svg>
       )}
 
+      {/* ── Minimap — always-on, bottom-left ────────────────────────────── */}
+      {isGameReady && <Minimap />}
+
+      {/* ── Zone Video (single instance, shifts from strip → sidebar on expand) ── */}
+      {isGameReady && <ZoneVideoRoom serverId={serverId} />}
+
       {/* ── Media Control Dock ──────────────────────────────────────────── */}
       {isGameReady && (
         <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50 pointer-events-auto">
@@ -293,7 +300,6 @@ export default function GameWrapper({
             }}
             onVideoToggle={(enabled) => {
               getProximityAudio().setCameraEnabled(enabled);
-              EventBus.emit("video:toggle", enabled);
             }}
           />
         </div>

@@ -47,6 +47,11 @@ export class CommunicationManager {
     // Listen to zone events from MainScene
     EventBus.on("zone:entered", this.handleZoneEntered.bind(this));
     EventBus.on("zone:exited", this.handleZoneExited.bind(this));
+
+    // Proximity chat send
+    EventBus.on("proximity:send_message", (data: { message: string }) => {
+      this.sendProximityChat(data.message);
+    });
   }
 
   /**
@@ -87,6 +92,16 @@ export class CommunicationManager {
     switch (data.type) {
       case "chat_message":
         this.handleChatMessage(data);
+        break;
+
+      case "proximity_chat":
+        // Deliver to ProximityChat component
+        EventBus.emit("chat:proximity_message", {
+          sender: data.sender,
+          username: data.username,
+          text: data.text,
+          timestamp: data.timestamp,
+        });
         break;
 
       case "dm_received":
@@ -233,6 +248,17 @@ export class CommunicationManager {
       console.error("❌ Failed to send channel message:", error);
       throw error;
     }
+  }
+
+  /**
+   * Send a proximity chat message (radius-filtered on backend)
+   */
+  public sendProximityChat(message: string): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.warn("[Proximity] WS not connected");
+      return;
+    }
+    this.ws.send(JSON.stringify({ type: "proximity_chat", message }));
   }
 
   /**

@@ -112,7 +112,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
   return (
     <>
       {/* Icon Sidebar - Always Visible */}
-      <div className="fixed left-0 top-0 h-full w-19 bg-white border-r-4 border-black z-50 flex flex-col items-center py-4 gap-4">
+      <div className="fixed left-0 top-0 h-full w-[76px] bg-white border-r-4 border-black z-[100] flex flex-col items-center py-4 gap-4">
         {/* Logo */}
         <div className="w-12 h-12 bg-blue-500 border-3 border-black rounded-lg flex items-center justify-center mb-4">
           <span className="text-white font-black text-xl">AV</span>
@@ -235,7 +235,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
       )}
 
       {currentView === "map" && (
-        <div className="fixed  left-19 top-0 h-full w-[400px] bg-white border-r-4 border-black z-40 flex flex-col">
+        <div className="fixed left-[76px] top-0 h-full w-[400px] bg-white border-r-4 border-black z-[90] flex flex-col shadow-[8px_0px_0px_0px_rgba(0,0,0,1)]">
           {/* Map View Header */}
           <div className="p-4 border-b-4 border-black bg-purple-500 flex items-center justify-between">
             <h2 className="text-xl font-black text-white">Map Overview</h2>
@@ -262,10 +262,9 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
       )}
 
       {currentView === "media" && (
-        <div className="fixed     left-26 top-0 h-full w-[400px] bg-white border-r-4 border-black z-40 flex flex-col">
-          {/* Media View Header */}
-          <div className="p-4 border-b-4 border-black bg-green-500 flex items-center justify-between">
-            <h2 className="text-xl font-black text-white">Media Room</h2>
+        <div className="fixed left-26 top-0 h-full w-[400px] bg-gray-900 border-r-4 border-black z-40 flex flex-col">
+          <div className="p-4 border-b-4 border-black bg-indigo-600 flex items-center justify-between shrink-0">
+            <h2 className="text-xl font-black text-white">Video Room</h2>
             <Button
               onClick={() => setCurrentView("collapsed")}
               variant="default"
@@ -274,15 +273,18 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
               Collapse
             </Button>
           </div>
-
-          {/* Media Content */}
-          <div className="flex-1 p-4 overflow-auto flex items-center justify-center">
-            <div className="bg-green-100 border-3 border-black rounded-lg p-6 text-center max-w-sm">
-              <Video className="w-16 h-16 mx-auto mb-4" />
-              <p className="font-bold text-lg mb-2">LiveKit Integration</p>
-              <p className="text-sm text-gray-700">
-                Voice and video chat will be available here once LiveKit is
-                integrated!
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-6 gap-4">
+            <div className="w-16 h-16 rounded-full bg-indigo-900 border-2 border-indigo-500 flex items-center justify-center">
+              <Video className="w-8 h-8 text-indigo-300" />
+            </div>
+            <div>
+              <p className="font-black text-lg text-white">
+                Video call is automatic
+              </p>
+              <p className="text-sm text-gray-400 mt-1">
+                Walk into a <strong className="text-indigo-300">Room_*</strong>{" "}
+                zone on the map. A video call strip will appear — click ↗ to
+                expand it here.
               </p>
             </div>
           </div>

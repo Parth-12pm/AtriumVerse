@@ -1,132 +1,111 @@
 "use client";
 
-import { Card } from "@/components/ui/card";
+import { useEffect, useRef } from "react";
+import EventBus, { GameEvents } from "@/game/EventBus";
+import { TILE_PX } from "@/lib/game-constants";
 
-interface MinimapProps {
-  currentRoom: "hall" | "meeting" | "office";
-  playerPosition: { x: number; y: number };
-  proximityRange: number;
-  remotePlayers?: Array<{
-    id: string;
-    username: string;
-    x: number;
-    y: number;
-  }>;
-  onClose?: () => void;
+// Mini-map canvas dimensions (pixels)
+const MINI_W = 180;
+const MINI_H = 140;
+
+interface Player {
+  user_id: string;
+  x: number;
+  y: number;
 }
 
-const ROOM_INFO = {
-  hall: {
-    name: "Main Hall",
-    width: 800,
-    height: 600,
-    color: "#e8f4f8",
-    offsetX: 0,
-  },
-  meeting: {
-    name: "Conference",
-    width: 1200,
-    height: 800,
-    color: "#fff8dc",
-    offsetX: 800,
-  },
-  office: {
-    name: "Office",
-    width: 1000,
-    height: 700,
-    color: "#f0f0f0",
-    offsetX: 2000,
-  },
-};
+export function Minimap() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
-export function Minimap({
-  currentRoom,
-  playerPosition,
-  proximityRange,
-  remotePlayers = [],
-}: MinimapProps) {
-  const roomInfo = ROOM_INFO[currentRoom];
-  const scale = 0.15; // 15% of original size
-  const miniWidth = roomInfo.width * scale;
-  const miniHeight = roomInfo.height * scale;
+  // hero tile position
+  const heroRef = useRef({ x: 0, y: 0 });
+  // other players
+  const othersRef = useRef<Player[]>([]);
 
-  // CRITICAL FIX: Convert absolute world position to room-relative position
-  // Rooms are offset horizontally: hall=0, meeting=800, office=2000
-  const relativePlayerX = playerPosition.x - roomInfo.offsetX;
-  const relativePlayerY = playerPosition.y;
+  const draw = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
 
-  // Scale player position to minimap
-  const scaledPlayerX = relativePlayerX * scale;
-  const scaledPlayerY = relativePlayerY * scale;
-  const scaledProximity = proximityRange * scale;
+    // Derive map dimensions from exactly what MainScene tells us
+    // Default to the original 50x40 map if unavailable
+    const mapSize = (window as any).__phaserMapSize;
+    const mapW = mapSize?.w ?? 50 * TILE_PX;
+    const mapH = mapSize?.h ?? 40 * TILE_PX;
+
+    const scaleX = MINI_W / mapW;
+    const scaleY = MINI_H / mapH;
+
+    // Background
+    ctx.fillStyle = "#1a1b26"; // matches void color
+    ctx.fillRect(0, 0, MINI_W, MINI_H);
+
+    // Map area outline
+    ctx.strokeStyle = "rgba(255,255,255,0.15)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0, 0, MINI_W, MINI_H);
+
+    // Other players (white dots)
+    for (const p of othersRef.current) {
+      const px = p.x * TILE_PX * scaleX;
+      const py = p.y * TILE_PX * scaleY;
+      ctx.beginPath();
+      ctx.arc(px, py, 3, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.75)";
+      ctx.fill();
+    }
+
+    // Hero (you) — red dot with glow
+    const hx = heroRef.current.x * TILE_PX * scaleX;
+    const hy = heroRef.current.y * TILE_PX * scaleY;
+    ctx.beginPath();
+    ctx.arc(hx, hy, 4, 0, Math.PI * 2);
+    ctx.fillStyle = "#f43f5e"; // rose-500
+    ctx.shadowColor = "#f43f5e";
+    ctx.shadowBlur = 6;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  };
+
+  useEffect(() => {
+    const handleHeroMove = (data: { x: number; y: number }) => {
+      heroRef.current = { x: data.x, y: data.y };
+      draw();
+    };
+
+    const handlePlayerList = (users: Player[]) => {
+      othersRef.current = users.filter((u) => u.user_id !== undefined);
+      draw();
+    };
+
+    EventBus.on(GameEvents.PLAYER_POSITION, handleHeroMove);
+    EventBus.on(GameEvents.PLAYER_LIST_UPDATE, handlePlayerList);
+
+    // Initial draw
+    draw();
+
+    return () => {
+      EventBus.off(GameEvents.PLAYER_POSITION, handleHeroMove);
+      EventBus.off(GameEvents.PLAYER_LIST_UPDATE, handlePlayerList);
+    };
+  }, []);
 
   return (
-    <Card className="fixed bottom-4 right-4 p-3 bg-white border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] z-50">
-      <div className="mb-2">
-        <h3 className="text-sm font-bold">{roomInfo.name}</h3>
-        <p className="text-xs text-muted-foreground">
-          Players: {remotePlayers.length + 1}
-        </p>
+    <div
+      className="absolute bottom-5 left-5 rounded-lg overflow-hidden border-2 border-white/20 shadow-lg"
+      style={{ zIndex: 25, pointerEvents: "none" }}
+    >
+      {/* Label */}
+      <div className="bg-gray-900/80 px-2 py-0.5 text-[10px] text-white/60 font-mono tracking-wide">
+        MAP
       </div>
-
-      <svg
-        width={miniWidth}
-        height={miniHeight}
-        className="border-2 border-black"
-        style={{ backgroundColor: roomInfo.color }}
-      >
-        {/* Proximity circle */}
-        <circle
-          cx={scaledPlayerX}
-          cy={scaledPlayerY}
-          r={scaledProximity}
-          fill="rgba(0, 255, 0, 0.1)"
-          stroke="rgba(0, 255, 0, 0.5)"
-          strokeWidth="1"
-        />
-
-        {/* Remote players */}
-        {remotePlayers.map((player) => {
-          // Convert to room-relative coordinates
-          const relativeX = player.x - roomInfo.offsetX;
-          const relativeY = player.y;
-
-          return (
-            <circle
-              key={player.id}
-              cx={relativeX * scale}
-              cy={relativeY * scale}
-              r="3"
-              fill="#32cd32"
-              stroke="#000"
-              strokeWidth="1"
-            />
-          );
-        })}
-
-        {/* Local player (you) */}
-        <circle
-          cx={scaledPlayerX}
-          cy={scaledPlayerY}
-          r="4"
-          fill="#4169e1"
-          stroke="#000"
-          strokeWidth="1"
-        />
-      </svg>
-
-      <div className="mt-2 text-xs">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-[#4169e1] border border-black" />
-          <span>You</span>
-        </div>
-        {remotePlayers.length > 0 && (
-          <div className="flex items-center gap-2 mt-1">
-            <div className="w-3 h-3 rounded-full bg-[#32cd32] border border-black" />
-            <span>Others</span>
-          </div>
-        )}
-      </div>
-    </Card>
+      <canvas
+        ref={canvasRef}
+        width={MINI_W}
+        height={MINI_H}
+        className="block"
+      />
+    </div>
   );
 }

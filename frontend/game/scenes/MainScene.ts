@@ -246,6 +246,12 @@ export class MainScene extends Scene {
     const furnitureLayer = map.createLayer("Furniture", allTilesets, 0, 0);
     const collisionLayer = map.createLayer("Collision", allTilesets, 0, 0);
 
+    // Export map dimensions for UI overlay (like Minimap) to use the ACTUAL room size
+    (window as any).__phaserMapSize = {
+      w: map.widthInPixels,
+      h: map.heightInPixels,
+    };
+
     floorLayer?.setDepth(0);
     wallsLayer?.setDepth(10);
     furnitureLayer?.setDepth(20);
@@ -526,6 +532,15 @@ export class MainScene extends Scene {
     EventBus.on(GameEvents.SEND_CHAT_MESSAGE, (data: any) => {
       if (this.socket && this.socket.readyState === WebSocket.OPEN) {
         this.socket.send(JSON.stringify({ type: "chat_message", ...data }));
+      }
+    });
+
+    // Proximity chat — text visible only to nearby players (server filters by distance)
+    EventBus.on("proximity:send_message", (data: { message: string }) => {
+      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+        this.socket.send(
+          JSON.stringify({ type: "proximity_chat", message: data.message }),
+        );
       }
     });
 
@@ -834,6 +849,14 @@ export class MainScene extends Scene {
 
   private handleServerMessage(data: any) {
     switch (data.type) {
+      case "proximity_chat":
+        EventBus.emit("chat:proximity_message", {
+          sender: data.sender,
+          username: data.username,
+          text: data.text,
+          timestamp: data.timestamp,
+        });
+        break;
       case "user_list":
         EventBus.emit(GameEvents.PLAYER_LIST_UPDATE, data.users);
         // Make sure myId is set before filtering
@@ -904,6 +927,11 @@ export class MainScene extends Scene {
         if (data.scope === "channel") {
           EventBus.emit("chat:channel_message", data);
         }
+        break;
+
+      case "proximity_chat":
+        // Proximity chat: delivered by server only to nearby users
+        EventBus.emit("chat:proximity_message", data);
         break;
 
       case "dm_received":
