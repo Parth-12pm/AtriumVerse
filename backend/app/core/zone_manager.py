@@ -5,6 +5,7 @@ The world drives communication through zone lifecycle events.
 from typing import Dict, Set, Optional
 from datetime import datetime
 import logging
+import app.core.redis_client as redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -29,46 +30,24 @@ class ZoneManager:
         # Track user's current zone
         self.user_zones: Dict[str, str] = {}  # user_id -> zone_id
     
-    async def enter_zone(
-        self, 
-        zone_id: str, 
-        user_id: str, 
-        username: str,
-        zone_type: str = "PUBLIC"
-    ) -> dict:
-        """
-        User enters a zone - create temporary context.
-        
-        Returns:
-            dict: Zone state with current members
-        """
-        # Remove from previous zone if exists
-        if user_id in self.user_zones:
-            old_zone = self.user_zones[user_id]
+    async def enter_zone(self, zone_id: str,user_id: str,username: str,zone_type: str = "PUBLIC"):
+
+        old_zone = await redis_client.r.get(f"user:{user_id}:zone")
+
+        if old_zone:
             await self.exit_zone(old_zone, user_id)
         
-        # Create zone if doesn't exist
-        if zone_id not in self.zones:
-            self.zones[zone_id] = set()
-            self.zone_metadata[zone_id] = {
-                "created_at": datetime.utcnow().isoformat(),
-                "type": zone_type,
-                "name": zone_id
-            }
-            logger.info(f"🏗️  Zone created: {zone_id} ({zone_type})")
-        
-        # Add user to zone
-        self.zones[zone_id].add(user_id)
-        self.user_zones[user_id] = zone_id
-        
-        logger.info(f"👋 {username} entered {zone_id} (now {len(self.zones[zone_id])} users)")
-        
+        await redis_client.r.sadd(f"zone:{zone_id}:users",user_id)
+        await redis_client.r.set(f"user:{user_id}:zone",zone_id)
+
+        members = await redis_client.r.smembers(f"zone:{zone_id}:users")
         return {
             "zone_id": zone_id,
-            "members": list(self.zones[zone_id]),
-            "metadata": self.zone_metadata[zone_id],
-            "member_count": len(self.zones[zone_id])
+            "members": list(members),
+            "member_count": len(members)
         }
+      
+
     
     async def exit_zone(self, zone_id: str, user_id: str) -> bool:
         """

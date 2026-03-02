@@ -11,6 +11,7 @@
 
 import EventBus from "@/game/EventBus";
 import { apiClient } from "@/lib/api";
+import { wsService } from "@/lib/services/websocket.service";
 
 interface Message {
   id?: string;
@@ -33,12 +34,9 @@ interface ZoneInfo {
 }
 
 export class CommunicationManager {
-  private ws: WebSocket | null = null;
   private serverId: string;
   private token: string;
   private currentZone: ZoneInfo | null = null;
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
 
   constructor(serverId: string, token: string) {
     this.serverId = serverId;
@@ -52,37 +50,11 @@ export class CommunicationManager {
     EventBus.on("proximity:send_message", (data: { message: string }) => {
       this.sendProximityChat(data.message);
     });
-  }
 
-  /**
-   * Connect to WebSocket
-   */
-  public async connect(): Promise<void> {
-    const wsUrl = `${process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000"}/ws/${this.serverId}?token=${this.token}`;
-
-    this.ws = new WebSocket(wsUrl);
-
-    this.ws.onopen = () => {
-      console.log("✅ CommunicationManager: WebSocket connected");
-      this.reconnectAttempts = 0;
-      EventBus.emit("ws:connected");
-    };
-
-    this.ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+    // Hook into the central stream
+    EventBus.on("ws:message", (data: any) => {
       this.handleWebSocketMessage(data);
-    };
-
-    this.ws.onerror = (error) => {
-      console.error("❌ CommunicationManager: WebSocket error:", error);
-      EventBus.emit("ws:error", error);
-    };
-
-    this.ws.onclose = () => {
-      console.log("🔌 CommunicationManager: WebSocket disconnected");
-      EventBus.emit("ws:disconnected");
-      this.attemptReconnect();
-    };
+    });
   }
 
   /**
@@ -196,34 +168,21 @@ export class CommunicationManager {
     name: string;
     type: string;
   }): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.warn("⚠️ Cannot send zone_enter: WebSocket not connected");
-      return;
-    }
-
-    this.ws.send(
-      JSON.stringify({
-        type: "zone_enter",
-        zone_id: zoneData.id,
-        zone_type: zoneData.type || "PUBLIC",
-      }),
-    );
+    wsService.send({
+      type: "zone_enter",
+      zone_id: zoneData.id,
+      zone_type: zoneData.type || "PUBLIC",
+    });
   }
 
   /**
    * Handle zone exited event from MainScene
    */
   private handleZoneExited(zoneData: { id: string }): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      return;
-    }
-
-    this.ws.send(
-      JSON.stringify({
-        type: "zone_exit",
-        zone_id: zoneData.id,
-      }),
-    );
+    wsService.send({
+      type: "zone_exit",
+      zone_id: zoneData.id,
+    });
   }
 
   /**
@@ -254,34 +213,23 @@ export class CommunicationManager {
    * Send a proximity chat message (radius-filtered on backend)
    */
   public sendProximityChat(message: string): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.warn("[Proximity] WS not connected");
-      return;
-    }
-    this.ws.send(JSON.stringify({ type: "proximity_chat", message }));
+    wsService.send({ type: "proximity_chat", message });
   }
 
   /**
    * Send a zone message (temporary, NOT saved to DB)
    */
   public sendZoneMessage(content: string): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.warn("⚠️ Cannot send zone message: WebSocket not connected");
-      return;
-    }
-
     if (!this.currentZone) {
       console.warn("⚠️ Cannot send zone message: Not in a zone");
       return;
     }
 
-    this.ws.send(
-      JSON.stringify({
-        type: "chat_message",
-        scope: "zone",
-        message: content,
-      }),
-    );
+    wsService.send({
+      type: "chat_message",
+      scope: "zone",
+      message: content,
+    });
   }
 
   /**
@@ -299,15 +247,11 @@ export class CommunicationManager {
       });
 
       // Notify target via WebSocket
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        this.ws.send(
-          JSON.stringify({
-            type: "dm_sent",
-            target_id: receiverId,
-            message: response.data,
-          }),
-        );
-      }
+      wsService.send({
+        type: "dm_sent",
+        target_id: receiverId,
+        message: response.data,
+      });
 
       return response.data;
     } catch (error) {
@@ -333,15 +277,11 @@ export class CommunicationManager {
       );
 
       // Notify target via WebSocket
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        this.ws.send(
-          JSON.stringify({
-            type: "dm_edited",
-            target_id: receiverId,
-            message: response.data,
-          }),
-        );
-      }
+      wsService.send({
+        type: "dm_edited",
+        target_id: receiverId,
+        message: response.data,
+      });
 
       return response.data;
     } catch (error) {
@@ -361,15 +301,11 @@ export class CommunicationManager {
       await apiClient.delete(`/api/direct-messages/messages/${messageId}`);
 
       // Notify target via WebSocket
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        this.ws.send(
-          JSON.stringify({
-            type: "dm_deleted",
-            target_id: receiverId,
-            message_id: messageId,
-          }),
-        );
-      }
+      wsService.send({
+        type: "dm_deleted",
+        target_id: receiverId,
+        message_id: messageId,
+      });
     } catch (error) {
       console.error("❌ Failed to delete DM:", error);
       throw error;
@@ -384,46 +320,13 @@ export class CommunicationManager {
   }
 
   /**
-   * Check if in a zone
-   */
-  public isInZone(): boolean {
-    return this.currentZone !== null;
-  }
-
-  /**
-   * Attempt to reconnect WebSocket
-   */
-  private attemptReconnect(): void {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error("❌ Max reconnection attempts reached");
-      EventBus.emit("ws:max_reconnect_failed");
-      return;
-    }
-
-    this.reconnectAttempts++;
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
-
-    console.log(
-      `🔄 Attempting reconnection ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms...`,
-    );
-
-    setTimeout(() => {
-      this.connect();
-    }, delay);
-  }
-
-  /**
-   * Disconnect WebSocket
+   * Disconnect WebSocket / Clean up listeners
    */
   public disconnect(): void {
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
-
     // Remove event listeners
-    EventBus.off("zone:entered", this.handleZoneEntered.bind(this));
-    EventBus.off("zone:exited", this.handleZoneExited.bind(this));
+    EventBus.off("zone:entered");
+    EventBus.off("zone:exited");
+    EventBus.off("ws:message");
   }
 }
 

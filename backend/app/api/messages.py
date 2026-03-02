@@ -4,6 +4,7 @@ from sqlalchemy import select, desc
 from typing import List
 from uuid import UUID
 from datetime import datetime
+from sqlalchemy import or_, and_
 
 from app.core.database import get_db
 from app.models.message import Message
@@ -62,12 +63,19 @@ async def list_messages(
     
     # Pagination
     if before:
-        before_msg_result = await db.execute(
-            select(Message).where(Message.id == before)
-        )
+        before_msg_result = await db.execute(select(Message).where(Message.id == before))
         before_msg = before_msg_result.scalars().first()
+
         if before_msg:
-            query = query.where(Message.created_at < before_msg.created_at)
+            query = query.where(
+                or_(
+                    Message.created_at < before_msg.created_at,
+                    and_(
+                        Message.created_at == before_msg.created_at,
+                        Message.id < before_msg.id
+                    )
+                )
+            )
     
     result = await db.execute(query)
     rows = result.all()

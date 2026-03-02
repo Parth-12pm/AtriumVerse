@@ -7,6 +7,7 @@ import {
   CharacterAnimationSet,
 } from "@/types/advance_char_config";
 import { SPEAKER_TILE_X, SPEAKER_TILE_Y } from "@/lib/game-constants";
+import { wsService } from "@/lib/services/websocket.service";
 
 export class MainScene extends Scene {
   private gridEngine!: GridEngine;
@@ -33,7 +34,6 @@ export class MainScene extends Scene {
   private characterAnimations: Map<string, CharacterAnimationSet> = new Map(); // Track loaded characters
   private lastDirection: Map<string, "up" | "down" | "left" | "right"> =
     new Map();
-  private socket: WebSocket | null = null;
   private myId: string = "";
   private myUsername: string = "";
   private myServerId: string = "";
@@ -55,6 +55,8 @@ export class MainScene extends Scene {
 
   // UI input control - disable game input when UI is focused
   private inputEnabled: boolean = true;
+
+  private lastSentMoving: boolean = false;
 
   // Throttled movement broadcast — send at ~20Hz
   private lastSentX: number = -1;
@@ -530,46 +532,32 @@ export class MainScene extends Scene {
     });
 
     EventBus.on(GameEvents.SEND_CHAT_MESSAGE, (data: any) => {
-      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-        this.socket.send(JSON.stringify({ type: "chat_message", ...data }));
-      }
+      wsService.send({ type: "chat_message", ...data });
     });
 
     // Proximity chat — text visible only to nearby players (server filters by distance)
     EventBus.on("proximity:send_message", (data: { message: string }) => {
-      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-        this.socket.send(
-          JSON.stringify({ type: "proximity_chat", message: data.message }),
-        );
-      }
+      wsService.send({ type: "proximity_chat", message: data.message });
     });
 
     // Forward channel messages to WebSocket for real-time broadcast
     EventBus.on("channel:message_sent", (msg: any) => {
-      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-        this.socket.send(
-          JSON.stringify({
-            type: "chat_message",
-            scope: "channel",
-            channel_id: msg.channel_id,
-            message: msg.content,
-            message_data: msg, // Full message object for recipients
-          }),
-        );
-      }
+      wsService.send({
+        type: "chat_message",
+        scope: "channel",
+        channel_id: msg.channel_id,
+        message: msg.content,
+        message_data: msg, // Full message object for recipients
+      });
     });
 
     // Forward DM notifications to WebSocket
     EventBus.on("dm:message_sent", (data: any) => {
-      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-        this.socket.send(
-          JSON.stringify({
-            type: "dm_sent",
-            target_id: data.target_id,
-            message: data.message,
-          }),
-        );
-      }
+      wsService.send({
+        type: "dm_sent",
+        target_id: data.target_id,
+        message: data.message,
+      });
     });
 
     // Listen for UI focus events to disable game input
@@ -636,12 +624,12 @@ export class MainScene extends Scene {
       }
 
       // Also request fresh data from server
-      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-        this.socket.send(JSON.stringify({ type: "request_users" }));
-      }
+      wsService.send({ type: "request_users" });
     });
 
-    this.initWebSocket();
+    EventBus.on("ws:message", (data: any) => {
+      this.handleServerMessage(data);
+    });
   }
 
   update() {
@@ -650,6 +638,7 @@ export class MainScene extends Scene {
     // Skip input processing when UI is focused
     if (!this.inputEnabled) return;
 
+    const isMoving = this.gridEngine.isMoving("hero");
     const leftPressed = this.cursors.left.isDown || this.wasd.left.isDown;
     const rightPressed = this.cursors.right.isDown || this.wasd.right.isDown;
     const upPressed = this.cursors.up.isDown || this.wasd.up.isDown;
@@ -677,15 +666,16 @@ export class MainScene extends Scene {
         if (
           pos.x !== this.lastSentX ||
           pos.y !== this.lastSentY ||
-          dir !== this.lastSentDirection
+          dir !== this.lastSentDirection ||
+          isMoving !== this.lastSentMoving
         ) {
           this.sendMovementToServer(pos.x, pos.y, dir, isMoving);
-          // Persist position for next-reload restore
+
           localStorage.setItem(
             `pos_${this.myServerId}`,
             JSON.stringify({ x: pos.x, y: pos.y }),
           );
-          // Also broadcast locally so proximity audio can update volumes
+
           EventBus.emit(GameEvents.PLAYER_POSITION, {
             x: pos.x,
             y: pos.y,
@@ -695,6 +685,7 @@ export class MainScene extends Scene {
           this.lastSentY = pos.y;
           this.lastSentDirection = dir;
           this.lastSentTime = now;
+          this.lastSentMoving = isMoving;
         }
       }
     }
@@ -747,18 +738,15 @@ export class MainScene extends Scene {
     direction: string = "down",
     moving: boolean = false,
   ) {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
-    this.socket.send(
-      JSON.stringify({
-        type: "player_move",
-        x,
-        y,
-        direction,
-        moving,
-        username: this.myUsername,
-        character_id: this.characterId,
-      }),
-    );
+    wsService.send({
+      type: "player_move",
+      x,
+      y,
+      direction,
+      moving,
+      username: this.myUsername,
+      character_id: this.characterId,
+    });
   }
 
   // Zone detection - world drives communication
@@ -805,46 +793,6 @@ export class MainScene extends Scene {
 
       this.currentZone = foundZone;
     }
-  }
-
-  private initWebSocket() {
-    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-      return;
-    }
-
-    if (!this.myServerId || !this.myId) {
-      console.error("[WebSocket] Missing credentials");
-      return;
-    }
-
-    const wsUrl = this.apiUrl.replace(/^http/, "ws");
-    const baseUrl = wsUrl.endsWith("/") ? wsUrl.slice(0, -1) : wsUrl;
-    this.socket = new WebSocket(
-      `${baseUrl}/ws/${this.myServerId}?token=${this.token}`,
-    );
-
-    this.socket.onopen = () => console.log("🔌 Connected");
-
-    this.socket.onmessage = (event: MessageEvent) => {
-      try {
-        this.handleServerMessage(JSON.parse(event.data));
-      } catch (error) {
-        console.error("[WebSocket] Parse error:", error);
-      }
-    };
-
-    this.socket.onerror = (error: Event) =>
-      console.error("❌ WebSocket Error:", error);
-
-    this.socket.onclose = () => {
-      console.log("🔌 Disconnected");
-      this.socket = null;
-      this.time.delayedCall(2000, () => {
-        if (this.scene.isActive("MainScene")) {
-          this.initWebSocket();
-        }
-      });
-    };
   }
 
   private handleServerMessage(data: any) {
@@ -1235,6 +1183,5 @@ export class MainScene extends Scene {
     EventBus.off("dm:message_sent");
     EventBus.off("ui:focus");
     EventBus.off("ui:blur");
-    if (this.socket) this.socket.close();
   }
 }

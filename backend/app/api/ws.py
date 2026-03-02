@@ -258,19 +258,28 @@ async def websocket_endpoint(
                                 }, server_id, member_id)
 
             elif data.get("type") == "request_users":
-                user_positions = []
                 if redis_client.r:
                     online_users = await redis_client.r.smembers(f"server:{server_id}:users")
-                    for uid in online_users:
-                        pos_data = await redis_client.r.hgetall(f"user:{uid}")
-                        if pos_data:
-                            user_positions.append({
-                                "user_id": uid,
-                                "x": int(pos_data.get("x", 0)),
-                                "y": int(pos_data.get("y", 0)),
-                                "username": pos_data.get("username", "Player"),
-                                "character_id": pos_data.get("character_id", "bob")
-                            })
+                    user_ids = [uid for uid in online_users if uid != user_id]
+
+                    if user_ids:
+                        pipeline = redis_client.r.pipeline()
+
+                        for uid in user_ids:
+                            pipeline.hgetall(f"user:{uid}")
+
+                        results = await pipeline.execute()
+
+                        for uid, pos_data in zip(user_ids, results):
+                            if pos_data:
+                                user_positions.append({
+                                    "user_id": uid,
+                                    "x": int(pos_data.get("x", 0)),
+                                    "y": int(pos_data.get("y", 0)),
+                                    "username": pos_data.get("username", "Player"),
+                                    "character_id": pos_data.get("character_id", "bob")
+                                })
+                    
                 await websocket.send_json({"type":"user_list", "users": user_positions})
 
             elif data.get("type") == "chat_message":
@@ -450,37 +459,28 @@ async def websocket_endpoint(
                         await manager.send_personal_message(payload, server_id, uid)
 
     except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        print(f"[ws] Unexpected error for {user_id}: {e}")
+    finally:
+
         save_task.cancel()
-        
-        # Cleanup zone membership
+
+        _last_db_save.pop(user_id, None)
+
         await zone_manager.cleanup_user(user_id)
-        
-        await manager.disconnect(websocket, server_id, user_id)
-        
+        await manager.disconnect(websocket, server_id , user_id)
+
         if redis_client.r:
             final_pos = await redis_client.r.hgetall(f"user:{user_id}")
-
             if final_pos and user_obj:
-                last_x = int(final_pos.get("x",0))
-                last_y = int(final_pos.get("y",0))
-                
-                try:
-                    async with SessionLocal() as session:
-                        res = await session.execute(select(ServerMember).where(
-                            ServerMember.server_id == server_id,
-                            ServerMember.user_id == user_uuid
-                        ))
-                        rec = res.scalars().first()
+                last_x = int(final_post.get("x",0))
+                last_y = int(final_post.get("y",0))
 
-                        if rec: 
-                            rec.last_position_x = last_x
-                            rec.last_position_y = last_y
-                            rec.last_updated = datetime.datetime.utcnow()
-                            await session.commit()
-                except Exception as e:
-                    print(f"Final save failed: {e}")
-   
-            await redis_client.r.srem(f"server:{server_id}:users", user_id)
-            await redis_client.r.delete(f"user:{user_id}")
+                await save_position_to_db(last_x,last_y)
         
-        await manager.broadcast({"type": "user_left", "user_id": user_id}, server_id, websocket)
+        await redis_client.r.srem(f"server:{server_id}:users", user_id)
+        await redis_client.r.delete(f"user:{user_id}")
+        
+       
+    await manager.broadcast({"type": "user_left", "user_id": user_id}, server_id, websocket)

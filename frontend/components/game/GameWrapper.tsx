@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { wsService } from "@/lib/services/websocket.service";
+import { initCommunicationManager } from "@/game/managers/CommunicationManager";
 import { MediaControls } from "@/components/game/MediaControls";
 import { Minimap } from "@/components/game/Minimap";
 import ZoneVideoRoom from "@/components/video/ZoneVideoRoom";
@@ -32,6 +34,19 @@ export default function GameWrapper({
 
   // Player screen position (pixels) for the earshot ring overlay
   const [ringPos, setRingPos] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    // 1. Initialize the central WebSocket
+    wsService.connect(serverId, token);
+
+    // 2. Initialize the Communication Manager (it no longer connects its own WS)
+    initCommunicationManager(serverId, token);
+
+    return () => {
+      // Cleanup when leaving the server
+      wsService.disconnect();
+    };
+  }, [serverId, token]);
 
   // ── Proximity Audio Lifecycle ──────────────────────────────────────────
   useEffect(() => {
