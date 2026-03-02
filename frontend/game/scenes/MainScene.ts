@@ -60,6 +60,81 @@ export class MainScene extends Scene {
   private readonly wsMessageHandler = (data: any) => {
     this.handleServerMessage(data);
   };
+  private readonly sendChatHandler = (data: any) => {
+    wsService.send({ type: "chat_message", ...data });
+  };
+  private readonly channelMessageSentHandler = (msg: any) => {
+    wsService.send({
+      type: "chat_message",
+      scope: "channel",
+      channel_id: msg.channel_id,
+      message: msg.content,
+      message_data: msg,
+    });
+  };
+  private readonly dmMessageSentHandler = (data: any) => {
+    wsService.send({
+      type: "dm_sent",
+      target_id: data.target_id,
+      message: data.message,
+    });
+  };
+  private readonly uiFocusHandler = () => {
+    this.inputEnabled = false;
+    if (this.input?.keyboard) {
+      this.input.keyboard.enabled = false;
+      this.input.keyboard.resetKeys();
+    }
+  };
+  private readonly uiBlurHandler = () => {
+    this.inputEnabled = true;
+    if (this.input?.keyboard) {
+      this.input.keyboard.enabled = true;
+      try {
+        this.wasd = {
+          up: this.input.keyboard.addKey("W"),
+          down: this.input.keyboard.addKey("S"),
+          left: this.input.keyboard.addKey("A"),
+          right: this.input.keyboard.addKey("D"),
+        };
+      } catch (error) {
+        console.warn("Failed to recreate WASD keys:", error);
+      }
+    }
+  };
+  private readonly requestUserListHandler = () => {
+    const cachedUsers: any[] = [];
+
+    if (this.myId && this.myUsername) {
+      const heroPos = this.gridEngine?.hasCharacter("hero")
+        ? this.gridEngine.getPosition("hero")
+        : { x: 15, y: 15 };
+      cachedUsers.push({
+        user_id: this.myId,
+        username: this.myUsername,
+        x: heroPos.x,
+        y: heroPos.y,
+      });
+    }
+
+    this.otherPlayers.forEach((player, oderId) => {
+      if (this.gridEngine?.hasCharacter(oderId)) {
+        const pos = this.gridEngine.getPosition(oderId);
+        cachedUsers.push({
+          user_id: oderId,
+          username: player.labelText.text ?? "",
+          x: pos.x,
+          y: pos.y,
+        });
+      }
+    });
+
+    if (cachedUsers.length > 0) {
+      EventBus.emit(GameEvents.PLAYER_LIST_UPDATE, cachedUsers);
+    }
+
+    wsService.send({ type: "request_users" });
+  };
 
   // Throttled movement broadcast — send at ~20Hz
   private lastSentX: number = -1;
@@ -534,97 +609,12 @@ export class MainScene extends Scene {
       }
     });
 
-    EventBus.on(GameEvents.SEND_CHAT_MESSAGE, (data: any) => {
-      wsService.send({ type: "chat_message", ...data });
-    });
-
-    // Forward channel messages to WebSocket for real-time broadcast
-    EventBus.on("channel:message_sent", (msg: any) => {
-      wsService.send({
-        type: "chat_message",
-        scope: "channel",
-        channel_id: msg.channel_id,
-        message: msg.content,
-        message_data: msg, // Full message object for recipients
-      });
-    });
-
-    // Forward DM notifications to WebSocket
-    EventBus.on("dm:message_sent", (data: any) => {
-      wsService.send({
-        type: "dm_sent",
-        target_id: data.target_id,
-        message: data.message,
-      });
-    });
-
-    // Listen for UI focus events to disable game input
-    EventBus.on("ui:focus", () => {
-      this.inputEnabled = false;
-      if (this.input?.keyboard) {
-        this.input.keyboard.enabled = false;
-        // resetKeys clears state without destroying the keyboard manager
-        this.input.keyboard.resetKeys();
-      }
-    });
-    EventBus.on("ui:blur", () => {
-      this.inputEnabled = true;
-      if (this.input?.keyboard) {
-        this.input.keyboard.enabled = true;
-        try {
-          this.wasd = {
-            up: this.input.keyboard.addKey("W"),
-            down: this.input.keyboard.addKey("S"),
-            left: this.input.keyboard.addKey("A"),
-            right: this.input.keyboard.addKey("D"),
-          };
-        } catch (error) {
-          console.warn("Failed to recreate WASD keys:", error);
-        }
-      }
-    });
-
-    // Listen for user list requests from UI components
-    EventBus.on(GameEvents.REQUEST_USER_LIST, () => {
-      // Immediately emit cached user list from local state
-      const cachedUsers: any[] = [];
-
-      // Add current user
-      if (this.myId && this.myUsername) {
-        const heroPos = this.gridEngine?.hasCharacter("hero")
-          ? this.gridEngine.getPosition("hero")
-          : { x: 15, y: 15 };
-        cachedUsers.push({
-          user_id: this.myId,
-          username: this.myUsername,
-          x: heroPos.x,
-          y: heroPos.y,
-        });
-      }
-
-      // Add other players from local cache
-      this.otherPlayers.forEach((player, oderId) => {
-        // gridEngine character ID is the userId directly (not player_${userId})
-        if (this.gridEngine?.hasCharacter(oderId)) {
-          const pos = this.gridEngine.getPosition(oderId);
-          cachedUsers.push({
-            user_id: oderId,
-            username: player.labelText.text ?? "",
-            x: pos.x,
-            y: pos.y,
-          });
-        }
-      });
-
-      // Emit immediately with cached data
-      if (cachedUsers.length > 0) {
-        EventBus.emit(GameEvents.PLAYER_LIST_UPDATE, cachedUsers);
-      }
-
-      // Also request fresh data from server
-      wsService.send({ type: "request_users" });
-    });
-
+    EventBus.on(GameEvents.SEND_CHAT_MESSAGE, this.sendChatHandler);
+    EventBus.on("channel:message_sent", this.channelMessageSentHandler);
+    EventBus.on("dm:message_sent", this.dmMessageSentHandler);
+    EventBus.on("ui:focus", this.uiFocusHandler);
+    EventBus.on("ui:blur", this.uiBlurHandler);
+    EventBus.on(GameEvents.REQUEST_USER_LIST, this.requestUserListHandler);
     EventBus.on("ws:message", this.wsMessageHandler);
   }
 
@@ -1160,12 +1150,12 @@ export class MainScene extends Scene {
   }
 
   destroy() {
-    EventBus.off(GameEvents.SEND_CHAT_MESSAGE);
-    EventBus.off(GameEvents.REQUEST_USER_LIST);
-    EventBus.off("channel:message_sent");
-    EventBus.off("dm:message_sent");
-    EventBus.off("ui:focus");
-    EventBus.off("ui:blur");
+    EventBus.off(GameEvents.SEND_CHAT_MESSAGE, this.sendChatHandler);
+    EventBus.off(GameEvents.REQUEST_USER_LIST, this.requestUserListHandler);
+    EventBus.off("channel:message_sent", this.channelMessageSentHandler);
+    EventBus.off("dm:message_sent", this.dmMessageSentHandler);
+    EventBus.off("ui:focus", this.uiFocusHandler);
+    EventBus.off("ui:blur", this.uiBlurHandler);
     EventBus.off("ws:message", this.wsMessageHandler);
   }
 }
