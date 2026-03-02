@@ -236,7 +236,7 @@ async def websocket_endpoint(
                 zone_id = data.get("zone_id")
                 
                 if zone_id:
-                    members_before = zone_manager.get_zone_members(zone_id)
+                    members_before = await zone_manager.get_zone_members(zone_id)
                     zone_destroyed = await zone_manager.exit_zone(zone_id, user_id)
                     
                     # Notify user
@@ -328,9 +328,9 @@ async def websocket_endpoint(
                 
                 # NEW: Zone-scoped temporary chat
                 elif scope == "zone":
-                    current_zone = zone_manager.get_user_zone(user_id)
+                    current_zone = await zone_manager.get_user_zone(user_id)
                     if current_zone:
-                        members = zone_manager.get_zone_members(current_zone)
+                        members = await zone_manager.get_zone_members(current_zone)
                         payload = {
                             "type": "chat_message",
                             "sender": user_id,
@@ -415,48 +415,7 @@ async def websocket_endpoint(
                         "message_id": message_id
                     }, server_id, target_id)
 
-            # ── Proximity Chat ─────────────────────────────────────────────────
-            # Delivers text only to players within PROXIMITY_CHAT_RADIUS tiles.
-            # Uses Redis positions — no extra DB queries needed.
-            elif data.get("type") == "proximity_chat":
-                PROXIMITY_CHAT_RADIUS = 8  # tiles
 
-                message = data.get("message", "").strip()
-                if not message or len(message) > 500:
-                    continue
-
-                if not redis_client.r:
-                    continue
-
-                # Get sender position
-                my_pos = await redis_client.r.hgetall(f"user:{user_id}")
-                if not my_pos or "x" not in my_pos:
-                    continue
-
-                mx, my_y = int(my_pos["x"]), int(my_pos["y"])
-
-                # Build payload once
-                payload = {
-                    "type": "proximity_chat",
-                    "sender": user_id,
-                    "username": username,
-                    "text": message,
-                    "timestamp": datetime.datetime.utcnow().isoformat(),
-                }
-
-                # Fan out to everyone (including sender) within radius
-                all_user_ids = await redis_client.r.smembers(f"server:{server_id}:users")
-                for uid in all_user_ids:
-                    if uid == user_id:
-                        # Always deliver to sender so they see their own message
-                        await manager.send_personal_message(payload, server_id, uid)
-                        continue
-                    pos = await redis_client.r.hgetall(f"user:{uid}")
-                    if not pos or "x" not in pos:
-                        continue
-                    dist = ((mx - int(pos["x"])) ** 2 + (my_y - int(pos["y"])) ** 2) ** 0.5
-                    if dist <= PROXIMITY_CHAT_RADIUS:
-                        await manager.send_personal_message(payload, server_id, uid)
 
     except WebSocketDisconnect:
         pass
@@ -474,8 +433,8 @@ async def websocket_endpoint(
         if redis_client.r:
             final_pos = await redis_client.r.hgetall(f"user:{user_id}")
             if final_pos and user_obj:
-                last_x = int(final_post.get("x",0))
-                last_y = int(final_post.get("y",0))
+                last_x = int(final_pos.get("x",0))
+                last_y = int(final_pos.get("y",0))
 
                 await save_position_to_db(last_x,last_y)
         

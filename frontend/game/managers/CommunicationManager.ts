@@ -95,10 +95,6 @@ export class CommunicationManager {
       case "zone_exited":
         this.handleZoneExitedConfirmation(data);
         break;
-
-      default:
-        // Pass through other messages to EventBus for MainScene
-        EventBus.emit("ws:message", data);
     }
   }
 
@@ -246,13 +242,6 @@ export class CommunicationManager {
         content,
       });
 
-      // Notify target via WebSocket
-      wsService.send({
-        type: "dm_sent",
-        target_id: receiverId,
-        message: response.data,
-      });
-
       return response.data;
     } catch (error) {
       console.error("❌ Failed to send DM:", error);
@@ -276,13 +265,6 @@ export class CommunicationManager {
         },
       );
 
-      // Notify target via WebSocket
-      wsService.send({
-        type: "dm_edited",
-        target_id: receiverId,
-        message: response.data,
-      });
-
       return response.data;
     } catch (error) {
       console.error("❌ Failed to edit DM:", error);
@@ -299,13 +281,6 @@ export class CommunicationManager {
   ): Promise<void> {
     try {
       await apiClient.delete(`/api/direct-messages/messages/${messageId}`);
-
-      // Notify target via WebSocket
-      wsService.send({
-        type: "dm_deleted",
-        target_id: receiverId,
-        message_id: messageId,
-      });
     } catch (error) {
       console.error("❌ Failed to delete DM:", error);
       throw error;

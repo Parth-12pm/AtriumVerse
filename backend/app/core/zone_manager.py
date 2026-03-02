@@ -11,34 +11,13 @@ logger = logging.getLogger(__name__)
 
 
 class ZoneManager:
-    """
-    Manages zone membership and lifecycle.
-    
-    Lifecycle:
-    - User enters zone -> create context if needed, add user
-    - User exits zone -> remove user, cleanup if empty
-    - Zone context is temporary - no persistence
-    """
-    
-    def __init__(self):
-        # zone_id -> set of user_ids currently in that zone
-        self.zones: Dict[str, Set[str]] = {}
-        
-        # Track zone metadata
-        self.zone_metadata: Dict[str, dict] = {}
-        
-        # Track user's current zone
-        self.user_zones: Dict[str, str] = {}  # user_id -> zone_id
-    
-    async def enter_zone(self, zone_id: str,user_id: str,username: str,zone_type: str = "PUBLIC"):
-
+    async def enter_zone(self, zone_id: str, user_id: str, username: str, zone_type: str = "PUBLIC"):
         old_zone = await redis_client.r.get(f"user:{user_id}:zone")
-
         if old_zone:
             await self.exit_zone(old_zone, user_id)
         
-        await redis_client.r.sadd(f"zone:{zone_id}:users",user_id)
-        await redis_client.r.set(f"user:{user_id}:zone",zone_id)
+        await redis_client.r.sadd(f"zone:{zone_id}:users", user_id)
+        await redis_client.r.set(f"user:{user_id}:zone", zone_id)
 
         members = await redis_client.r.smembers(f"zone:{zone_id}:users")
         return {
@@ -46,62 +25,30 @@ class ZoneManager:
             "members": list(members),
             "member_count": len(members)
         }
-      
 
-    
     async def exit_zone(self, zone_id: str, user_id: str) -> bool:
-        """
-        User exits a zone - destroy context if empty.
+        await redis_client.r.srem(f"zone:{zone_id}:users", user_id)
         
-        Returns:
-            bool: True if zone was destroyed (empty)
-        """
-        if zone_id not in self.zones:
-            return False
+        current_zone = await redis_client.r.get(f"user:{user_id}:zone")
+        if current_zone == zone_id:
+            await redis_client.r.delete(f"user:{user_id}:zone")
         
-        # Remove user
-        self.zones[zone_id].discard(user_id)
-        
-        # Remove from user tracking
-        if user_id in self.user_zones and self.user_zones[user_id] == zone_id:
-            del self.user_zones[user_id]
-        
-        # Cleanup empty zones (temporary context destroyed)
-        if not self.zones[zone_id]:
-            del self.zones[zone_id]
-            del self.zone_metadata[zone_id]
+        # If no users left, return True (destroyed)
+        count = await redis_client.r.scard(f"zone:{zone_id}:users")
+        if count == 0:
             logger.info(f"🧹 Zone destroyed: {zone_id} (empty)")
             return True
-        
-        logger.info(f"👋 User left {zone_id} ({len(self.zones[zone_id])} remaining)")
         return False
     
-    def get_zone_members(self, zone_id: str) -> Set[str]:
-        """Get all users currently in a zone."""
-        return self.zones.get(zone_id, set()).copy()
+    async def get_zone_members(self, zone_id: str):
+        members = await redis_client.r.smembers(f"zone:{zone_id}:users")
+        return list(members)
     
-    def get_user_zone(self, user_id: str) -> Optional[str]:
-        """Get the zone a user is currently in."""
-        return self.user_zones.get(user_id)
-    
-    def is_user_in_zone(self, user_id: str, zone_id: str) -> bool:
-        """Check if a user is in a specific zone."""
-        return zone_id in self.zones and user_id in self.zones[zone_id]
-    
-    def get_all_zones(self) -> Dict[str, dict]:
-        """Get all active zones with member counts."""
-        return {
-            zone_id: {
-                "member_count": len(members),
-                "members": list(members),
-                **self.zone_metadata.get(zone_id, {})
-            }
-            for zone_id, members in self.zones.items()
-        }
+    async def get_user_zone(self, user_id: str):
+        return await redis_client.r.get(f"user:{user_id}:zone")
     
     async def cleanup_user(self, user_id: str):
-        """Remove user from all zones (on disconnect)."""
-        zone_id = self.user_zones.get(user_id)
+        zone_id = await self.get_user_zone(user_id)
         if zone_id:
             await self.exit_zone(zone_id, user_id)
 
