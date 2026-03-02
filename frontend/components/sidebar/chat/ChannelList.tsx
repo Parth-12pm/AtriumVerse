@@ -125,7 +125,7 @@ export default function ChannelList({
                     className={`w-8 h-8 rounded-lg border-3 border-black flex items-center justify-center ${
                       selectedChannelId === channel.id
                         ? "bg-blue-500"
-                        : "bg-gray-200"
+                        : "bg-gray-850"
                     }`}
                   >
                     <Hash className="h-5 w-5" />

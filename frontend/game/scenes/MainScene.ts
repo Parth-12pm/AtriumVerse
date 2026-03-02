@@ -646,7 +646,6 @@ export class MainScene extends Scene {
       if (now - this.lastSentTime >= this.SEND_INTERVAL_MS) {
         const pos = this.gridEngine.getPosition("hero");
         const dir = this.lastDirection.get("hero") || "down";
-        const isMoving = this.gridEngine.isMoving("hero");
 
         // Only send if position or direction changed, or if we just stopped
         if (
@@ -846,25 +845,8 @@ export class MainScene extends Scene {
         break;
 
       case "chat_message":
-        // Emit general chat message event
+        // Keep legacy general chat event for existing listeners.
         EventBus.emit(GameEvents.CHAT_MESSAGE, data);
-
-        // Also emit specific events for ChatFeed
-        if (data.scope === "channel") {
-          EventBus.emit("chat:channel_message", data);
-        }
-        break;
-
-      case "dm_received":
-        EventBus.emit("dm:received", data.message);
-        break;
-
-      case "dm_updated":
-        EventBus.emit("dm:updated", data.message);
-        break;
-
-      case "dm_deleted":
-        EventBus.emit("dm:deleted", { message_id: data.message_id });
         break;
     }
   }
