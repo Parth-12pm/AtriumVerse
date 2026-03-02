@@ -538,7 +538,6 @@ export class MainScene extends Scene {
       wsService.send({ type: "chat_message", ...data });
     });
 
-
     // Forward channel messages to WebSocket for real-time broadcast
     EventBus.on("channel:message_sent", (msg: any) => {
       wsService.send({
@@ -864,11 +863,6 @@ export class MainScene extends Scene {
         if (data.scope === "channel") {
           EventBus.emit("chat:channel_message", data);
         }
-        break;
-
-      case "proximity_chat":
-        // Proximity chat: delivered by server only to nearby users
-        EventBus.emit("chat:proximity_message", data);
         break;
 
       case "dm_received":
