@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { X, Hash, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ChannelList from "@/components/sidebar/chat/ChannelList";
@@ -37,13 +37,6 @@ export default function ChatExpandedView({
   const [loading, setLoading] = useState(true);
   const [isServerOwner, setIsServerOwner] = useState(false);
 
-  // Load server data and channels
-  useEffect(() => {
-    loadServerData();
-    loadChannels();
-    loadDMConversations();
-  }, [serverId]);
-
   // Listen for dm:start events from People view
   useEffect(() => {
     const handleDMStart = (data: { userId: string; username: string }) => {
@@ -58,6 +51,46 @@ export default function ChatExpandedView({
     return () => {
       EventBus.off("dm:start", handleDMStart);
     };
+  }, []);
+
+  const loadServerData = useCallback(async () => {
+    try {
+      const response = await serversAPI.get(serverId);
+      const userId = getUserId();
+      setIsServerOwner(response.data.owner_id === userId);
+    } catch (error) {
+      console.error("Failed to load server data:", error);
+    }
+  }, [serverId]);
+
+  const getUserId = (): string => {
+    // Get from localStorage (set during login)
+    return localStorage.getItem("user_id") || "";
+  };
+
+  const loadChannels = useCallback(async () => {
+    try {
+      const response = await channelsAPI.list(serverId);
+      setChannels(response.data);
+
+      // Auto-select first channel
+      if (response.data.length > 0 && !selectedChannelId) {
+        setSelectedChannelId(response.data[0].id);
+      }
+    } catch (error) {
+      console.error("Failed to load channels:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [serverId, selectedChannelId]);
+
+  const loadDMConversations = useCallback(async () => {
+    try {
+      const response = await directMessagesAPI.listConversations();
+      setDMConversations(response.data);
+    } catch (error) {
+      console.error("Failed to load DM conversations:", error);
+    }
   }, []);
 
   // Refresh DM conversations when a message is sent (for immediate list update)
@@ -79,47 +112,14 @@ export default function ChatExpandedView({
       EventBus.off("dm:message_sent", handleDMSent);
       EventBus.off("dm:received", handleDMReceived);
     };
-  }, []);
+  }, [loadDMConversations]);
 
-  const loadServerData = async () => {
-    try {
-      const response = await serversAPI.get(serverId);
-      const userId = getUserId();
-      setIsServerOwner(response.data.owner_id === userId);
-    } catch (error) {
-      console.error("Failed to load server data:", error);
-    }
-  };
-
-  const getUserId = (): string => {
-    // Get from localStorage (set during login)
-    return localStorage.getItem("user_id") || "";
-  };
-
-  const loadChannels = async () => {
-    try {
-      const response = await channelsAPI.list(serverId);
-      setChannels(response.data);
-
-      // Auto-select first channel
-      if (response.data.length > 0 && !selectedChannelId) {
-        setSelectedChannelId(response.data[0].id);
-      }
-    } catch (error) {
-      console.error("Failed to load channels:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadDMConversations = async () => {
-    try {
-      const response = await directMessagesAPI.listConversations();
-      setDMConversations(response.data);
-    } catch (error) {
-      console.error("Failed to load DM conversations:", error);
-    }
-  };
+  // Load server data and channels
+  useEffect(() => {
+    loadServerData();
+    loadChannels();
+    loadDMConversations();
+  }, [loadServerData, loadChannels, loadDMConversations]);
 
   const handleChannelSelect = (channelId: string) => {
     setMode("channel");
@@ -260,13 +260,11 @@ export default function ChatExpandedView({
             <ChatFeed
               mode="channel"
               channelId={selectedChannelId}
-              serverId={serverId}
             />
           ) : mode === "dm" && selectedDMUserId ? (
             <ChatFeed
               mode="dm"
               dmUserId={selectedDMUserId}
-              serverId={serverId}
             />
           ) : (
             <div className="flex-1 flex items-center justify-center">

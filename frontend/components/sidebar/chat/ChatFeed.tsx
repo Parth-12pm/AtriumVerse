@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Send, Edit2, Trash2, User, Hash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,6 @@ import { messagesAPI, directMessagesAPI } from "@/lib/services/api.service";
 import { toast } from "sonner";
 import { formatChatTimestamp } from "@/lib/time";
 import EventBus from "@/game/EventBus";
-import { getCommunicationManager } from "@/game/managers/CommunicationManager";
 import type { Message, DirectMessage } from "@/types/api.types";
 
 // Union type for messages that can be either channel messages or DMs
@@ -19,15 +18,9 @@ interface ChatFeedProps {
   mode: "channel" | "dm";
   channelId?: string;
   dmUserId?: string;
-  serverId: string;
 }
 
-export default function ChatFeed({
-  mode,
-  channelId,
-  dmUserId,
-  serverId,
-}: ChatFeedProps) {
+export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -37,6 +30,30 @@ export default function ChatFeed({
   const currentUserId =
     typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
 
+  const loadChannelMessages = useCallback(async () => {
+    if (!channelId) return;
+
+    try {
+      const response = await messagesAPI.list(channelId);
+      setMessages(response.data.reverse()); // Oldest first
+    } catch (error) {
+      console.error("Failed to load channel messages:", error);
+      toast.error("Failed to load messages");
+    }
+  }, [channelId]);
+
+  const loadDMMessages = useCallback(async () => {
+    if (!dmUserId) return;
+
+    try {
+      const response = await directMessagesAPI.getMessages(dmUserId);
+      setMessages(response.data.reverse()); // Oldest first
+    } catch (error) {
+      console.error("Failed to load DM messages:", error);
+      toast.error("Failed to load messages");
+    }
+  }, [dmUserId]);
+
   // Load messages when channel/DM changes
   useEffect(() => {
     if (mode === "channel" && channelId) {
@@ -44,8 +61,7 @@ export default function ChatFeed({
     } else if (mode === "dm" && dmUserId) {
       loadDMMessages();
     }
-  }, [mode, channelId, dmUserId]);
-
+  }, [mode, channelId, dmUserId, loadChannelMessages, loadDMMessages]);
   // Auto-scroll to bottom on new messages
   useEffect(() => {
     if (scrollRef.current) {
@@ -55,7 +71,8 @@ export default function ChatFeed({
 
   // Listen for real-time messages from WebSocket
   useEffect(() => {
-    const handleChannelMessage = (msg: any) => {
+    const handleChannelMessage = (msg: ChatMessage) => {
+      if (!("channel_id" in msg)) return;
       // Only add if for this channel and not from current user (already added locally)
       if (msg.channel_id === channelId && msg.user_id !== currentUserId) {
         setMessages((prev) => {
@@ -102,44 +119,6 @@ export default function ChatFeed({
       };
     }
   }, [mode, channelId, dmUserId, currentUserId]);
-
-  const handleDMReceived = (msg: ChatMessage) => {
-    // Only add if it's for the current conversation
-    if (
-      "sender_id" in msg &&
-      (msg.sender_id === dmUserId || msg.receiver_id === dmUserId)
-    ) {
-      setMessages((prev) => [...prev, msg]);
-    }
-  };
-
-  const handleDMUpdated = (msg: ChatMessage) => {
-    setMessages((prev) => prev.map((m) => (m.id === msg.id ? msg : m)));
-  };
-
-  const handleDMDeleted = (data: { message_id: string }) => {
-    setMessages((prev) => prev.filter((m) => m.id !== data.message_id));
-  };
-
-  const loadChannelMessages = async () => {
-    try {
-      const response = await messagesAPI.list(channelId!);
-      setMessages(response.data.reverse()); // Oldest first
-    } catch (error) {
-      console.error("Failed to load channel messages:", error);
-      toast.error("Failed to load messages");
-    }
-  };
-
-  const loadDMMessages = async () => {
-    try {
-      const response = await directMessagesAPI.getMessages(dmUserId!);
-      setMessages(response.data.reverse()); // Oldest first
-    } catch (error) {
-      console.error("Failed to load DM messages:", error);
-      toast.error("Failed to load messages");
-    }
-  };
 
   const sendMessage = async () => {
     if (!newMessage.trim()) return;
@@ -209,7 +188,7 @@ export default function ChatFeed({
 
       setEditingId(null);
       toast.success("Message updated");
-    } catch (error) {
+    } catch {
       toast.error("Failed to update message");
     }
   };
