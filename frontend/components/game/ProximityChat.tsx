@@ -67,12 +67,6 @@ export default function ProximityChat() {
   if (!isVisible) return null;
 
   return (
-    /*
-     * The dock is at `fixed bottom-4 left-1/2 -translate-x-1/2`.
-     * This panel uses `fixed bottom-4 right-4` to anchor to the right side
-     * of the viewport, appearing visually separated from but beside the dock.
-     * width: 288px (w-72).
-     */
     <div className="fixed bottom-4 right-4 z-[70] pointer-events-auto w-72 flex flex-col rounded-xl overflow-hidden border border-border bg-background/95 backdrop-blur shadow-xl">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border">
@@ -89,7 +83,6 @@ export default function ProximityChat() {
           <X className="w-3 h-3" />
         </button>
       </div>
-
       {/* Message feed */}
       <div
         ref={scrollRef}
@@ -106,16 +99,13 @@ export default function ProximityChat() {
               key={idx}
               className="text-[12px] leading-snug px-2 py-[2px] text-foreground"
             >
-              <span className="font-semibold text-primary">
-                {msg.username}
-              </span>
+              <span className="font-semibold text-primary">{msg.username}</span>
               <span className="text-muted-foreground">: </span>
               <span className="text-foreground/90">{msg.text}</span>
             </div>
           ))
         )}
       </div>
-
       {/* Input */}
       <div className="flex items-center gap-2 px-2 py-2 border-t border-border">
         <input

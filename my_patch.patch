@@ -1,0 +1,1801 @@
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/frontend/app/dashboard/layout.tsx b/frontend/app/dashboard/layout.tsx
+index f936f527b162f27855d67d908a1e6390f7c9f109..f13e19543abc8e3f84009bccbdb8256fdbb88801 100644
+--- a/frontend/app/dashboard/layout.tsx
++++ b/frontend/app/dashboard/layout.tsx
+@@ -1,58 +1,59 @@
+ "use client";
+ 
+ import { LogOut, Settings, Sun, Moon } from "lucide-react";
+ import { Button } from "@/components/ui/button";
+ import {
+   DropdownMenu,
+   DropdownMenuContent,
+   DropdownMenuItem,
+   DropdownMenuSeparator,
+   DropdownMenuTrigger,
+ } from "@/components/ui/dropdown-menu";
+ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+ import { useRouter } from "next/navigation";
+-import { useEffect, useState } from "react";
++import { useSyncExternalStore } from "react";
+ import { useTheme } from "next-themes";
+ import { CharacterSelectorDropdown } from "@/components/dashboard/character-selector-dropdown";
+ 
+ export default function DashboardLayout({
+   children,
+ }: {
+   children: React.ReactNode;
+ }) {
+   const router = useRouter();
+   const { theme, setTheme } = useTheme();
+-  const [username, setUsername] = useState("User");
+-  const [mounted, setMounted] = useState(false);
+-
+-  useEffect(() => {
+-    setMounted(true);
+-    if (typeof window !== "undefined") {
+-      setUsername(localStorage.getItem("username") || "User");
+-    }
+-  }, []);
++  const mounted = useSyncExternalStore(
++    () => () => {},
++    () => true,
++    () => false,
++  );
++  const username = useSyncExternalStore(
++    () => () => {},
++    () => localStorage.getItem("username") || "User",
++    () => "User",
++  );
+ 
+   const handleLogout = () => {
+     localStorage.removeItem("token");
+     localStorage.removeItem("username");
+     localStorage.removeItem("user_id");
+     router.push("/login");
+   };
+ 
+   const initials = mounted ? username.slice(0, 2).toUpperCase() : "US";
+   const isDark = theme === "dark";
+ 
+   return (
+     <div className="min-h-screen flex flex-col bg-background">
+       {/* ── NAVBAR ── */}
+       <header className="h-14 border-b-4 border-border bg-card sticky top-0 z-50 flex items-center p-8 px-8 gap-4">
+         {/* LEFT — character selector */}
+         {mounted && <CharacterSelectorDropdown />}
+ 
+         {/* CENTER — brand */}
+         <div className="flex-1 flex justify-center pointer-events-none select-none">
+           <span className="font-black text-base uppercase tracking-[0.2em]">
+             AtriumVerse
+           </span>
+         </div>
+ 
+diff --git a/frontend/components/auth/login-form.tsx b/frontend/components/auth/login-form.tsx
+index d791cca9d32c029f1a71c39a775a3f0fb7336af2..79f769c47eb3559f845e214483aa078efa16a0bb 100644
+--- a/frontend/components/auth/login-form.tsx
++++ b/frontend/components/auth/login-form.tsx
+@@ -50,73 +50,77 @@ export function LoginForm() {
+     } catch (error) {
+       toast.error(`Invalid credentials : ${error}`);
+     } finally {
+       setLoading(false);
+     }
+   };
+ 
+   return (
+     <Card className="w-full max-w-md border-4 border-border shadow-shadow">
+       <CardHeader className="text-center pb-2">
+         <CardTitle className="text-3xl font-black uppercase tracking-tight">
+           Welcome Back
+         </CardTitle>
+         <CardDescription className="text-base">
+           Sign in to your AtriumVerse account
+         </CardDescription>
+       </CardHeader>
+       <CardContent>
+         <form onSubmit={handleLogin} className="space-y-6">
+           <div className="space-y-2">
+             <Label htmlFor="username" className="text-sm font-bold uppercase">
+               Username
+             </Label>
+             <Input
+               id="username"
++              name="username"
++              autoComplete="username"
+               value={username}
+               onChange={(e) => setUsername(e.target.value)}
+               placeholder="Enter username"
+               required
+               className="border-2"
+             />
+           </div>
+ 
+           <div className="space-y-2">
+             <div className="flex justify-between items-center">
+               <Label htmlFor="password" className="text-sm font-bold uppercase">
+                 Password
+               </Label>
+               <Link
+                 href="#"
+                 className="text-xs text-muted-foreground hover:text-primary hover:underline"
+               >
+                 Forgot password?
+               </Link>
+             </div>
+             <Input
+               id="password"
++              name="password"
+               type="password"
++              autoComplete="current-password"
+               value={password}
+               onChange={(e) => setPassword(e.target.value)}
+               placeholder="••••••••"
+               required
+               className="border-2"
+             />
+           </div>
+ 
+           <Button
+             disabled={loading}
+             type="submit"
+             className="w-full font-bold text-base py-6"
+           >
+             {loading ? (
+               <>
+                 <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Signing in...
+               </>
+             ) : (
+               <>
+                 Sign In <ArrowRight className="ml-2 h-4 w-4" />
+               </>
+             )}
+           </Button>
+         </form>
+ 
+diff --git a/frontend/components/game/ChatOverlay.tsx b/frontend/components/game/ChatOverlay.tsx
+index 3900998f1d36a4712f00e4caa231de1bc8cdd61b..d370a19aa4e73eae44480e453a9acccdad73173f 100644
+--- a/frontend/components/game/ChatOverlay.tsx
++++ b/frontend/components/game/ChatOverlay.tsx
+@@ -1,62 +1,71 @@
+ "use client";
+ 
+ import { useEffect, useRef, useState } from "react";
+ import EventBus, { GameEvents } from "@/game/EventBus";
+ import { Send, MessageSquare } from "lucide-react";
++import { formatChatTimestamp } from "@/lib/time";
+ 
+ interface ChatMessage {
+   id: string;
+   sender: string;
+   username: string;
+   scope: "global" | "direct" | "proximity";
+   text: string;
+   timestamp: string;
+ }
+ 
++interface IncomingChatEvent {
++  sender?: string;
++  username?: string;
++  scope?: "global" | "direct" | "proximity";
++  text: string;
++  timestamp?: string;
++}
++
+ export function ChatOverlay() {
+   const [messages, setMessages] = useState<ChatMessage[]>([]);
+   const [inputText, setInputText] = useState("");
+   const [showChat, setShowChat] = useState(true);
+   const messagesEndRef = useRef<HTMLDivElement>(null);
+ 
+   // Auto-scroll to bottom
+   useEffect(() => {
+     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+   }, [messages, showChat]);
+ 
+   useEffect(() => {
+-    const handleMessage = (data: any) => {
++    const handleMessage = (data: IncomingChatEvent) => {
+       setMessages((prev) => [
+         ...prev,
+         {
+           id: Math.random().toString(36).substring(7),
+           sender: data.sender || "System",
+           username: data.username || "System",
+           scope: data.scope || "global",
+           text: data.text,
+-          timestamp: new Date().toLocaleTimeString(),
++          timestamp: formatChatTimestamp(data.timestamp || new Date().toISOString()),
+         },
+       ]);
+     };
+ 
+     EventBus.on(GameEvents.CHAT_MESSAGE, handleMessage);
+     return () => {
+       EventBus.off(GameEvents.CHAT_MESSAGE, handleMessage);
+     };
+   }, []);
+ 
+   const handleSend = () => {
+     if (!inputText.trim()) return;
+ 
+     EventBus.emit(GameEvents.SEND_CHAT_MESSAGE, {
+       message: inputText.trim(),
+       scope: "global",
+     });
+     setInputText("");
+   };
+ 
+   const handleKeyDown = (e: React.KeyboardEvent) => {
+     if (e.key === "Enter") handleSend();
+   };
+ 
+   if (!showChat) {
+diff --git a/frontend/components/game/GameWrapper.tsx b/frontend/components/game/GameWrapper.tsx
+index f5620c50f0c42119662bd9f91ed74daa0d1c9b40..05a3b8780fdf973e1a7df02e909d03c417f4632d 100644
+--- a/frontend/components/game/GameWrapper.tsx
++++ b/frontend/components/game/GameWrapper.tsx
+@@ -1,71 +1,75 @@
+ "use client";
+ 
+ import { useEffect, useRef, useState } from "react";
+ import { wsService } from "@/lib/services/websocket.service";
+-import { initCommunicationManager } from "@/game/managers/CommunicationManager";
++import {
++  disconnectCommunicationManager,
++  initCommunicationManager,
++} from "@/game/managers/CommunicationManager";
+ import { MediaControls } from "@/components/game/MediaControls";
+ import { Minimap } from "@/components/game/Minimap";
+ import ZoneVideoRoom from "@/components/video/ZoneVideoRoom";
+ import { getProximityAudio, MAX_HEAR_RADIUS } from "@/lib/livekit-audio";
+ import EventBus, { GameEvents } from "@/game/EventBus";
+ import { TILE_PX, SPEAKER_TILE_X, SPEAKER_TILE_Y } from "@/lib/game-constants";
+ 
+ interface GameWrapperProps {
+   userId: string;
+   username: string;
+   serverId: string;
+   token: string;
+   characterId?: string;
+ }
+ 
+ let globalGameInstance: Phaser.Game | null = null;
+ let isInitializing = false;
+ 
+ export default function GameWrapper({
+   userId,
+   username,
+   serverId,
+   token,
+   characterId = "bob",
+ }: GameWrapperProps) {
+   const gameRef = useRef<Phaser.Game | null>(null);
+   const [isGameReady, setIsGameReady] = useState(false);
+   const audioConnectedRef = useRef(false);
+ 
+   // Player screen position (pixels) for the earshot ring overlay
+   const [ringPos, setRingPos] = useState<{ x: number; y: number } | null>(null);
+ 
+   useEffect(() => {
+     // 1. Initialize the central WebSocket
+     wsService.connect(serverId, token);
+ 
+     // 2. Initialize the Communication Manager (it no longer connects its own WS)
+     initCommunicationManager(serverId, token);
+ 
+     return () => {
+       // Cleanup when leaving the server
++      disconnectCommunicationManager();
+       wsService.disconnect();
+     };
+   }, [serverId, token]);
+ 
+   // ── Proximity Audio Lifecycle ──────────────────────────────────────────
+   useEffect(() => {
+     if (audioConnectedRef.current) return;
+     audioConnectedRef.current = true;
+ 
+     const audio = getProximityAudio();
+     audio
+       .connect(serverId)
+       .catch((err) => console.error("Proximity audio connect failed:", err));
+ 
+     return () => {
+       audioConnectedRef.current = false;
+       audio.disconnect();
+     };
+   }, [serverId]);
+ 
+   // ── Earshot Ring: track player screen position via PLAYER_POSITION ─────
+   // PLAYER_POSITION fires at 20Hz whenever the player moves.
+   // We convert tile coords → screen pixel centre for the SVG ring overlay.
+   useEffect(() => {
+     const handleMove = (data: { x: number; y: number }) => {
+diff --git a/frontend/components/game/MessageFeed.tsx b/frontend/components/game/MessageFeed.tsx
+index f80a2cf61d7282b3e9b91ff1739758c91c7abe94..841127988efb2a08d177f47c9bf66816965af4dd 100644
+--- a/frontend/components/game/MessageFeed.tsx
++++ b/frontend/components/game/MessageFeed.tsx
+@@ -1,35 +1,35 @@
+ "use client";
+ 
+ import { useState, useEffect, useRef } from "react";
+ import { Button } from "@/components/ui/button";
+ import { Input } from "@/components/ui/input";
+ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+ import { Hash, Send, Edit2, Trash2 } from "lucide-react";
+ import { fetchAPI } from "@/lib/api";
+ import { toast } from "sonner";
+-import { format } from "date-fns";
++import { formatChatTimestamp } from "@/lib/time";
+ 
+ interface Message {
+   id: string;
+   user_id: string;
+   username: string;
+   content: string;
+   created_at: string;
+   edited_at?: string;
+   reply_to_id?: string;
+ }
+ 
+ interface MessageFeedProps {
+   channelId: string;
+   channelName: string;
+ }
+ 
+ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
+   const [messages, setMessages] = useState<Message[]>([]);
+   const [newMessage, setNewMessage] = useState("");
+   const [loading, setLoading] = useState(false);
+   const [editingId, setEditingId] = useState<string | null>(null);
+   const [editContent, setEditContent] = useState("");
+   const scrollRef = useRef<HTMLDivElement>(null);
+   const currentUserId =
+     typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
+@@ -86,97 +86,89 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
+ 
+     try {
+       const updated = await fetchAPI(`/messages/${messageId}`, {
+         method: "PATCH",
+         body: JSON.stringify({ content: editContent.trim() }),
+       });
+ 
+       setMessages(messages.map((m) => (m.id === messageId ? updated : m)));
+       setEditingId(null);
+       toast.success("Message updated");
+     } catch (error) {
+       toast.error(`Failed to update message : ${error}`);
+     }
+   };
+ 
+   const deleteMessage = async (messageId: string) => {
+     try {
+       await fetchAPI(`/messages/${messageId}`, { method: "DELETE" });
+       setMessages(messages.filter((m) => m.id !== messageId));
+       toast.success("Message deleted");
+     } catch (error) {
+       toast.error(`Failed to delete message : ${error}`);
+     }
+   };
+ 
+-  const formatTime = (timestamp: string) => {
+-    try {
+-      return format(new Date(timestamp), "h:mm a");
+-    } catch {
+-      return "";
+-    }
+-  };
+-
+   return (
+     <div className="flex-1 flex flex-col h-full bg-background">
+       {/* Channel Header */}
+       <div className="h-14 border-b-4 border-border bg-card flex items-center px-4">
+         <Hash className="h-5 w-5 mr-2 text-muted-foreground" />
+         <span className="font-black uppercase text-lg">{channelName}</span>
+       </div>
+ 
+       {/* Messages Area */}
+       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+         {messages.length === 0 ? (
+           <div className="flex flex-col items-center justify-center h-full text-center">
+             <div className="w-16 h-16 bg-muted rounded-lg border-4 border-border flex items-center justify-center mb-4">
+               <Hash className="w-8 h-8 text-muted-foreground" />
+             </div>
+             <h3 className="text-xl font-black uppercase mb-2">
+               Welcome to #{channelName}
+             </h3>
+             <p className="text-muted-foreground">
+               This is the start of the #{channelName} channel
+             </p>
+           </div>
+         ) : (
+           messages.map((msg) => (
+             <div
+               key={msg.id}
+               className="flex gap-3 hover:bg-accent/5 -mx-2 px-2 py-1 rounded-lg group"
+             >
+               <Avatar className="h-10 w-10 border-2 border-border shrink-0">
+                 <AvatarFallback className="bg-primary text-primary-foreground font-black">
+                   {msg.username.slice(0, 2).toUpperCase()}
+                 </AvatarFallback>
+               </Avatar>
+ 
+               <div className="flex-1 min-w-0">
+                 <div className="flex items-center gap-2 mb-1">
+                   <span className="font-black text-sm">{msg.username}</span>
+                   <span className="text-xs text-muted-foreground">
+-                    {formatTime(msg.created_at)}
++                    {formatChatTimestamp(msg.created_at)}
+                   </span>
+                   {msg.edited_at && (
+                     <span className="text-xs text-muted-foreground italic">
+                       (edited)
+                     </span>
+                   )}
+ 
+                   {/* Actions (only for own messages) */}
+                   {msg.user_id === currentUserId && (
+                     <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                       <Button
+                         variant="noShadow"
+                         size="icon"
+                         className="h-6 w-6"
+                         onClick={() => startEdit(msg)}
+                       >
+                         <Edit2 className="h-3 w-3" />
+                       </Button>
+                       <Button
+                         variant="noShadow"
+                         size="icon"
+                         className="h-6 w-6 hover:bg-destructive hover:text-destructive-foreground"
+                         onClick={() => deleteMessage(msg.id)}
+                       >
+                         <Trash2 className="h-3 w-3" />
+diff --git a/frontend/components/game/ProximityChat.tsx b/frontend/components/game/ProximityChat.tsx
+index be5f4ff6b4353d9211f97ce59a44478350e728ea..de3d29bd27f86acbb92bc02d6a93217e6c51b114 100644
+--- a/frontend/components/game/ProximityChat.tsx
++++ b/frontend/components/game/ProximityChat.tsx
+@@ -51,93 +51,93 @@ export default function ProximityChat() {
+       EventBus.off("action:toggle_chat", handleToggleChat);
+     };
+   }, []);
+ 
+   const sendMessage = () => {
+     const text = newMessage.trim();
+     if (!text) return;
+     EventBus.emit("proximity:send_message", { message: text });
+     setNewMessage("");
+   };
+ 
+   const stopKeys = (e: React.KeyboardEvent) => {
+     e.stopPropagation();
+     if (e.key === "Enter") sendMessage();
+   };
+ 
+   if (!isVisible) return null;
+ 
+   return (
+     /*
+      * The dock is at `fixed bottom-4 left-1/2 -translate-x-1/2`.
+      * This panel uses `fixed bottom-4 right-4` to anchor to the right side
+      * of the viewport, appearing visually separated from but beside the dock.
+      * width: 288px (w-72).
+      */
+-    <div className="fixed bottom-4 right-4 z-[70] pointer-events-auto w-72 flex flex-col rounded-xl overflow-hidden border border-white/15 bg-gray-900/95 backdrop-blur shadow-xl">
++    <div className="fixed bottom-4 right-4 z-[70] pointer-events-auto w-72 flex flex-col rounded-xl overflow-hidden border border-border bg-background/95 backdrop-blur shadow-xl">
+       {/* Header */}
+-      <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
+-        <span className="text-white/60 text-[10px] font-mono font-bold tracking-wider uppercase">
++      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
++        <span className="text-muted-foreground text-[10px] font-mono font-bold tracking-wider uppercase">
+           Nearby Chat
+         </span>
+         <button
+           onClick={() => {
+             setIsVisible(false);
+             EventBus.emit("action:toggle_chat", false);
+           }}
+-          className="text-white/30 hover:text-white/80 transition-colors"
++          className="text-muted-foreground/70 hover:text-foreground transition-colors"
+         >
+           <X className="w-3 h-3" />
+         </button>
+       </div>
+ 
+       {/* Message feed */}
+       <div
+         ref={scrollRef}
+         className="max-h-[180px] overflow-y-auto flex flex-col gap-[2px] p-2"
+         style={{ scrollbarWidth: "none" }}
+       >
+         {messages.length === 0 ? (
+-          <p className="text-center text-[10px] text-white/25 font-mono py-3">
++          <p className="text-center text-[10px] text-muted-foreground/70 font-mono py-3">
+             — no messages yet —
+           </p>
+         ) : (
+           messages.map((msg, idx) => (
+             <div
+               key={idx}
+-              className="text-[12px] leading-snug px-2 py-[2px] text-white"
++              className="text-[12px] leading-snug px-2 py-[2px] text-foreground"
+             >
+-              <span className="font-semibold text-violet-300">
++              <span className="font-semibold text-primary">
+                 {msg.username}
+               </span>
+-              <span className="text-white/50">: </span>
+-              <span className="text-white/80">{msg.text}</span>
++              <span className="text-muted-foreground">: </span>
++              <span className="text-foreground/90">{msg.text}</span>
+             </div>
+           ))
+         )}
+       </div>
+ 
+       {/* Input */}
+-      <div className="flex items-center gap-2 px-2 py-2 border-t border-white/10">
++      <div className="flex items-center gap-2 px-2 py-2 border-t border-border">
+         <input
+           ref={inputRef}
+           type="text"
+           placeholder="Message nearby…"
+           value={newMessage}
+           onChange={(e) => setNewMessage(e.target.value)}
+           onKeyDown={stopKeys}
+           onKeyUp={(e) => e.stopPropagation()}
+           onFocus={() => EventBus.emit("ui:focus")}
+           onBlur={() => EventBus.emit("ui:blur")}
+-          className="flex-1 bg-transparent text-white text-[12px] placeholder:text-white/25 outline-none min-w-0"
++          className="flex-1 bg-transparent text-foreground text-[12px] placeholder:text-muted-foreground/70 outline-none min-w-0"
+         />
+         <button
+           onClick={sendMessage}
+           disabled={!newMessage.trim()}
+           className="w-6 h-6 flex items-center justify-center rounded-lg bg-violet-600 disabled:opacity-30 hover:bg-violet-500 transition-colors shrink-0"
+         >
+           <Send className="w-3 h-3 text-white" />
+         </button>
+       </div>
+     </div>
+   );
+ }
+diff --git a/frontend/components/sidebar/chat/ChannelList.tsx b/frontend/components/sidebar/chat/ChannelList.tsx
+index 6363c535ac0956651acbdee5f58cba91b6e9d4de..07faa0e645a74ffedea0713ab505bb7b2c33977e 100644
+--- a/frontend/components/sidebar/chat/ChannelList.tsx
++++ b/frontend/components/sidebar/chat/ChannelList.tsx
+@@ -1,247 +1,246 @@
+ "use client";
+ 
+ import React from "react";
+ import { Hash, User, ChevronDown, Plus } from "lucide-react";
+ import { Button } from "@/components/ui/button";
+ import CreateChannelDialog from "./CreateChannelDialog";
+ import ChannelDropdown from "./ChannelDropdown";
+ import EditChannelDialog from "./EditChannelDialog";
+ import type { ChannelCreate } from "@/types/api.types";
+ 
+ interface Channel {
+   id: string;
+   name: string;
+   description?: string;
++  type?: string;
+ }
+ 
+ interface DMConversation {
+   user_id: string;
+   username: string;
+   last_message?: string;
+   last_message_at?: string;
+   unread_count: number;
+ }
+ 
+ interface ChannelListProps {
+   channels: Channel[];
+   dmConversations: DMConversation[];
+   selectedChannelId: string | null;
+   selectedDMUserId: string | null;
+   onChannelSelect: (channelId: string) => void;
+   onDMSelect: (userId: string) => void;
+   loading: boolean;
+-  serverId: string;
+   isServerOwner: boolean;
+   onCreateChannel: (data: ChannelCreate) => Promise<void>;
+   onUpdateChannel: (channelId: string, data: Partial<Channel>) => Promise<void>;
+   onDeleteChannel: (channelId: string) => Promise<void>;
+ }
+ 
+ export default function ChannelList({
+   channels,
+   dmConversations,
+   selectedChannelId,
+   selectedDMUserId,
+   onChannelSelect,
+   onDMSelect,
+   loading,
+-  serverId,
+   isServerOwner,
+   onCreateChannel,
+   onUpdateChannel,
+   onDeleteChannel,
+ }: ChannelListProps) {
+   const [channelsExpanded, setChannelsExpanded] = React.useState(true);
+   const [dmsExpanded, setDMsExpanded] = React.useState(true);
+   const [showCreateDialog, setShowCreateDialog] = React.useState(false);
+   const [editingChannel, setEditingChannel] = React.useState<Channel | null>(
+     null,
+   );
+ 
+   if (loading) {
+     return (
+       <div className="flex-1 flex items-center justify-center">
+         <div className="animate-pulse">
+           <div className="w-12 h-12 bg-blue-500 border-3 border-black rounded-full"></div>
+         </div>
+       </div>
+     );
+   }
+ 
+   return (
+-    <div className="flex-1 overflow-y-auto">
++    <div className="flex-1 overflow-y-auto bg-card">
+       {/* Channels Section */}
+-      <div className="border-b-4  border-black">
+-        <div className="w-full px-4 py-3 flex items-center justify-between border-b-3 border-black">
++      <div className="border-b-2 border-border">
++        <div className="flex w-full items-center justify-between border-b-2 border-border px-4 py-3">
+           <button
+             onClick={() => setChannelsExpanded(!channelsExpanded)}
+             className="flex items-center gap-2 hover:opacity-70 transition-opacity"
+           >
+-            <span className="font-black text-sm uppercase text-gray-700">
++            <span className="text-sm font-black uppercase text-muted-foreground">
+               Channels
+             </span>
+             <ChevronDown
+               className={`w-4 h-4 transition-transform ${channelsExpanded ? "" : "-rotate-90"}`}
+             />
+           </button>
+           {isServerOwner && (
+             <Button
+               variant="neutral"
+               size="icon"
+               onClick={() => setShowCreateDialog(true)}
+-              className="w-6 h-6 p-0"
++              className="h-6 w-6 border-border p-0"
+               title="Create Channel"
+             >
+               <Plus className="w-4 h-4" />
+             </Button>
+           )}
+         </div>
+ 
+         {channelsExpanded && (
+           <div className="py-2">
+             {channels.length === 0 ? (
+-              <p className="px-4 py-2 text-sm text-gray-500">
++              <p className="px-4 py-2 text-sm text-muted-foreground">
+                 No channels available
+               </p>
+             ) : (
+               channels.map((channel) => (
+                 <div
+                   key={channel.id}
+                   onClick={() => onChannelSelect(channel.id)}
+                   onKeyDown={(e) => {
+                     if (e.key === "Enter" || e.key === " ") {
+                       e.preventDefault();
+                       onChannelSelect(channel.id);
+                     }
+                   }}
+                   role="button"
+                   tabIndex={0}
+-                  className={`group w-full px-4 py-2 flex items-center gap-3 hover:bg-gray-100 transition-all cursor-pointer ${
++                  className={`group w-full px-4 py-2 flex items-center gap-3 hover:bg-muted/60 transition-all cursor-pointer ${
+                     selectedChannelId === channel.id
+-                      ? "bg-blue-100 border-l-4 border-blue-500 font-bold"
++                      ? "border-l-4 border-primary bg-primary/10 font-bold"
+                       : ""
+                   }`}
+                 >
+                   <div
+                     className={`w-8 h-8 rounded-lg border-3 border-black flex items-center justify-center ${
+                       selectedChannelId === channel.id
+-                        ? "bg-blue-500"
+-                        : "bg-gray-200"
++                        ? "bg-primary text-primary-foreground"
++                        : "bg-muted text-muted-foreground"
+                     }`}
+                   >
+                     <Hash
+-                      className={`w-5 h-5 ${selectedChannelId === channel.id ? "text-white" : "text-gray-700"}`}
++                      className="h-5 w-5"
+                     />
+                   </div>
+                   <div className="flex-1 text-left">
+                     <p className="font-bold text-sm">{channel.name}</p>
+                   </div>
+                   {isServerOwner && (
+                     <div onClick={(e) => e.stopPropagation()}>
+                       <ChannelDropdown
+                         channelId={channel.id}
+                         channelName={channel.name}
+                         onEdit={() => setEditingChannel(channel)}
+                         onDelete={onDeleteChannel}
+                       />
+                     </div>
+                   )}
+                 </div>
+               ))
+             )}
+           </div>
+         )}
+       </div>
+ 
+       {/* Direct Messages Section */}
+       <div>
+         <button
+           onClick={() => setDMsExpanded(!dmsExpanded)}
+-          className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors border-b-3 border-black"
++          className="flex w-full items-center justify-between border-b-2 border-border px-4 py-3 transition-colors hover:bg-muted/50"
+         >
+-          <span className="font-black text-sm uppercase text-gray-700">
++          <span className="text-sm font-black uppercase text-muted-foreground">
+             Direct Messages
+           </span>
+           <ChevronDown
+             className={`w-4 h-4 transition-transform ${dmsExpanded ? "" : "-rotate-90"}`}
+           />
+         </button>
+ 
+         {dmsExpanded && (
+           <div className="py-2">
+             {dmConversations.length === 0 ? (
+               <div className="px-4 py-6 text-center">
+-                <p className="text-sm text-gray-500 mb-2">
++                <p className="mb-2 text-sm text-muted-foreground">
+                   No direct messages yet
+                 </p>
+-                <p className="text-xs text-gray-400">
++                <p className="text-xs text-muted-foreground/80">
+                   Click on a user to start chatting!
+                 </p>
+               </div>
+             ) : (
+               dmConversations.map((conversation) => (
+                 <button
+                   key={conversation.user_id}
+                   onClick={() => onDMSelect(conversation.user_id)}
+-                  className={`w-full px-4 py-2 flex items-center gap-3 hover:bg-gray-100 transition-all relative ${
++                  className={`w-full px-4 py-2 flex items-center gap-3 hover:bg-muted/60 transition-all relative ${
+                     selectedDMUserId === conversation.user_id
+-                      ? "bg-purple-100 border-l-4 border-purple-500 font-bold"
++                      ? "border-l-4 border-secondary bg-secondary/20 font-bold"
+                       : ""
+                   }`}
+                 >
+                   <div
+                     className={`w-8 h-8 rounded-full border-3 border-black flex items-center justify-center ${
+                       selectedDMUserId === conversation.user_id
+-                        ? "bg-purple-500"
+-                        : "bg-gray-200"
++                        ? "bg-secondary text-secondary-foreground"
++                        : "bg-muted text-muted-foreground"
+                     }`}
+                   >
+                     <User
+-                      className={`w-5 h-5 ${selectedDMUserId === conversation.user_id ? "text-white" : "text-gray-700"}`}
++                      className="h-5 w-5"
+                     />
+                   </div>
+                   <div className="flex-1 text-left min-w-0">
+                     <p className="font-bold text-sm truncate">
+                       {conversation.username}
+                     </p>
+                     {conversation.last_message && (
+-                      <p className="text-xs text-gray-500 truncate">
++                      <p className="truncate text-xs text-muted-foreground">
+                         {conversation.last_message}
+                       </p>
+                     )}
+                   </div>
+                   {conversation.unread_count > 0 && (
+-                    <div className="w-6 h-6 bg-red-500 border-2 border-black rounded-full flex items-center justify-center">
++                    <div className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-border bg-destructive">
+                       <span className="text-white text-xs font-black">
+                         {conversation.unread_count}
+                       </span>
+                     </div>
+                   )}
+                 </button>
+               ))
+             )}
+           </div>
+         )}
+       </div>
+ 
+       {/* Create Channel Dialog */}
+       <CreateChannelDialog
+         open={showCreateDialog}
+         onOpenChange={setShowCreateDialog}
+         onCreateChannel={onCreateChannel}
+       />
+ 
+       {/* Edit Channel Dialog */}
+       {editingChannel && (
+         <EditChannelDialog
+           open={!!editingChannel}
+           onOpenChange={(open) => !open && setEditingChannel(null)}
+           channelId={editingChannel.id}
+           currentName={editingChannel.name}
+-          currentType={(editingChannel as any).type || "text"}
++          currentType={editingChannel.type === "voice" ? "voice" : "text"}
+           onUpdateChannel={onUpdateChannel}
+         />
+       )}
+     </div>
+   );
+ }
+diff --git a/frontend/components/sidebar/chat/ChatExpandedView.tsx b/frontend/components/sidebar/chat/ChatExpandedView.tsx
+index 4015c5e387461f79c33f3ced482514f1e35a3943..4ccebb6778eafa141f68ed17f841960565b325ac 100644
+--- a/frontend/components/sidebar/chat/ChatExpandedView.tsx
++++ b/frontend/components/sidebar/chat/ChatExpandedView.tsx
+@@ -159,129 +159,128 @@ export default function ChatExpandedView({
+       console.error("Failed to update channel:", error);
+       throw error;
+     }
+   };
+ 
+   const handleDeleteChannel = async (channelId: string) => {
+     try {
+       await channelsAPI.delete(channelId);
+       setChannels((prev) => prev.filter((c) => c.id !== channelId));
+       // If deleted channel was selected, clear selection
+       if (selectedChannelId === channelId) {
+         setSelectedChannelId(null);
+       }
+     } catch (error) {
+       console.error("Failed to delete channel:", error);
+       throw error;
+     }
+   };
+ 
+   const selectedChannel = channels.find((c) => c.id === selectedChannelId);
+   const selectedDM = dmConversations.find(
+     (c) => c.user_id === selectedDMUserId,
+   );
+ 
+   return (
+-    <div className="fixed left-19 top-0 h-full flex z-40">
++    <div className="fixed left-19 top-0 z-40 flex h-full text-foreground">
+       {/* Left Card: Channel/DM List (Slim) */}
+-      <div className="w-72 bg-white border-r-4 border-black flex flex-col">
++      <div className="flex w-72 flex-col border-r-2 border-border bg-card">
+         {/* Header with Close Button */}
+-        <div className="p-4 border-b-4 border-black bg-blue-500 flex items-center justify-between">
+-          <h2 className="text-xl font-black text-white">Chat</h2>
++        <div className="flex items-center justify-between border-b-2 border-border bg-primary p-4 text-primary-foreground">
++          <h2 className="text-xl font-black">Chat</h2>
+           <Button
+             onClick={onClose}
+             variant="neutral"
+             size="icon"
+-            className="w-8 h-8 bg-white hover:bg-gray-100"
++            className="h-8 w-8 border-border bg-card text-foreground hover:bg-muted"
+             title="Close Chat"
+           >
+             <X className="w-5 h-5" />
+           </Button>
+         </div>
+ 
+         {/* Channel/DM List */}
+         <ChannelList
+           channels={channels}
+           dmConversations={dmConversations}
+           selectedChannelId={selectedChannelId}
+           selectedDMUserId={selectedDMUserId}
+           onChannelSelect={handleChannelSelect}
+           onDMSelect={handleDMSelect}
+           loading={loading}
+-          serverId={serverId}
+           isServerOwner={isServerOwner}
+           onCreateChannel={handleCreateChannel}
+           onUpdateChannel={handleUpdateChannel}
+           onDeleteChannel={handleDeleteChannel}
+         />
+       </div>
+ 
+       {/* Right Card: Message Feed (Wide) */}
+-      <div className="w-[600px] bg-white border-r-4 border-black flex flex-col h-screen overflow-hidden">
++      <div className="flex h-screen w-[600px] flex-col overflow-hidden border-r-2 border-border bg-background">
+         {/* Feed Header */}
+-        <div className="p-4 border-b-4 border-black bg-gray-50 flex items-center gap-3 flex-shrink-0">
++        <div className="flex shrink-0 items-center gap-3 border-b-2 border-border bg-muted/40 p-4">
+           {mode === "channel" && selectedChannel ? (
+             <>
+-              <div className="w-10 h-10 bg-blue-500 border-3 border-black rounded-lg flex items-center justify-center">
+-                <Hash className="w-6 h-6 text-white" />
++              <div className="flex h-10 w-10 items-center justify-center rounded-lg border-2 border-border bg-primary text-primary-foreground">
++                <Hash className="h-6 w-6" />
+               </div>
+               <div>
+                 <h3 className="font-black text-lg">#{selectedChannel.name}</h3>
+                 {selectedChannel.description && (
+-                  <p className="text-sm text-gray-600">
++                  <p className="text-sm text-muted-foreground">
+                     {selectedChannel.description}
+                   </p>
+                 )}
+               </div>
+             </>
+           ) : mode === "dm" && (selectedDM || selectedDMUserId) ? (
+             <>
+-              <div className="w-10 h-10 bg-purple-500 border-3 border-black rounded-full flex items-center justify-center">
+-                <User className="w-6 h-6 text-white" />
++              <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-border bg-secondary text-secondary-foreground">
++                <User className="h-6 w-6" />
+               </div>
+               <div>
+                 <h3 className="font-black text-lg">
+                   {selectedDM?.username ||
+                     selectedDMUsername ||
+                     "Direct Message"}
+                 </h3>
+-                <p className="text-sm text-gray-600">Direct Message</p>
++                <p className="text-sm text-muted-foreground">Direct Message</p>
+               </div>
+             </>
+           ) : (
+             <div className="text-center w-full">
+-              <p className="text-gray-500 font-bold">Select a channel or DM</p>
++              <p className="font-bold text-muted-foreground">Select a channel or DM</p>
+             </div>
+           )}
+         </div>
+ 
+         {/* Message Feed - Takes remaining height */}
+         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+           {mode === "channel" && selectedChannelId ? (
+             <ChatFeed
+               mode="channel"
+               channelId={selectedChannelId}
+               serverId={serverId}
+             />
+           ) : mode === "dm" && selectedDMUserId ? (
+             <ChatFeed
+               mode="dm"
+               dmUserId={selectedDMUserId}
+               serverId={serverId}
+             />
+           ) : (
+             <div className="flex-1 flex items-center justify-center">
+-              <div className="text-center max-w-sm p-8 bg-gray-50 border-3 border-black rounded-lg">
+-                <p className="text-gray-500 font-bold text-lg mb-2">
++              <div className="max-w-sm rounded-lg border-2 border-border bg-muted/40 p-8 text-center">
++                <p className="mb-2 text-lg font-bold text-muted-foreground">
+                   💬 Welcome to Chat!
+                 </p>
+-                <p className="text-gray-600 text-sm">
++                <p className="text-sm text-muted-foreground">
+                   Select a channel or start a direct message to begin chatting.
+                 </p>
+               </div>
+             </div>
+           )}
+         </div>
+       </div>
+     </div>
+   );
+ }
+diff --git a/frontend/components/sidebar/chat/ChatFeed.tsx b/frontend/components/sidebar/chat/ChatFeed.tsx
+index aa246e14df75683b4739a768d399bf59a88b36d8..af7718bfd485ec1f20d0205751efb015f9a1cdd4 100644
+--- a/frontend/components/sidebar/chat/ChatFeed.tsx
++++ b/frontend/components/sidebar/chat/ChatFeed.tsx
+@@ -1,35 +1,35 @@
+ "use client";
+ 
+ import React, { useState, useEffect, useRef } from "react";
+ import { Send, Edit2, Trash2, User, Hash } from "lucide-react";
+ import { Button } from "@/components/ui/button";
+ import { Input } from "@/components/ui/input";
+ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+ import { messagesAPI, directMessagesAPI } from "@/lib/services/api.service";
+ import { toast } from "sonner";
+-import { format } from "date-fns";
++import { formatChatTimestamp } from "@/lib/time";
+ import EventBus from "@/game/EventBus";
+ import { getCommunicationManager } from "@/game/managers/CommunicationManager";
+ import type { Message, DirectMessage } from "@/types/api.types";
+ 
+ // Union type for messages that can be either channel messages or DMs
+ type ChatMessage = Message | DirectMessage;
+ 
+ interface ChatFeedProps {
+   mode: "channel" | "dm";
+   channelId?: string;
+   dmUserId?: string;
+   serverId: string;
+ }
+ 
+ export default function ChatFeed({
+   mode,
+   channelId,
+   dmUserId,
+   serverId,
+ }: ChatFeedProps) {
+   const [messages, setMessages] = useState<ChatMessage[]>([]);
+   const [newMessage, setNewMessage] = useState("");
+   const [loading, setLoading] = useState(false);
+   const [editingId, setEditingId] = useState<string | null>(null);
+   const [editContent, setEditContent] = useState("");
+@@ -208,214 +208,206 @@ export default function ChatFeed({
+       }
+ 
+       setEditingId(null);
+       toast.success("Message updated");
+     } catch (error) {
+       toast.error("Failed to update message");
+     }
+   };
+ 
+   const deleteMessage = async (messageId: string) => {
+     try {
+       if (mode === "channel") {
+         await messagesAPI.delete(messageId);
+         setMessages((prev) => prev.filter((m) => m.id !== messageId));
+       } else if (mode === "dm") {
+         await directMessagesAPI.delete(messageId);
+         setMessages((prev) => prev.filter((m) => m.id !== messageId));
+       }
+ 
+       toast.success("Message deleted");
+     } catch (error) {
+       toast.error("Failed to delete message");
+     }
+   };
+ 
+-  const formatTime = (timestamp: string) => {
+-    try {
+-      return format(new Date(timestamp), "h:mm a");
+-    } catch {
+-      return "";
+-    }
+-  };
+-
+   const getMessageUsername = (msg: ChatMessage) => {
+     // Type guard: Message has username and channel_id, DirectMessage has sender_username
+     if ("channel_id" in msg) {
+       // This is a Message (channel message)
+       return msg.username || "Unknown";
+     }
+     // This is a DirectMessage
+     return msg.sender_username || "Unknown";
+   };
+ 
+   const getMessageUserId = (msg: ChatMessage) => {
+     // Type guard: DirectMessage has sender_id, Message has user_id
+     if ("sender_id" in msg) {
+       return msg.sender_id;
+     }
+     return msg.user_id;
+   };
+ 
+   return (
+-    <div className="flex-1 flex flex-col min-h-0 bg-white">
++    <div className="flex-1 flex flex-col min-h-0 bg-background text-foreground">
+       {/* Messages Area */}
+       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+         {messages.length === 0 ? (
+           <div className="flex flex-col items-center justify-center h-full text-center">
+-            <div className="w-16 h-16 bg-gray-100 rounded-lg border-3 border-black flex items-center justify-center mb-4">
++            <div className="w-16 h-16 bg-muted rounded-lg border-2 border-border flex items-center justify-center mb-4">
+               {mode === "channel" ? (
+                 <Hash className="w-8 h-8 text-gray-500" />
+               ) : (
+                 <User className="w-8 h-8 text-gray-500" />
+               )}
+             </div>
+-            <h3 className="text-xl font-black mb-2">
++            <h3 className="text-xl font-black mb-2 text-foreground">
+               {mode === "channel"
+                 ? "Start the conversation!"
+                 : "No messages yet"}
+             </h3>
+-            <p className="text-gray-500 text-sm">
++            <p className="text-muted-foreground text-sm">
+               {mode === "channel"
+                 ? "Be the first to send a message"
+                 : "Send a message to start chatting"}
+             </p>
+           </div>
+         ) : (
+           messages.map((msg) => {
+             const username = getMessageUsername(msg);
+             const userId = getMessageUserId(msg);
+             const isOwnMessage = userId === currentUserId;
+ 
+             return (
+               <div
+                 key={msg.id}
+                 className={`flex gap-3 -mx-2 px-2 py-2 rounded-lg group ${isOwnMessage ? "flex-row-reverse" : "flex-row"}`}
+               >
+                 {/* Avatar */}
+                 <Avatar className="w-10 h-10 flex-shrink-0">
+                   <AvatarFallback
+                     className={`text-white font-black ${isOwnMessage ? "bg-gradient-to-br from-blue-500 to-blue-600" : "bg-gradient-to-br from-purple-400 to-pink-400"}`}
+                   >
+                     {username.slice(0, 2).toUpperCase()}
+                   </AvatarFallback>
+                 </Avatar>
+ 
+                 <div
+                   className={`flex flex-col max-w-[70%] ${isOwnMessage ? "items-end" : "items-start"}`}
+                 >
+                   {/* Message Header */}
+                   <div
+                     className={`flex items-center gap-2 mb-1 ${isOwnMessage ? "flex-row-reverse" : "flex-row"}`}
+                   >
+                     <span className="font-black text-sm">{username}</span>
+-                    <span className="text-xs text-gray-500">
+-                      {formatTime(msg.created_at)}
++                    <span className="text-xs text-muted-foreground">
++                      {formatChatTimestamp(msg.created_at)}
+                     </span>
+                     {msg.edited_at && (
+-                      <span className="text-xs text-gray-500 italic">
++                      <span className="text-xs text-muted-foreground italic">
+                         (edited)
+                       </span>
+                     )}
+                   </div>
+ 
+                   {/* Message Content */}
+                   {editingId === msg.id ? (
+                     <div className="flex gap-2 mt-2 w-full">
+                       <Input
+                         value={editContent}
+                         onChange={(e) => setEditContent(e.target.value)}
+                         onKeyDown={(e) => {
+                           e.stopPropagation(); // Prevent game from capturing input
+                           if (e.key === "Enter") saveEdit(msg.id);
+                           if (e.key === "Escape") setEditingId(null);
+                         }}
+                         className="flex-1"
+                       />
+                       <Button
+                         onClick={() => saveEdit(msg.id)}
+                         variant="default"
+-                        className="bg-blue-500 text-white hover:bg-blue-600"
++                        className="bg-primary text-primary-foreground hover:bg-primary/90"
+                         size="sm"
+                       >
+                         Save
+                       </Button>
+                       <Button
+                         onClick={() => setEditingId(null)}
+                         variant="neutral"
+                         size="sm"
+                       >
+                         Cancel
+                       </Button>
+                     </div>
+                   ) : (
+                     <div
+                       className={`relative group/msg ${isOwnMessage ? "w-full flex justify-end" : "w-full"}`}
+                     >
+                       <div
+-                        className={`inline-block px-4 py-2 rounded-2xl ${isOwnMessage ? "bg-blue-500 text-white rounded-br-sm" : "bg-gray-100 text-gray-900 rounded-bl-sm"}`}
++                        className={`inline-block px-4 py-2 rounded-2xl ${isOwnMessage ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}
+                       >
+                         <p className="text-sm break-words">{msg.content}</p>
+                       </div>
+ 
+                       {/* Actions (only for own messages) */}
+                       {isOwnMessage && (
+                         <div className="absolute top-0 right-0 -mt-6 opacity-0 group-hover/msg:opacity-100 transition-opacity flex gap-1">
+                           <Button
+                             onClick={() => startEdit(msg)}
+                             variant="neutral"
+                             size="icon"
+                             className="w-6 h-6 p-0"
+                           >
+                             <Edit2 className="w-3 h-3" />
+                           </Button>
+                           <Button
+                             onClick={() => deleteMessage(msg.id)}
+                             variant="neutral"
+                             size="icon"
+-                            className="w-6 h-6 p-0 hover:bg-red-100"
++                            className="w-6 h-6 p-0 hover:bg-destructive/15"
+                           >
+-                            <Trash2 className="w-3 h-3 text-red-600" />
++                            <Trash2 className="w-3 h-3 text-destructive" />
+                           </Button>
+                         </div>
+                       )}
+                     </div>
+                   )}
+                 </div>
+               </div>
+             );
+           })
+         )}
+       </div>
+ 
+       {/* Message Input */}
+-      <div className="p-4 border-t-4 border-black bg-gray-50 flex-shrink-0">
++      <div className="p-4 border-t border-border bg-muted/40 flex-shrink-0">
+         <div className="flex gap-2">
+           <Input
+             type="text"
+             placeholder={
+               mode === "channel" ? "Message channel..." : "Send a message..."
+             }
+             value={newMessage}
+             onChange={(e) => setNewMessage(e.target.value)}
+             onKeyDown={(e) => {
+               // Stop propagation for ALL keys to prevent game from capturing input
+               e.stopPropagation();
+               if (e.key === "Enter" && !e.shiftKey) sendMessage();
+             }}
+             disabled={loading}
+             className="flex-1"
+           />
+           <Button
+             onClick={sendMessage}
+             disabled={loading || !newMessage.trim()}
+             variant="default"
+-            className="bg-blue-500 text-white hover:bg-blue-600"
++            className="bg-primary text-primary-foreground hover:bg-primary/90"
+             size="icon"
+           >
+             <Send className="w-5 h-5" />
+           </Button>
+         </div>
+       </div>
+     </div>
+   );
+ }
+diff --git a/frontend/game/managers/CommunicationManager.ts b/frontend/game/managers/CommunicationManager.ts
+index d42a5327e25a08004f395923576d1ad255ec0d78..d23e59f5e72463b33663312fda394f2f65414944 100644
+--- a/frontend/game/managers/CommunicationManager.ts
++++ b/frontend/game/managers/CommunicationManager.ts
+@@ -15,68 +15,72 @@ import { wsService } from "@/lib/services/websocket.service";
+ 
+ interface Message {
+   id?: string;
+   type: "chat_message" | "dm_received" | "dm_updated" | "dm_deleted";
+   sender: string;
+   username: string;
+   scope: "channel" | "direct" | "zone";
+   text: string;
+   timestamp: string;
+   channel_id?: string;
+   zone_id?: string;
+   temporary?: boolean;
+   receiver_id?: string;
+ }
+ 
+ interface ZoneInfo {
+   id: string;
+   name: string;
+   members: string[];
+ }
+ 
+ export class CommunicationManager {
+   private serverId: string;
+   private token: string;
+   private currentZone: ZoneInfo | null = null;
++  private readonly onZoneEntered = this.handleZoneEntered.bind(this);
++  private readonly onZoneExited = this.handleZoneExited.bind(this);
++  private readonly onProximitySend = (data: { message: string }) => {
++    this.sendProximityChat(data.message);
++  };
++  private readonly onWsMessage = (data: any) => {
++    this.handleWebSocketMessage(data);
++  };
+ 
+   constructor(serverId: string, token: string) {
+     this.serverId = serverId;
+     this.token = token;
+ 
+     // Listen to zone events from MainScene
+-    EventBus.on("zone:entered", this.handleZoneEntered.bind(this));
+-    EventBus.on("zone:exited", this.handleZoneExited.bind(this));
++    EventBus.on("zone:entered", this.onZoneEntered);
++    EventBus.on("zone:exited", this.onZoneExited);
+ 
+     // Proximity chat send
+-    EventBus.on("proximity:send_message", (data: { message: string }) => {
+-      this.sendProximityChat(data.message);
+-    });
++    EventBus.on("proximity:send_message", this.onProximitySend);
+ 
+     // Hook into the central stream
+-    EventBus.on("ws:message", (data: any) => {
+-      this.handleWebSocketMessage(data);
+-    });
++    EventBus.on("ws:message", this.onWsMessage);
+   }
+ 
+   /**
+    * Handle incoming WebSocket messages
+    */
+   private handleWebSocketMessage(data: any): void {
+     switch (data.type) {
+       case "chat_message":
+         this.handleChatMessage(data);
+         break;
+ 
+       case "proximity_chat":
+         // Deliver to ProximityChat component
+         EventBus.emit("chat:proximity_message", {
+           sender: data.sender,
+           username: data.username,
+           text: data.text,
+           timestamp: data.timestamp,
+         });
+         break;
+ 
+       case "dm_received":
+         this.handleDMReceived(data);
+         break;
+ 
+@@ -276,50 +280,56 @@ export class CommunicationManager {
+    * Delete a persistent DM
+    */
+   public async deleteDirectMessage(
+     messageId: string,
+     receiverId: string,
+   ): Promise<void> {
+     try {
+       await apiClient.delete(`/api/direct-messages/messages/${messageId}`);
+     } catch (error) {
+       console.error("❌ Failed to delete DM:", error);
+       throw error;
+     }
+   }
+ 
+   /**
+    * Get current zone info
+    */
+   public getCurrentZone(): ZoneInfo | null {
+     return this.currentZone;
+   }
+ 
+   /**
+    * Disconnect WebSocket / Clean up listeners
+    */
+   public disconnect(): void {
+-    // Remove event listeners
+-    EventBus.off("zone:entered");
+-    EventBus.off("zone:exited");
+-    EventBus.off("ws:message");
++    EventBus.off("zone:entered", this.onZoneEntered);
++    EventBus.off("zone:exited", this.onZoneExited);
++    EventBus.off("proximity:send_message", this.onProximitySend);
++    EventBus.off("ws:message", this.onWsMessage);
+   }
+ }
+ 
+ // Singleton instance
+ let communicationManagerInstance: CommunicationManager | null = null;
+ 
+ export function initCommunicationManager(
+   serverId: string,
+   token: string,
+ ): CommunicationManager {
+   if (communicationManagerInstance) {
+     communicationManagerInstance.disconnect();
+   }
+ 
+   communicationManagerInstance = new CommunicationManager(serverId, token);
+   return communicationManagerInstance;
+ }
+ 
+ export function getCommunicationManager(): CommunicationManager | null {
+   return communicationManagerInstance;
+ }
++
++export function disconnectCommunicationManager(): void {
++  if (!communicationManagerInstance) return;
++  communicationManagerInstance.disconnect();
++  communicationManagerInstance = null;
++}
+diff --git a/frontend/game/scenes/MainScene.ts b/frontend/game/scenes/MainScene.ts
+index 337fb8623f8071a610c373c209176b4239614051..a8839d2dc45f74aa77a74b46cec3d3508e144ae2 100644
+--- a/frontend/game/scenes/MainScene.ts
++++ b/frontend/game/scenes/MainScene.ts
+@@ -35,50 +35,53 @@ export class MainScene extends Scene {
+   private lastDirection: Map<string, "up" | "down" | "left" | "right"> =
+     new Map();
+   private myId: string = "";
+   private myUsername: string = "";
+   private myServerId: string = "";
+   private token: string = "";
+   private apiUrl: string =
+     process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+ 
+   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
+   private wasd!: {
+     up: Phaser.Input.Keyboard.Key;
+     down: Phaser.Input.Keyboard.Key;
+     left: Phaser.Input.Keyboard.Key;
+     right: Phaser.Input.Keyboard.Key;
+   };
+ 
+   // Zone tracking
+   private currentZone: string | null = null;
+   private zones: Phaser.Types.Tilemaps.TiledObject[] = [];
+ 
+   // UI input control - disable game input when UI is focused
+   private inputEnabled: boolean = true;
+ 
+   private lastSentMoving: boolean = false;
++  private readonly wsMessageHandler = (data: any) => {
++    this.handleServerMessage(data);
++  };
+ 
+   // Throttled movement broadcast — send at ~20Hz
+   private lastSentX: number = -1;
+   private lastSentY: number = -1;
+   private lastSentDirection: string = "";
+   private lastSentTime: number = 0;
+   private readonly SEND_INTERVAL_MS = 50; // 20 updates/sec
+ 
+   constructor() {
+     super({ key: "MainScene" });
+   }
+ 
+   /**
+    * Create frames for a sprite sheet with specific dimensions
+    */
+   private createSpriteSheetFrames(sheet: any) {
+     const fullKey = sheet.key + "_full";
+ 
+     if (!this.textures.exists(fullKey)) {
+       console.warn(`Texture ${fullKey} not loaded`);
+       return;
+     }
+ 
+     const sourceTexture = this.textures.get(fullKey);
+     const source = sourceTexture.getSourceImage() as HTMLImageElement;
+@@ -513,54 +516,50 @@ export class MainScene extends Scene {
+         if (player) {
+           player.lastDirection = direction as "up" | "down" | "left" | "right";
+           this.playAnimation(sprite, "idle", direction, player.characterId);
+         }
+       }
+     });
+ 
+     this.gridEngine.directionChanged().subscribe(({ charId, direction }) => {
+       const sprite = this.getSpriteById(charId);
+       if (!sprite || this.gridEngine.isMoving(charId)) return;
+ 
+       if (charId === "hero") {
+         this.playAnimation(sprite, "idle", direction);
+       } else {
+         const player = this.otherPlayers.get(charId);
+         if (player) {
+           this.playAnimation(sprite, "idle", direction, player.characterId);
+         }
+       }
+     });
+ 
+     EventBus.on(GameEvents.SEND_CHAT_MESSAGE, (data: any) => {
+       wsService.send({ type: "chat_message", ...data });
+     });
+ 
+-    // Proximity chat — text visible only to nearby players (server filters by distance)
+-    EventBus.on("proximity:send_message", (data: { message: string }) => {
+-      wsService.send({ type: "proximity_chat", message: data.message });
+-    });
+ 
+     // Forward channel messages to WebSocket for real-time broadcast
+     EventBus.on("channel:message_sent", (msg: any) => {
+       wsService.send({
+         type: "chat_message",
+         scope: "channel",
+         channel_id: msg.channel_id,
+         message: msg.content,
+         message_data: msg, // Full message object for recipients
+       });
+     });
+ 
+     // Forward DM notifications to WebSocket
+     EventBus.on("dm:message_sent", (data: any) => {
+       wsService.send({
+         type: "dm_sent",
+         target_id: data.target_id,
+         message: data.message,
+       });
+     });
+ 
+     // Listen for UI focus events to disable game input
+     EventBus.on("ui:focus", () => {
+       this.inputEnabled = false;
+       if (this.input?.keyboard) {
+@@ -605,53 +604,51 @@ export class MainScene extends Scene {
+       }
+ 
+       // Add other players from local cache
+       this.otherPlayers.forEach((player, oderId) => {
+         // gridEngine character ID is the userId directly (not player_${userId})
+         if (this.gridEngine?.hasCharacter(oderId)) {
+           const pos = this.gridEngine.getPosition(oderId);
+           cachedUsers.push({
+             user_id: oderId,
+             username: player.labelText.text ?? "",
+             x: pos.x,
+             y: pos.y,
+           });
+         }
+       });
+ 
+       // Emit immediately with cached data
+       if (cachedUsers.length > 0) {
+         EventBus.emit(GameEvents.PLAYER_LIST_UPDATE, cachedUsers);
+       }
+ 
+       // Also request fresh data from server
+       wsService.send({ type: "request_users" });
+     });
+ 
+-    EventBus.on("ws:message", (data: any) => {
+-      this.handleServerMessage(data);
+-    });
++    EventBus.on("ws:message", this.wsMessageHandler);
+   }
+ 
+   update() {
+     if (!this.cursors || !this.wasd) return;
+ 
+     // Skip input processing when UI is focused
+     if (!this.inputEnabled) return;
+ 
+     const isMoving = this.gridEngine.isMoving("hero");
+     const leftPressed = this.cursors.left.isDown || this.wasd.left.isDown;
+     const rightPressed = this.cursors.right.isDown || this.wasd.right.isDown;
+     const upPressed = this.cursors.up.isDown || this.wasd.up.isDown;
+     const downPressed = this.cursors.down.isDown || this.wasd.down.isDown;
+ 
+     if (leftPressed) {
+       this.gridEngine.move("hero", Direction.LEFT);
+     } else if (rightPressed) {
+       this.gridEngine.move("hero", Direction.RIGHT);
+     } else if (upPressed) {
+       this.gridEngine.move("hero", Direction.UP);
+     } else if (downPressed) {
+       this.gridEngine.move("hero", Direction.DOWN);
+     }
+ 
+     // ── Throttled position broadcast at 20Hz ──────────────────────────────
+@@ -775,58 +772,50 @@ export class MainScene extends Scene {
+     // Emit zone change events
+     if (foundZone !== this.currentZone) {
+       if (this.currentZone) {
+         EventBus.emit(GameEvents.ZONE_EXIT, {
+           zoneId: this.currentZone,
+           zoneName: this.currentZone,
+           zoneType: this.currentZone.startsWith("Room") ? "PRIVATE" : "PUBLIC",
+         });
+       }
+ 
+       if (foundZone) {
+         EventBus.emit(GameEvents.ZONE_ENTER, {
+           zoneId: foundZone,
+           zoneName: foundZone,
+           zoneType: foundZone.startsWith("Room") ? "PRIVATE" : "PUBLIC",
+         });
+         EventBus.emit(GameEvents.ROOM_ENTER, { roomId: foundZone });
+       }
+ 
+       this.currentZone = foundZone;
+     }
+   }
+ 
+   private handleServerMessage(data: any) {
+     switch (data.type) {
+-      case "proximity_chat":
+-        EventBus.emit("chat:proximity_message", {
+-          sender: data.sender,
+-          username: data.username,
+-          text: data.text,
+-          timestamp: data.timestamp,
+-        });
+-        break;
+       case "user_list":
+         EventBus.emit(GameEvents.PLAYER_LIST_UPDATE, data.users);
+         // Make sure myId is set before filtering
+         console.log(
+           "[user_list] myId:",
+           this.myId,
+           "users:",
+           data.users.map((u: any) => u.user_id),
+         );
+         data.users.forEach((user: any) => {
+           if (
+             user.user_id !== this.myId &&
+             !this.otherPlayers.has(user.user_id)
+           ) {
+             this.spawnRemotePlayer(
+               user.user_id,
+               user.username,
+               user.x,
+               user.y,
+               user.character_id, // Pass character ID
+             );
+           }
+         });
+         if (this.gridEngine.hasCharacter("hero")) {
+           const pos = this.gridEngine.getPosition("hero");
+@@ -1161,27 +1150,28 @@ export class MainScene extends Scene {
+ 
+     EventBus.emit(GameEvents.REMOTE_PLAYER_MOVED, { userId, x, y });
+   }
+ 
+   private removeRemotePlayer(userId: string) {
+     const player = this.otherPlayers.get(userId);
+     if (!player) return;
+ 
+     if (this.gridEngine.hasCharacter(userId)) {
+       this.gridEngine.removeCharacter(userId);
+     }
+ 
+     player.sprite.destroy();
+     player.labelText.destroy();
+     player.labelBg.destroy();
+     this.otherPlayers.delete(userId);
+   }
+ 
+   destroy() {
+     EventBus.off(GameEvents.SEND_CHAT_MESSAGE);
+     EventBus.off(GameEvents.REQUEST_USER_LIST);
+     EventBus.off("channel:message_sent");
+     EventBus.off("dm:message_sent");
+     EventBus.off("ui:focus");
+     EventBus.off("ui:blur");
++    EventBus.off("ws:message", this.wsMessageHandler);
+   }
+ }
+diff --git a/frontend/lib/services/websocket.service.ts b/frontend/lib/services/websocket.service.ts
+index 5fdc5b8596274e7092be36f4d66e0ce0e0ca9e98..7c5736bac84c0360b3c99649de50cd2c7b5ef781 100644
+--- a/frontend/lib/services/websocket.service.ts
++++ b/frontend/lib/services/websocket.service.ts
+@@ -1,87 +1,102 @@
+ import EventBus from "@/game/EventBus";
+ 
+ class WebSocketService {
+   private ws: WebSocket | null = null;
++  private shouldReconnect = true;
+   private reconnectAttempts = 0;
+   private maxReconnectAttempts = 5;
+   private serverId: string = "";
+   private token: string = "";
+   private apiUrl: string = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+ 
+   public connect(serverId: string, token: string) {
+     // Prevent duplicate connections
+     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+       return;
+     }
+ 
+     this.serverId = serverId;
+     this.token = token;
++    this.shouldReconnect = true;
+ 
+     const wsUrl = this.apiUrl.replace(/^http/, "ws");
+     const baseUrl = wsUrl.endsWith("/") ? wsUrl.slice(0, -1) : wsUrl;
+     
+     this.ws = new WebSocket(`${baseUrl}/ws/${this.serverId}?token=${this.token}`);
+ 
+     this.ws.onopen = () => {
+       console.log("🔌 Central WebSocket Connected");
+       this.reconnectAttempts = 0;
+       EventBus.emit("ws:connected");
+     };
+ 
+     this.ws.onmessage = (event: MessageEvent) => {
+       try {
+         const data = JSON.parse(event.data);
+         // Broadcast the raw message to the entire application
+         EventBus.emit("ws:message", data);
+       } catch (error) {
+         console.error("[WebSocket] Parse error:", error);
+       }
+     };
+ 
+     this.ws.onerror = (error) => {
+-      console.error("❌ Central WebSocket Error:", error);
++      if (!this.shouldReconnect) {
++        return;
++      }
++
++      // Ignore expected transient error events during close/reconnect cycles
++      if (!this.ws || this.ws.readyState === WebSocket.CLOSING || this.ws.readyState === WebSocket.CLOSED) {
++        return;
++      }
++
++      console.warn("⚠️ Central WebSocket transient error", error);
+       EventBus.emit("ws:error", error);
+     };
+ 
+     this.ws.onclose = () => {
+       console.log("🔌 Central WebSocket Disconnected");
+       this.ws = null;
+       EventBus.emit("ws:disconnected");
+-      this.attemptReconnect();
++
++      if (this.shouldReconnect) {
++        this.attemptReconnect();
++      }
+     };
+   }
+ 
+-  public send(data: any) {
++  public send(data: unknown) {
+     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+       this.ws.send(JSON.stringify(data));
+     } else {
+       console.warn("⚠️ Cannot send message, WebSocket is not open", data);
+     }
+   }
+ 
+   private attemptReconnect() {
+     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+       console.error("❌ Max WebSocket reconnection attempts reached");
+       return;
+     }
+ 
+     this.reconnectAttempts++;
+     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 10000);
+     console.log(`🔄 Attempting reconnection ${this.reconnectAttempts} in ${delay}ms...`);
+ 
+     setTimeout(() => {
+       this.connect(this.serverId, this.token);
+     }, delay);
+   }
+ 
+   public disconnect() {
+     if (this.ws) {
++      this.shouldReconnect = false;
+       this.ws.onclose = null; // Prevent auto-reconnect
+       this.ws.close();
+       this.ws = null;
+       console.log("🔌 Central WebSocket manually closed");
+     }
+   }
+ }
+ 
+-export const wsService = new WebSocketService();
+\ No newline at end of file
++export const wsService = new WebSocketService();
+diff --git a/frontend/lib/time.ts b/frontend/lib/time.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..1e4931995a8664051a08059a2d1fa855a13a67a1
+--- /dev/null
++++ b/frontend/lib/time.ts
+@@ -0,0 +1,17 @@
++import { format, parseISO } from "date-fns";
++
++const HAS_TZ_SUFFIX = /(Z|[+-]\d{2}:\d{2})$/i;
++
++export function formatChatTimestamp(timestamp: string): string {
++  if (!timestamp) return "";
++
++  try {
++    const normalized = HAS_TZ_SUFFIX.test(timestamp)
++      ? timestamp
++      : `${timestamp}Z`;
++    return format(parseISO(normalized), "h:mm a");
++  } catch {
++    return "";
++  }
++}
++
+ 
+EOF
+)

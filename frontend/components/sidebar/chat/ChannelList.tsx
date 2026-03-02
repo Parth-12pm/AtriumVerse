@@ -12,6 +12,7 @@ interface Channel {
   id: string;
   name: string;
   description?: string;
+  type?: string;
 }
 
 interface DMConversation {
@@ -30,7 +31,6 @@ interface ChannelListProps {
   onChannelSelect: (channelId: string) => void;
   onDMSelect: (userId: string) => void;
   loading: boolean;
-  serverId: string;
   isServerOwner: boolean;
   onCreateChannel: (data: ChannelCreate) => Promise<void>;
   onUpdateChannel: (channelId: string, data: Partial<Channel>) => Promise<void>;
@@ -45,7 +45,6 @@ export default function ChannelList({
   onChannelSelect,
   onDMSelect,
   loading,
-  serverId,
   isServerOwner,
   onCreateChannel,
   onUpdateChannel,
@@ -69,15 +68,15 @@ export default function ChannelList({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="flex-1 overflow-y-auto bg-card">
       {/* Channels Section */}
-      <div className="border-b-4  border-black">
-        <div className="w-full px-4 py-3 flex items-center justify-between border-b-3 border-black">
+      <div className="border-b-2 border-border">
+        <div className="flex w-full items-center justify-between border-b-2 border-border px-4 py-3">
           <button
             onClick={() => setChannelsExpanded(!channelsExpanded)}
             className="flex items-center gap-2 hover:opacity-70 transition-opacity"
           >
-            <span className="font-black text-sm uppercase text-gray-700">
+            <span className="text-sm font-black uppercase text-muted-foreground">
               Channels
             </span>
             <ChevronDown
@@ -89,7 +88,7 @@ export default function ChannelList({
               variant="neutral"
               size="icon"
               onClick={() => setShowCreateDialog(true)}
-              className="w-6 h-6 p-0"
+              className="h-6 w-6 border-border p-0"
               title="Create Channel"
             >
               <Plus className="w-4 h-4" />
@@ -100,7 +99,7 @@ export default function ChannelList({
         {channelsExpanded && (
           <div className="py-2">
             {channels.length === 0 ? (
-              <p className="px-4 py-2 text-sm text-gray-500">
+              <p className="px-4 py-2 text-sm text-muted-foreground">
                 No channels available
               </p>
             ) : (
@@ -116,9 +115,9 @@ export default function ChannelList({
                   }}
                   role="button"
                   tabIndex={0}
-                  className={`group w-full px-4 py-2 flex items-center gap-3 hover:bg-gray-100 transition-all cursor-pointer ${
+                  className={`group w-full px-4 py-2 flex items-center gap-3 hover:bg-muted/60 transition-all cursor-pointer ${
                     selectedChannelId === channel.id
-                      ? "bg-blue-100 border-l-4 border-blue-500 font-bold"
+                      ? "border-l-4 border-primary bg-primary/10 font-bold"
                       : ""
                   }`}
                 >
@@ -129,9 +128,7 @@ export default function ChannelList({
                         : "bg-gray-200"
                     }`}
                   >
-                    <Hash
-                      className={`w-5 h-5 ${selectedChannelId === channel.id ? "text-white" : "text-gray-700"}`}
-                    />
+                    <Hash className="h-5 w-5" />
                   </div>
                   <div className="flex-1 text-left">
                     <p className="font-bold text-sm">{channel.name}</p>
@@ -157,9 +154,9 @@ export default function ChannelList({
       <div>
         <button
           onClick={() => setDMsExpanded(!dmsExpanded)}
-          className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors border-b-3 border-black"
+          className="flex w-full items-center justify-between border-b-2 border-border px-4 py-3 transition-colors hover:bg-muted/50"
         >
-          <span className="font-black text-sm uppercase text-gray-700">
+          <span className="text-sm font-black uppercase text-muted-foreground">
             Direct Messages
           </span>
           <ChevronDown
@@ -171,7 +168,7 @@ export default function ChannelList({
           <div className="py-2">
             {dmConversations.length === 0 ? (
               <div className="px-4 py-6 text-center">
-                <p className="text-sm text-gray-500 mb-2">
+                <p className="mb-2 text-sm text-muted-foreground">
                   No direct messages yet
                 </p>
                 <p className="text-xs text-gray-400">
@@ -183,35 +180,33 @@ export default function ChannelList({
                 <button
                   key={conversation.user_id}
                   onClick={() => onDMSelect(conversation.user_id)}
-                  className={`w-full px-4 py-2 flex items-center gap-3 hover:bg-gray-100 transition-all relative ${
+                  className={`w-full px-4 py-2 flex items-center gap-3 hover:bg-muted/60 transition-all relative ${
                     selectedDMUserId === conversation.user_id
-                      ? "bg-purple-100 border-l-4 border-purple-500 font-bold"
+                      ? "border-l-4 border-secondary bg-secondary/20 font-bold"
                       : ""
                   }`}
                 >
                   <div
                     className={`w-8 h-8 rounded-full border-3 border-black flex items-center justify-center ${
                       selectedDMUserId === conversation.user_id
-                        ? "bg-purple-500"
-                        : "bg-gray-200"
+                        ? "bg-secondary text-secondary-foreground"
+                        : "bg-muted text-muted-foreground"
                     }`}
                   >
-                    <User
-                      className={`w-5 h-5 ${selectedDMUserId === conversation.user_id ? "text-white" : "text-gray-700"}`}
-                    />
+                    <User className="h-5 w-5" />
                   </div>
                   <div className="flex-1 text-left min-w-0">
                     <p className="font-bold text-sm truncate">
                       {conversation.username}
                     </p>
                     {conversation.last_message && (
-                      <p className="text-xs text-gray-500 truncate">
+                      <p className="truncate text-xs text-muted-foreground">
                         {conversation.last_message}
                       </p>
                     )}
                   </div>
                   {conversation.unread_count > 0 && (
-                    <div className="w-6 h-6 bg-red-500 border-2 border-black rounded-full flex items-center justify-center">
+                    <div className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-border bg-destructive">
                       <span className="text-white text-xs font-black">
                         {conversation.unread_count}
                       </span>
@@ -238,7 +233,7 @@ export default function ChannelList({
           onOpenChange={(open) => !open && setEditingChannel(null)}
           channelId={editingChannel.id}
           currentName={editingChannel.name}
-          currentType={(editingChannel as any).type || "text"}
+          currentType={editingChannel.type === "voice" ? "voice" : "text"}
           onUpdateChannel={onUpdateChannel}
         />
       )}
