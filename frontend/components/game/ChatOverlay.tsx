@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import EventBus, { GameEvents } from "@/game/EventBus";
 import { Send, MessageSquare } from "lucide-react";
+import { formatChatTimestamp } from "@/lib/time";
 
 interface ChatMessage {
   id: string;
@@ -11,6 +12,14 @@ interface ChatMessage {
   scope: "global" | "direct" | "proximity";
   text: string;
   timestamp: string;
+}
+
+interface IncomingChatEvent {
+  sender?: string;
+  username?: string;
+  scope?: "global" | "direct" | "proximity";
+  text: string;
+  timestamp?: string;
 }
 
 export function ChatOverlay() {
@@ -25,7 +34,7 @@ export function ChatOverlay() {
   }, [messages, showChat]);
 
   useEffect(() => {
-    const handleMessage = (data: any) => {
+    const handleMessage = (data: IncomingChatEvent) => {
       setMessages((prev) => [
         ...prev,
         {
@@ -34,7 +43,7 @@ export function ChatOverlay() {
           username: data.username || "System",
           scope: data.scope || "global",
           text: data.text,
-          timestamp: new Date().toLocaleTimeString(),
+          timestamp: formatChatTimestamp(data.timestamp || new Date().toISOString()),
         },
       ]);
     };

@@ -73,10 +73,10 @@ export default function ProximityChat() {
      * of the viewport, appearing visually separated from but beside the dock.
      * width: 288px (w-72).
      */
-    <div className="fixed bottom-4 right-4 z-[70] pointer-events-auto w-72 flex flex-col rounded-xl overflow-hidden border border-white/15 bg-gray-900/95 backdrop-blur shadow-xl">
+    <div className="fixed bottom-4 right-4 z-[70] pointer-events-auto w-72 flex flex-col rounded-xl overflow-hidden border border-border bg-background/95 backdrop-blur shadow-xl">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
-        <span className="text-white/60 text-[10px] font-mono font-bold tracking-wider uppercase">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+        <span className="text-muted-foreground text-[10px] font-mono font-bold tracking-wider uppercase">
           Nearby Chat
         </span>
         <button
@@ -84,7 +84,7 @@ export default function ProximityChat() {
             setIsVisible(false);
             EventBus.emit("action:toggle_chat", false);
           }}
-          className="text-white/30 hover:text-white/80 transition-colors"
+          className="text-muted-foreground/70 hover:text-foreground transition-colors"
         >
           <X className="w-3 h-3" />
         </button>
@@ -97,27 +97,27 @@ export default function ProximityChat() {
         style={{ scrollbarWidth: "none" }}
       >
         {messages.length === 0 ? (
-          <p className="text-center text-[10px] text-white/25 font-mono py-3">
+          <p className="text-center text-[10px] text-muted-foreground/70 font-mono py-3">
             — no messages yet —
           </p>
         ) : (
           messages.map((msg, idx) => (
             <div
               key={idx}
-              className="text-[12px] leading-snug px-2 py-[2px] text-white"
+              className="text-[12px] leading-snug px-2 py-[2px] text-foreground"
             >
-              <span className="font-semibold text-violet-300">
+              <span className="font-semibold text-primary">
                 {msg.username}
               </span>
-              <span className="text-white/50">: </span>
-              <span className="text-white/80">{msg.text}</span>
+              <span className="text-muted-foreground">: </span>
+              <span className="text-foreground/90">{msg.text}</span>
             </div>
           ))
         )}
       </div>
 
       {/* Input */}
-      <div className="flex items-center gap-2 px-2 py-2 border-t border-white/10">
+      <div className="flex items-center gap-2 px-2 py-2 border-t border-border">
         <input
           ref={inputRef}
           type="text"
@@ -128,7 +128,7 @@ export default function ProximityChat() {
           onKeyUp={(e) => e.stopPropagation()}
           onFocus={() => EventBus.emit("ui:focus")}
           onBlur={() => EventBus.emit("ui:blur")}
-          className="flex-1 bg-transparent text-white text-[12px] placeholder:text-white/25 outline-none min-w-0"
+          className="flex-1 bg-transparent text-foreground text-[12px] placeholder:text-muted-foreground/70 outline-none min-w-0"
         />
         <button
           onClick={sendMessage}

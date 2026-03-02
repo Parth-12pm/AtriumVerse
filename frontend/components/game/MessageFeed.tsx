@@ -7,7 +7,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Hash, Send, Edit2, Trash2 } from "lucide-react";
 import { fetchAPI } from "@/lib/api";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { formatChatTimestamp } from "@/lib/time";
 
 interface Message {
   id: string;
@@ -108,14 +108,6 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
     }
   };
 
-  const formatTime = (timestamp: string) => {
-    try {
-      return format(new Date(timestamp), "h:mm a");
-    } catch {
-      return "";
-    }
-  };
-
   return (
     <div className="flex-1 flex flex-col h-full bg-background">
       {/* Channel Header */}
@@ -154,7 +146,7 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
                 <div className="flex items-center gap-2 mb-1">
                   <span className="font-black text-sm">{msg.username}</span>
                   <span className="text-xs text-muted-foreground">
-                    {formatTime(msg.created_at)}
+                    {formatChatTimestamp(msg.created_at)}
                   </span>
                   {msg.edited_at && (
                     <span className="text-xs text-muted-foreground italic">

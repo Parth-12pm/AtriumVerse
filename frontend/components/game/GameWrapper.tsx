@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { wsService } from "@/lib/services/websocket.service";
-import { initCommunicationManager } from "@/game/managers/CommunicationManager";
+import {
+  disconnectCommunicationManager,
+  initCommunicationManager,
+} from "@/game/managers/CommunicationManager";
 import { MediaControls } from "@/components/game/MediaControls";
 import { Minimap } from "@/components/game/Minimap";
 import ZoneVideoRoom from "@/components/video/ZoneVideoRoom";
@@ -44,6 +47,7 @@ export default function GameWrapper({
 
     return () => {
       // Cleanup when leaving the server
+      disconnectCommunicationManager();
       wsService.disconnect();
     };
   }, [serverId, token]);

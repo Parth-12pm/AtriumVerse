@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { messagesAPI, directMessagesAPI } from "@/lib/services/api.service";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { formatChatTimestamp } from "@/lib/time";
 import EventBus from "@/game/EventBus";
 import { getCommunicationManager } from "@/game/managers/CommunicationManager";
 import type { Message, DirectMessage } from "@/types/api.types";
@@ -230,14 +230,6 @@ export default function ChatFeed({
     }
   };
 
-  const formatTime = (timestamp: string) => {
-    try {
-      return format(new Date(timestamp), "h:mm a");
-    } catch {
-      return "";
-    }
-  };
-
   const getMessageUsername = (msg: ChatMessage) => {
     // Type guard: Message has username and channel_id, DirectMessage has sender_username
     if ("channel_id" in msg) {
@@ -257,24 +249,24 @@ export default function ChatFeed({
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-white">
+    <div className="flex-1 flex flex-col min-h-0 bg-background text-foreground">
       {/* Messages Area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
-            <div className="w-16 h-16 bg-gray-100 rounded-lg border-3 border-black flex items-center justify-center mb-4">
+            <div className="w-16 h-16 bg-muted rounded-lg border-2 border-border flex items-center justify-center mb-4">
               {mode === "channel" ? (
                 <Hash className="w-8 h-8 text-gray-500" />
               ) : (
                 <User className="w-8 h-8 text-gray-500" />
               )}
             </div>
-            <h3 className="text-xl font-black mb-2">
+            <h3 className="text-xl font-black mb-2 text-foreground">
               {mode === "channel"
                 ? "Start the conversation!"
                 : "No messages yet"}
             </h3>
-            <p className="text-gray-500 text-sm">
+            <p className="text-muted-foreground text-sm">
               {mode === "channel"
                 ? "Be the first to send a message"
                 : "Send a message to start chatting"}
@@ -308,11 +300,11 @@ export default function ChatFeed({
                     className={`flex items-center gap-2 mb-1 ${isOwnMessage ? "flex-row-reverse" : "flex-row"}`}
                   >
                     <span className="font-black text-sm">{username}</span>
-                    <span className="text-xs text-gray-500">
-                      {formatTime(msg.created_at)}
+                    <span className="text-xs text-muted-foreground">
+                      {formatChatTimestamp(msg.created_at)}
                     </span>
                     {msg.edited_at && (
-                      <span className="text-xs text-gray-500 italic">
+                      <span className="text-xs text-muted-foreground italic">
                         (edited)
                       </span>
                     )}
@@ -334,7 +326,7 @@ export default function ChatFeed({
                       <Button
                         onClick={() => saveEdit(msg.id)}
                         variant="default"
-                        className="bg-blue-500 text-white hover:bg-blue-600"
+                        className="bg-primary text-primary-foreground hover:bg-primary/90"
                         size="sm"
                       >
                         Save
@@ -352,7 +344,7 @@ export default function ChatFeed({
                       className={`relative group/msg ${isOwnMessage ? "w-full flex justify-end" : "w-full"}`}
                     >
                       <div
-                        className={`inline-block px-4 py-2 rounded-2xl ${isOwnMessage ? "bg-blue-500 text-white rounded-br-sm" : "bg-gray-100 text-gray-900 rounded-bl-sm"}`}
+                        className={`inline-block px-4 py-2 rounded-2xl ${isOwnMessage ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}
                       >
                         <p className="text-sm break-words">{msg.content}</p>
                       </div>
@@ -372,9 +364,9 @@ export default function ChatFeed({
                             onClick={() => deleteMessage(msg.id)}
                             variant="neutral"
                             size="icon"
-                            className="w-6 h-6 p-0 hover:bg-red-100"
+                            className="w-6 h-6 p-0 hover:bg-destructive/15"
                           >
-                            <Trash2 className="w-3 h-3 text-red-600" />
+                            <Trash2 className="w-3 h-3 text-destructive" />
                           </Button>
                         </div>
                       )}
@@ -388,7 +380,7 @@ export default function ChatFeed({
       </div>
 
       {/* Message Input */}
-      <div className="p-4 border-t-4 border-black bg-gray-50 flex-shrink-0">
+      <div className="p-4 border-t border-border bg-muted/40 flex-shrink-0">
         <div className="flex gap-2">
           <Input
             type="text"
@@ -409,7 +401,7 @@ export default function ChatFeed({
             onClick={sendMessage}
             disabled={loading || !newMessage.trim()}
             variant="default"
-            className="bg-blue-500 text-white hover:bg-blue-600"
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
             size="icon"
           >
             <Send className="w-5 h-5" />

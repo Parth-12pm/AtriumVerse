@@ -37,24 +37,28 @@ export class CommunicationManager {
   private serverId: string;
   private token: string;
   private currentZone: ZoneInfo | null = null;
+  private readonly onZoneEntered = this.handleZoneEntered.bind(this);
+  private readonly onZoneExited = this.handleZoneExited.bind(this);
+  private readonly onProximitySend = (data: { message: string }) => {
+    this.sendProximityChat(data.message);
+  };
+  private readonly onWsMessage = (data: any) => {
+    this.handleWebSocketMessage(data);
+  };
 
   constructor(serverId: string, token: string) {
     this.serverId = serverId;
     this.token = token;
 
     // Listen to zone events from MainScene
-    EventBus.on("zone:entered", this.handleZoneEntered.bind(this));
-    EventBus.on("zone:exited", this.handleZoneExited.bind(this));
+    EventBus.on("zone:entered", this.onZoneEntered);
+    EventBus.on("zone:exited", this.onZoneExited);
 
     // Proximity chat send
-    EventBus.on("proximity:send_message", (data: { message: string }) => {
-      this.sendProximityChat(data.message);
-    });
+    EventBus.on("proximity:send_message", this.onProximitySend);
 
     // Hook into the central stream
-    EventBus.on("ws:message", (data: any) => {
-      this.handleWebSocketMessage(data);
-    });
+    EventBus.on("ws:message", this.onWsMessage);
   }
 
   /**
@@ -298,10 +302,10 @@ export class CommunicationManager {
    * Disconnect WebSocket / Clean up listeners
    */
   public disconnect(): void {
-    // Remove event listeners
-    EventBus.off("zone:entered");
-    EventBus.off("zone:exited");
-    EventBus.off("ws:message");
+    EventBus.off("zone:entered", this.onZoneEntered);
+    EventBus.off("zone:exited", this.onZoneExited);
+    EventBus.off("proximity:send_message", this.onProximitySend);
+    EventBus.off("ws:message", this.onWsMessage);
   }
 }
 
@@ -322,4 +326,10 @@ export function initCommunicationManager(
 
 export function getCommunicationManager(): CommunicationManager | null {
   return communicationManagerInstance;
+}
+
+export function disconnectCommunicationManager(): void {
+  if (!communicationManagerInstance) return;
+  communicationManagerInstance.disconnect();
+  communicationManagerInstance = null;
 }

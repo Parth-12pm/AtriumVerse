@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { useTheme } from "next-themes";
 import { CharacterSelectorDropdown } from "@/components/dashboard/character-selector-dropdown";
 
@@ -22,15 +22,16 @@ export default function DashboardLayout({
 }) {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
-  const [username, setUsername] = useState("User");
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-    if (typeof window !== "undefined") {
-      setUsername(localStorage.getItem("username") || "User");
-    }
-  }, []);
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
+  const username = useSyncExternalStore(
+    () => () => {},
+    () => localStorage.getItem("username") || "User",
+    () => "User",
+  );
 
   const handleLogout = () => {
     localStorage.removeItem("token");

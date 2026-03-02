@@ -57,6 +57,9 @@ export class MainScene extends Scene {
   private inputEnabled: boolean = true;
 
   private lastSentMoving: boolean = false;
+  private readonly wsMessageHandler = (data: any) => {
+    this.handleServerMessage(data);
+  };
 
   // Throttled movement broadcast — send at ~20Hz
   private lastSentX: number = -1;
@@ -535,10 +538,6 @@ export class MainScene extends Scene {
       wsService.send({ type: "chat_message", ...data });
     });
 
-    // Proximity chat — text visible only to nearby players (server filters by distance)
-    EventBus.on("proximity:send_message", (data: { message: string }) => {
-      wsService.send({ type: "proximity_chat", message: data.message });
-    });
 
     // Forward channel messages to WebSocket for real-time broadcast
     EventBus.on("channel:message_sent", (msg: any) => {
@@ -627,9 +626,7 @@ export class MainScene extends Scene {
       wsService.send({ type: "request_users" });
     });
 
-    EventBus.on("ws:message", (data: any) => {
-      this.handleServerMessage(data);
-    });
+    EventBus.on("ws:message", this.wsMessageHandler);
   }
 
   update() {
@@ -797,14 +794,6 @@ export class MainScene extends Scene {
 
   private handleServerMessage(data: any) {
     switch (data.type) {
-      case "proximity_chat":
-        EventBus.emit("chat:proximity_message", {
-          sender: data.sender,
-          username: data.username,
-          text: data.text,
-          timestamp: data.timestamp,
-        });
-        break;
       case "user_list":
         EventBus.emit(GameEvents.PLAYER_LIST_UPDATE, data.users);
         // Make sure myId is set before filtering
@@ -1183,5 +1172,6 @@ export class MainScene extends Scene {
     EventBus.off("dm:message_sent");
     EventBus.off("ui:focus");
     EventBus.off("ui:blur");
+    EventBus.off("ws:message", this.wsMessageHandler);
   }
 }
