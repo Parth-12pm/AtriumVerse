@@ -126,7 +126,6 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
         {/* Divider */}
         <div className="w-8 h-1 bg-black"></div>
 
-
         {/* Chat Button */}
         <Button
           onClick={() => toggleView("chat")}
@@ -279,12 +278,12 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
           {/* Settings Content */}
           <div className="flex-1 p-4 overflow-auto flex flex-col gap-4">
             {/* Exit Game (No API call) */}
-            <div className="bg-blue-50 border-3 border-blue-500 rounded-lg p-4">
+            <div className="bg-blue-100 border-3 border-blue-500 rounded-lg p-4">
               <h3 className="font-black text-blue-700 mb-2 flex items-center gap-2">
                 <LogOut className="w-5 h-5" />
                 Exit Game
               </h3>
-              <p className="text-sm text-gray-700 mb-3">
+              <p className="text-sm text-white mb-3">
                 Return to dashboard. You'll remain a member of this server and
                 can rejoin anytime.
               </p>
@@ -347,14 +346,23 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
                   channels, messages, and members will be permanently deleted.
                 </p>
                 <Button
-                  onClick={() => {
-                    if (
-                      confirm(
-                        "⚠️ DELETE SERVER? This CANNOT be undone! Type 'DELETE' to confirm.",
-                      )
-                    ) {
-                      // TODO: Call serversAPI.delete(serverId)
-                      router.push("/dashboard");
+                  onClick={async () => {
+                    const confirmation = prompt(
+                      "⚠️ DELETE SERVER? This CANNOT be undone! Type 'DELETE' to confirm.",
+                    );
+                    if (confirmation === "DELETE") {
+                      try {
+                        await serversAPI.delete(serverId);
+                        toast.success("Server deleted successfully");
+                        window.location.href = "/dashboard";
+                      } catch (error: any) {
+                        toast.error(error.message || "Failed to delete server");
+                        console.error("Delete server error:", error);
+                      }
+                    } else if (confirmation !== null) {
+                      toast.error(
+                        "Confirmation didn't match 'DELETE', cancelled.",
+                      );
                     }
                   }}
                   className="w-full bg-red-600 hover:bg-red-700 text-white font-bold border-3 border-black"

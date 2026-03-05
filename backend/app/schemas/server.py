@@ -22,6 +22,8 @@ class ServerResponse(BaseModel):
     created_at: datetime
     access_type: str
     member_count: Optional[int] = None
+    # Exposes { map_file, spawn_points } so clients know which Phaser map to load
+    map_config: Optional[dict] = None
 
     class Config:
         from_attributes = True

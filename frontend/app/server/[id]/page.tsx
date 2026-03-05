@@ -37,6 +37,8 @@ export default function ServerPage({ params }: ServerPageProps) {
     null,
   );
   const [showCharacterSelect, setShowCharacterSelect] = useState(false);
+  // The backend map_path for this server (e.g. "phaser_assets/maps/map1.json")
+  const [mapPath, setMapPath] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     setMounted(true);
@@ -55,7 +57,6 @@ export default function ServerPage({ params }: ServerPageProps) {
       if (storedCharacter) {
         setSelectedCharacter(storedCharacter);
       } else {
-        // No character selected yet, will show selector
         setSelectedCharacter(null);
       }
 
@@ -63,8 +64,24 @@ export default function ServerPage({ params }: ServerPageProps) {
         console.warn("No token found. WebSocket may fail.");
       }
 
-      // Track this server as recently visited
       trackServerVisit(serverId);
+
+      // Fetch server details to read map_config.map_file
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      fetch(`${apiUrl}/servers/${serverId}`, {
+        headers: {
+          Authorization: `Bearer ${storedToken}`,
+          "Content-Type": "application/json",
+        },
+      })
+        .then((r) => r.json())
+        .then((server) => {
+          const mapFile: string | undefined = server?.map_config?.map_file;
+          if (mapFile) setMapPath(mapFile);
+        })
+        .catch((err) =>
+          console.warn("[ServerPage] Could not fetch server map config:", err),
+        );
     }
   }, [serverId]);
 
@@ -74,17 +91,14 @@ export default function ServerPage({ params }: ServerPageProps) {
       let recent: Array<{ id: string; name: string; lastVisited: number }> =
         stored ? JSON.parse(stored) : [];
 
-      // Remove if already exists
       recent = recent.filter((s) => s.id !== serverIdToTrack);
 
-      // Add to front (we'll update the name later via API if needed)
       recent.unshift({
         id: serverIdToTrack,
-        name: `Server ${serverIdToTrack.slice(0, 8)}`, // Placeholder name
+        name: `Server ${serverIdToTrack.slice(0, 8)}`,
         lastVisited: Date.now(),
       });
 
-      // Keep only last 10
       recent = recent.slice(0, 10);
 
       localStorage.setItem("recentServers", JSON.stringify(recent));
@@ -157,6 +171,7 @@ export default function ServerPage({ params }: ServerPageProps) {
           serverId={serverId}
           token={token}
           characterId={selectedCharacter}
+          mapPath={mapPath}
         />
       </div>
       <ProximityChat />

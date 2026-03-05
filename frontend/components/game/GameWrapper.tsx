@@ -19,6 +19,8 @@ interface GameWrapperProps {
   serverId: string;
   token: string;
   characterId?: string;
+  /** Backend map_path from server's map_config, e.g. "phaser_assets/maps/map1.json" */
+  mapPath?: string;
 }
 
 let globalGameInstance: Phaser.Game | null = null;
@@ -30,6 +32,7 @@ export default function GameWrapper({
   serverId,
   token,
   characterId = "bob",
+  mapPath,
 }: GameWrapperProps) {
   const gameRef = useRef<Phaser.Game | null>(null);
   const [isGameReady, setIsGameReady] = useState(false);
@@ -243,6 +246,7 @@ export default function GameWrapper({
         serverId,
         token,
         characterId,
+        mapPath,
         apiUrl: process.env.NEXT_PUBLIC_API_URL,
       });
 

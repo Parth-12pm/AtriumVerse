@@ -14,12 +14,15 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Plus } from "lucide-react";
+import { MapSelector } from "@/components/dashboard/MapSelector";
+import { DEFAULT_MAP } from "@/lib/map-config";
 
 export function CreateServerDialog() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [accessType, setAccessType] = useState("public");
+  const [mapPath, setMapPath] = useState(DEFAULT_MAP.mapPath);
   const [loading, setLoading] = useState(false);
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -28,12 +31,17 @@ export function CreateServerDialog() {
     try {
       const new_server = await fetchAPI("/servers/create-server", {
         method: "POST",
-        body: JSON.stringify({ name, access_type: accessType }),
+        body: JSON.stringify({
+          name,
+          access_type: accessType,
+          map_path: mapPath,
+        }),
       });
 
       toast.success("Server created!");
       setOpen(false);
       setName("");
+      setMapPath(DEFAULT_MAP.mapPath);
       router.refresh();
       router.push(`/server/${new_server.id}`);
     } catch (error) {
@@ -50,7 +58,7 @@ export function CreateServerDialog() {
           <Plus className="mr-2 h-4 w-4" /> Create Server
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create a New Space</DialogTitle>
         </DialogHeader>
@@ -70,6 +78,10 @@ export function CreateServerDialog() {
               <option value="private">Private (Invite only)</option>
             </select>
           </div>
+
+          {/* Map selector */}
+          <MapSelector selectedMapPath={mapPath} onSelect={setMapPath} />
+
           <Button type="submit" disabled={loading} className="w-full">
             {loading ? "Creating..." : "Launch Space "}
           </Button>

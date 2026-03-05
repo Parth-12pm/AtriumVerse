@@ -55,6 +55,10 @@ export const serversAPI = {
     return apiClient.get(`/servers/${serverId}`);
   },
 
+  delete: async (serverId: string) => {
+    return apiClient.delete(`/servers/${serverId}`);
+  },
+
   join: async (serverId: string) => {
     return apiClient.post(`/servers/${serverId}/join`, {});
   },

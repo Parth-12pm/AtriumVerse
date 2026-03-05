@@ -12,6 +12,8 @@ export default async function StartGame(
     token: string;
     characterId?: string;
     apiUrl?: string;
+    /** Backend map_path — e.g. "phaser_assets/maps/map1.json" */
+    mapPath?: string;
   },
 ): Promise<Phaser.Game> {
   const config: Phaser.Types.Core.GameConfig = {

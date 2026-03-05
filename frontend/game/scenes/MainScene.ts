@@ -8,6 +8,7 @@ import {
 } from "@/types/advance_char_config";
 import { SPEAKER_TILE_X, SPEAKER_TILE_Y } from "@/lib/game-constants";
 import { wsService } from "@/lib/services/websocket.service";
+import { getMapByPath, DEFAULT_MAP } from "@/lib/map-config";
 
 export class MainScene extends Scene {
   private gridEngine!: GridEngine;
@@ -40,6 +41,11 @@ export class MainScene extends Scene {
   private token: string = "";
   private apiUrl: string =
     process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+  // Map identity — resolved at init() from server data
+  private mapUrl: string = DEFAULT_MAP.phaserUrl;
+  // Fixed cache key — one map loaded per session; always overwritten in preload
+  private readonly mapCacheKey: string = "server_map";
 
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: {
@@ -90,16 +96,6 @@ export class MainScene extends Scene {
     this.inputEnabled = true;
     if (this.input?.keyboard) {
       this.input.keyboard.enabled = true;
-      try {
-        this.wasd = {
-          up: this.input.keyboard.addKey("W"),
-          down: this.input.keyboard.addKey("S"),
-          left: this.input.keyboard.addKey("A"),
-          right: this.input.keyboard.addKey("D"),
-        };
-      } catch (error) {
-        console.warn("Failed to recreate WASD keys:", error);
-      }
     }
   };
   private readonly requestUserListHandler = () => {
@@ -247,16 +243,23 @@ export class MainScene extends Scene {
       this.token = data.token;
       this.characterId = data.characterId || "bob";
       if (data.apiUrl) this.apiUrl = data.apiUrl;
+
+      // Resolve map from the server's stored map_path (e.g. "phaser_assets/maps/map1.json")
+      if (data.mapPath) {
+        const mapCfg = getMapByPath(data.mapPath);
+        this.mapUrl = mapCfg.phaserUrl;
+      } else {
+        this.mapUrl = DEFAULT_MAP.phaserUrl;
+      }
+      console.log(`[MainScene] init: mapUrl=${this.mapUrl}`);
     }
   }
 
   preload() {
-    if (!this.cache.tilemap.exists("main_map")) {
-      this.load.tilemapTiledJSON(
-        "main_map",
-        "/phaser_assets/maps/final_map.json",
-      );
-    }
+    // Always (re)load the tilemap to avoid stale-cache issues across scene restarts.
+    // Phaser handles overwriting an existing cache entry gracefully.
+    console.log(`[MainScene] preload: loading ${this.mapUrl}`);
+    this.load.tilemapTiledJSON(this.mapCacheKey, this.mapUrl);
 
     if (!this.textures.exists("OfficeTiles")) {
       this.load.image(
@@ -278,6 +281,18 @@ export class MainScene extends Scene {
     }
     if (!this.textures.exists("tileset16")) {
       this.load.image("tileset16", "/phaser_assets/Old/Tileset_32x32_16.png");
+    }
+    if (!this.textures.exists("Serene_Village_32x32")) {
+      this.load.image(
+        "Serene_Village_32x32",
+        "/phaser_assets/Interiors_free/Serene_Village_32x32.png",
+      );
+    }
+    if (!this.textures.exists("TopDownHouse_FloorsAndWalls")) {
+      this.load.image(
+        "TopDownHouse_FloorsAndWalls",
+        "/phaser_assets/Interiors_free/TopDownHouse_FloorsAndWalls.png",
+      );
     }
 
     // Load character configuration
@@ -305,26 +320,55 @@ export class MainScene extends Scene {
       this.createSpriteSheetFrames(sheet);
     });
 
-    const map = this.make.tilemap({ key: "main_map" });
+    const map = this.make.tilemap({ key: this.mapCacheKey });
+    if (!map) {
+      console.error(
+        `[MainScene] FATAL: tilemap "${this.mapCacheKey}" not in cache. ` +
+          `mapUrl="${this.mapUrl}". Check that the JSON file exists and the preload completed.`,
+      );
+      return;
+    }
 
-    const officeTiles = map.addTilesetImage("OfficeTiles", "OfficeTiles");
-    const roomBuilder = map.addTilesetImage("RoomBuilder", "RoomBuilder");
-    const oldTiles = map.addTilesetImage("OldTiles", "OldTiles");
-    const tileset2 = map.addTilesetImage("tileset2", "tileset2");
-    const tileset16 = map.addTilesetImage("tileset16", "tileset16");
+    // ── Tilesets ────────────────────────────────────────────────────────────
+    // All known tilesets are attempted; addTilesetImage returns null for any
+    // that the current map doesn't reference — those are filtered out safely.
+    const KNOWN_TILESETS: Array<{ name: string; key: string }> = [
+      { name: "OfficeTiles", key: "OfficeTiles" },
+      { name: "RoomBuilder", key: "RoomBuilder" },
+      { name: "OldTiles", key: "OldTiles" },
+      { name: "tileset2", key: "tileset2" },
+      { name: "tileset16", key: "tileset16" },
+      { name: "Serene_Village_32x32", key: "Serene_Village_32x32" },
+      {
+        name: "TopDownHouse_FloorsAndWalls",
+        key: "TopDownHouse_FloorsAndWalls",
+      },
+    ];
 
-    const allTilesets = [
-      officeTiles,
-      roomBuilder,
-      oldTiles,
-      tileset2,
-      tileset16,
-    ].filter((t) => t !== null) as Phaser.Tilemaps.Tileset[];
+    const allTilesets = KNOWN_TILESETS.map(({ name, key }) => {
+      try {
+        return map.addTilesetImage(name, key);
+      } catch {
+        return null; // tileset not referenced by this map
+      }
+    }).filter((t): t is Phaser.Tilemaps.Tileset => t !== null);
 
-    const floorLayer = map.createLayer("Floor", allTilesets, 0, 0);
-    const wallsLayer = map.createLayer("Walls", allTilesets, 0, 0);
-    const furnitureLayer = map.createLayer("Furniture", allTilesets, 0, 0);
-    const collisionLayer = map.createLayer("Collision", allTilesets, 0, 0);
+    // ── Tile Layers ─────────────────────────────────────────────────────────
+    // Layers are created only if the map actually contains them.
+    const layerNames = map.layers.map((l) => l.name);
+
+    const floorLayer = layerNames.includes("Floor")
+      ? map.createLayer("Floor", allTilesets, 0, 0)
+      : null;
+    const wallsLayer = layerNames.includes("Walls")
+      ? map.createLayer("Walls", allTilesets, 0, 0)
+      : null;
+    const furnitureLayer = layerNames.includes("Furniture")
+      ? map.createLayer("Furniture", allTilesets, 0, 0)
+      : null;
+    const collisionLayer = layerNames.includes("Collision")
+      ? map.createLayer("Collision", allTilesets, 0, 0)
+      : null;
 
     // Export map dimensions for UI overlay (like Minimap) to use the ACTUAL room size
     (window as any).__phaserMapSize = {
@@ -348,7 +392,7 @@ export class MainScene extends Scene {
       });
     }
 
-    // Load zones from map
+    // ── Zones ────────────────────────────────────────────────────────────────
     const zonesLayer = map.getObjectLayer("Zones");
     if (zonesLayer) {
       this.zones = zonesLayer.objects.filter(
@@ -356,13 +400,19 @@ export class MainScene extends Scene {
       );
     }
 
+    // ── Spawn Point ──────────────────────────────────────────────────────────
+    // Priority: Spawn_main → any first Spawn_* → (15, 15) hard-coded default.
     let spawnX = 15;
     let spawnY = 15;
 
     if (zonesLayer) {
-      const spawnPoint = zonesLayer.objects.find(
-        (obj) => obj.name === "Spawn_main",
+      const allSpawns = zonesLayer.objects.filter((obj) =>
+        obj.name?.startsWith("Spawn"),
       );
+      // Prefer the canonical "Spawn_main", then fall back to whichever is first
+      const spawnPoint =
+        allSpawns.find((obj) => obj.name === "Spawn_main") ?? allSpawns[0];
+
       if (
         spawnPoint &&
         spawnPoint.x !== undefined &&
@@ -370,6 +420,9 @@ export class MainScene extends Scene {
       ) {
         spawnX = Math.floor(spawnPoint.x / 32);
         spawnY = Math.floor(spawnPoint.y / 32) - 1;
+        console.log(
+          `[MainScene] Spawn via "${spawnPoint.name}" → tile (${spawnX}, ${spawnY})`,
+        );
       }
     }
 
@@ -616,6 +669,13 @@ export class MainScene extends Scene {
     EventBus.on("ui:blur", this.uiBlurHandler);
     EventBus.on(GameEvents.REQUEST_USER_LIST, this.requestUserListHandler);
     EventBus.on("ws:message", this.wsMessageHandler);
+
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.cleanup();
+    });
+    this.events.once(Phaser.Scenes.Events.DESTROY, () => {
+      this.cleanup();
+    });
   }
 
   update() {
@@ -1131,7 +1191,7 @@ export class MainScene extends Scene {
     this.otherPlayers.delete(userId);
   }
 
-  destroy() {
+  cleanup() {
     EventBus.off(GameEvents.SEND_CHAT_MESSAGE, this.sendChatHandler);
     EventBus.off(GameEvents.REQUEST_USER_LIST, this.requestUserListHandler);
     EventBus.off("channel:message_sent", this.channelMessageSentHandler);

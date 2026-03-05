@@ -32,7 +32,7 @@ def parse_map_zones(file_path):
 
                 zone_data = {
                     "name": obj["name"],
-                    "type": "PRIVATE" if "Room" in obj["name"] else "PUBLIC",
+                    "type": "PRIVATE" if any(k in obj["name"].lower() for k in ["room", "private"]) else "PUBLIC",
                     "bounds": {
                         "x": obj["x"],
                         "y": obj["y"],

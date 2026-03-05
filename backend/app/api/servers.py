@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload
 from typing import List
 from uuid import UUID
@@ -8,6 +8,8 @@ from app.core.database import get_db
 from app.models.server import Server
 from app.models.user import User
 from app.models.zone import Zone
+from app.models.channel import Channel
+from app.models.message import Message
 from app.models.server_member import ServerMember, MemberRole, MemberStatus
 from app.schemas.server import ServerCreate, ServerUpdate, ServerResponse
 from app.schemas.zone import ZoneResponse
@@ -40,6 +42,7 @@ async def get_servers(
             owner_username=s.owner.username if s.owner else None,
             created_at=s.created_at,
             access_type=s.access_type,
+            map_config=s.map_config,
         )
         out.append(d)
     return out
@@ -145,6 +148,7 @@ async def get_server(
         owner_username=server.owner.username if server.owner else None,
         created_at=server.created_at,
         access_type=server.access_type,
+        map_config=server.map_config,
     )
 
 
@@ -177,7 +181,50 @@ async def update_server(
         owner_username=server.owner.username if server.owner else None,
         created_at=server.created_at,
         access_type=server.access_type,
+        map_config=server.map_config,
     )
+
+
+@router.delete("/{server_id}")
+async def delete_server(
+    server_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a server (owner only)."""
+    result = await db.execute(
+        select(Server).where(Server.id == server_id)
+    )
+    server = result.scalars().first()
+    
+    if not server:
+        raise HTTPException(status_code=404, detail="Server not found")
+        
+    if server.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the owner can delete this server")
+
+    # Manually cascade delete dependent records to avoid Foreign Key constraint errors
+    # 1. Get all channels for this server to delete their messages
+    channels_result = await db.execute(select(Channel.id).where(Channel.server_id == server_id))
+    channel_ids = channels_result.scalars().all()
+    
+    if channel_ids:
+        await db.execute(delete(Message).where(Message.channel_id.in_(channel_ids)))
+        
+    # 2. Delete the channels themselves
+    await db.execute(delete(Channel).where(Channel.server_id == server_id))
+    
+    # 3. Delete zones
+    await db.execute(delete(Zone).where(Zone.server_id == server_id))
+    
+    # 4. Delete server members
+    await db.execute(delete(ServerMember).where(ServerMember.server_id == server_id))
+
+    # 5. Delete the server
+    await db.delete(server)
+    await db.commit()
+    
+    return {"message": "Server deleted successfully"}
 
 
 @router.post("/{server_id}/join")
@@ -328,3 +375,37 @@ async def reject_member(
     await db.delete(member)
     await db.commit()
     return {"message": "Member rejected/removed"}
+
+
+
+@router.delete("/server/{channel_id}")
+async def delete_channel(
+    channel_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Delete a channel.
+    Only the server owner can delete channels.
+    """
+    result = await db.execute(
+        select(Channel).where(Channel.id == channel_id)
+    )
+    channel = result.scalars().first()
+    
+    if not channel:
+        raise HTTPException(404, detail="Channel not found")
+    
+    # Check ownership
+    server_result = await db.execute(
+        select(Server).where(Server.id == channel.server_id)
+    )
+    server = server_result.scalars().first()
+    
+    if server.owner_id != current_user.id:
+        raise HTTPException(403, detail="Only server owner can delete channels")
+    
+    await db.delete(channel)
+    await db.commit()
+    
+    return {"message": "Channel deleted successfully"}
