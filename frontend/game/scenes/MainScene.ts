@@ -66,6 +66,13 @@ export class MainScene extends Scene {
   private readonly wsMessageHandler = (data: any) => {
     this.handleServerMessage(data);
   };
+  private readonly reactionHandler = (data: { emoji: string }) => {
+    // Animate locally above the hero sprite immediately
+    if (this.playerSprite)
+      this.spawnFloatingEmoji(this.playerSprite, data.emoji);
+    // Broadcast to others
+    wsService.send({ type: "reaction", emoji: data.emoji });
+  };
   private readonly sendChatHandler = (data: any) => {
     wsService.send({ type: "chat_message", ...data });
   };
@@ -398,6 +405,15 @@ export class MainScene extends Scene {
       this.zones = zonesLayer.objects.filter(
         (obj) => obj.name !== undefined && !obj.name.startsWith("Spawn"),
       );
+      // Expose zone geometry to the Minimap overlay
+      (window as any).__phaserZones = this.zones.map((z) => ({
+        name: z.name ?? "",
+        x: z.x ?? 0,
+        y: z.y ?? 0,
+        width: z.width ?? 0,
+        height: z.height ?? 0,
+        isPrivate: /room|private/i.test(z.name ?? ""),
+      }));
     }
 
     // ── Spawn Point ──────────────────────────────────────────────────────────
@@ -669,6 +685,7 @@ export class MainScene extends Scene {
     EventBus.on("ui:blur", this.uiBlurHandler);
     EventBus.on(GameEvents.REQUEST_USER_LIST, this.requestUserListHandler);
     EventBus.on("ws:message", this.wsMessageHandler);
+    EventBus.on("action:react", this.reactionHandler);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.cleanup();
@@ -823,7 +840,9 @@ export class MainScene extends Scene {
         EventBus.emit(GameEvents.ZONE_EXIT, {
           zoneId: this.currentZone,
           zoneName: this.currentZone,
-          zoneType: this.currentZone.startsWith("Room") ? "PRIVATE" : "PUBLIC",
+          zoneType: /room|private/i.test(this.currentZone)
+            ? "PRIVATE"
+            : "PUBLIC",
         });
       }
 
@@ -831,7 +850,7 @@ export class MainScene extends Scene {
         EventBus.emit(GameEvents.ZONE_ENTER, {
           zoneId: foundZone,
           zoneName: foundZone,
-          zoneType: foundZone.startsWith("Room") ? "PRIVATE" : "PUBLIC",
+          zoneType: /room|private/i.test(foundZone) ? "PRIVATE" : "PUBLIC",
         });
         EventBus.emit(GameEvents.ROOM_ENTER, { roomId: foundZone });
       }
@@ -908,6 +927,14 @@ export class MainScene extends Scene {
         // Keep legacy general chat event for existing listeners.
         EventBus.emit(GameEvents.CHAT_MESSAGE, data);
         break;
+
+      case "reaction": {
+        const player = this.otherPlayers.get(data.user_id);
+        if (player?.sprite) {
+          this.spawnFloatingEmoji(player.sprite, data.emoji);
+        }
+        break;
+      }
     }
   }
 
@@ -1199,5 +1226,33 @@ export class MainScene extends Scene {
     EventBus.off("ui:focus", this.uiFocusHandler);
     EventBus.off("ui:blur", this.uiBlurHandler);
     EventBus.off("ws:message", this.wsMessageHandler);
+    EventBus.off("action:react", this.reactionHandler);
+  }
+
+  // ── Floating emoji animation ──────────────────────────────────────────────
+  private spawnFloatingEmoji(sprite: Phaser.GameObjects.Sprite, emoji: string) {
+    const text = this.add.text(sprite.x + 8, sprite.y - 20, emoji, {
+      fontSize: "22px",
+      resolution: 10,
+      stroke: "#000000",
+      strokeThickness: 4,
+      shadow: {
+        offsetX: 1,
+        offsetY: 2,
+        color: "#000000",
+        blur: 4,
+        fill: true,
+      },
+    });
+    text.setOrigin(0.5, 0.5);
+    text.setDepth(350);
+    this.tweens.add({
+      targets: text,
+      y: sprite.y - 82,
+      alpha: 0,
+      duration: 1600,
+      ease: "Power2",
+      onComplete: () => text.destroy(),
+    });
   }
 }

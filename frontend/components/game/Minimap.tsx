@@ -5,13 +5,22 @@ import EventBus, { GameEvents } from "@/game/EventBus";
 import { TILE_PX } from "@/lib/game-constants";
 
 // Mini-map canvas dimensions (pixels)
-const MINI_W = 180;
-const MINI_H = 140;
+const MINI_W = 200;
+const MINI_H = 160;
 
 interface Player {
   user_id: string;
   x: number;
   y: number;
+}
+
+interface MinimapZone {
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  isPrivate: boolean;
 }
 
 export function Minimap() {
@@ -28,8 +37,6 @@ export function Minimap() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Derive map dimensions from exactly what MainScene tells us
-    // Default to the original 50x40 map if unavailable
     const mapSize = (window as any).__phaserMapSize;
     const mapW = mapSize?.w ?? 50 * TILE_PX;
     const mapH = mapSize?.h ?? 40 * TILE_PX;
@@ -37,33 +44,52 @@ export function Minimap() {
     const scaleX = MINI_W / mapW;
     const scaleY = MINI_H / mapH;
 
-    // Background
-    ctx.fillStyle = "#1a1b26"; // matches void color
+    // ── Background ────────────────────────────────────────────────────────────
+    ctx.fillStyle = "#0f1117";
     ctx.fillRect(0, 0, MINI_W, MINI_H);
 
-    // Map area outline
-    ctx.strokeStyle = "rgba(255,255,255,0.15)";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(0, 0, MINI_W, MINI_H);
+    // ── Zone layout ───────────────────────────────────────────────────────────
+    const zones: MinimapZone[] = (window as any).__phaserZones ?? [];
+    for (const zone of zones) {
+      if (!zone.width || !zone.height) continue;
 
-    // Other players (white dots)
+      const zx = zone.x * scaleX;
+      const zy = zone.y * scaleY;
+      const zw = zone.width * scaleX;
+      const zh = zone.height * scaleY;
+
+      // Fill: private rooms = indigo tint, public areas = gray tint
+      ctx.fillStyle = zone.isPrivate
+        ? "rgba(99, 102, 241, 0.18)" // indigo
+        : "rgba(255, 255, 255, 0.04)"; // barely visible public
+      ctx.fillRect(zx, zy, zw, zh);
+
+      // Border
+      ctx.strokeStyle = zone.isPrivate
+        ? "rgba(129, 140, 248, 0.55)" // indigo-400
+        : "rgba(255, 255, 255, 0.12)";
+      ctx.lineWidth = zone.isPrivate ? 1.5 : 1;
+      ctx.strokeRect(zx, zy, zw, zh);
+    }
+
+    // ── Other players (white dots) ────────────────────────────────────────────
     for (const p of othersRef.current) {
       const px = p.x * TILE_PX * scaleX;
       const py = p.y * TILE_PX * scaleY;
       ctx.beginPath();
-      ctx.arc(px, py, 3, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(255,255,255,0.75)";
+      ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.8)";
       ctx.fill();
     }
 
-    // Hero (you) — red dot with glow
+    // ── Hero — rose dot with glow ─────────────────────────────────────────────
     const hx = heroRef.current.x * TILE_PX * scaleX;
     const hy = heroRef.current.y * TILE_PX * scaleY;
     ctx.beginPath();
     ctx.arc(hx, hy, 4, 0, Math.PI * 2);
-    ctx.fillStyle = "#f43f5e"; // rose-500
+    ctx.fillStyle = "#f43f5e";
     ctx.shadowColor = "#f43f5e";
-    ctx.shadowBlur = 6;
+    ctx.shadowBlur = 8;
     ctx.fill();
     ctx.shadowBlur = 0;
   };
@@ -79,13 +105,14 @@ export function Minimap() {
       draw();
     };
 
+    // Defer initial draw slightly so __phaserZones is populated by MainScene
+    const initialTimer = setTimeout(draw, 500);
+
     EventBus.on(GameEvents.PLAYER_POSITION, handleHeroMove);
     EventBus.on(GameEvents.PLAYER_LIST_UPDATE, handlePlayerList);
 
-    // Initial draw
-    draw();
-
     return () => {
+      clearTimeout(initialTimer);
       EventBus.off(GameEvents.PLAYER_POSITION, handleHeroMove);
       EventBus.off(GameEvents.PLAYER_LIST_UPDATE, handlePlayerList);
     };
@@ -93,12 +120,15 @@ export function Minimap() {
 
   return (
     <div
-      className="absolute bottom-5 left-5 rounded-lg overflow-hidden border-2 border-white/20 shadow-lg"
+      className="absolute bottom-5 left-5 rounded-xl overflow-hidden border border-white/15 shadow-2xl shadow-black/60 backdrop-blur-sm"
       style={{ zIndex: 25, pointerEvents: "none" }}
     >
-      {/* Label */}
-      <div className="bg-gray-900/80 px-2 py-0.5 text-[10px] text-white/60 font-mono tracking-wide">
-        MAP
+      {/* Label bar */}
+      <div className="flex items-center gap-1.5 bg-black/60 px-2.5 py-1 border-b border-white/8">
+        <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+        <span className="text-[9px] text-white/50 font-mono tracking-widest uppercase">
+          Mini-Map
+        </span>
       </div>
       <canvas
         ref={canvasRef}

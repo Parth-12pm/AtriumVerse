@@ -1,6 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import {
   Mic,
@@ -14,6 +19,8 @@ import {
   PhoneOff,
   Maximize2,
   Minimize2,
+  Smile,
+  Pencil,
 } from "lucide-react";
 import EventBus from "@/game/EventBus";
 
@@ -37,6 +44,52 @@ export function MediaControls({
   const [chatOpen, setChatOpen] = useState(false);
   const [inVideoCall, setInVideoCall] = useState(false);
   const [videoExpanded, setVideoExpanded] = useState(false);
+  const DEFAULTS = ["👍", "❤️", "😂", "🎉", "👏"];
+  const [quickEmojis, setQuickEmojis] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("quickReactions");
+      const parsed = saved ? JSON.parse(saved) : null;
+      return Array.isArray(parsed) && parsed.length === 5 ? parsed : DEFAULTS;
+    } catch {
+      return DEFAULTS;
+    }
+  });
+  const [editMode, setEditMode] = useState(false); // pencil → edit slots
+  const [editSlot, setEditSlot] = useState<number | null>(null); // which slot is being replaced
+  const [customEmoji, setCustomEmoji] = useState("");
+
+  const ALL_EMOJIS = [
+    "👍",
+    "❤️",
+    "😂",
+    "🎉",
+    "👏",
+    "🔥",
+    "😍",
+    "😱",
+    "🥳",
+    "💯",
+    "👀",
+    "🫡",
+    "😎",
+    "🤔",
+    "💀",
+    "✨",
+    "🙌",
+    "😭",
+    "🤣",
+    "🫶",
+  ];
+
+  const assignSlot = (emoji: string) => {
+    if (editSlot === null) return;
+    const next = [...quickEmojis];
+    next[editSlot] = emoji;
+    setQuickEmojis(next);
+    localStorage.setItem("quickReactions", JSON.stringify(next));
+    setEditSlot(null);
+    setCustomEmoji("");
+  };
 
   useEffect(() => {
     const handleChatToggle = (isOpen: boolean) => setChatOpen(isOpen);
@@ -53,6 +106,7 @@ export function MediaControls({
     EventBus.on("ui:video_room_joined", handleVideoJoined);
     EventBus.on("ui:video_room_left", handleVideoLeft);
     EventBus.on("ui:video_expanded", handleVideoExpanded);
+
     return () => {
       EventBus.off("ui:chat_toggled", handleChatToggle);
       EventBus.off("ui:video_room_joined", handleVideoJoined);
@@ -94,6 +148,12 @@ export function MediaControls({
   };
 
   const leaveConference = () => EventBus.emit("action:leave_conference");
+
+  const sendReaction = (emoji: string) => {
+    if (!emoji) return;
+    EventBus.emit("action:react", { emoji });
+    // deliberately DO NOT close the picker — allows spamming
+  };
 
   return (
     // Outer wrapper — relative so ProximityChat can be positioned absolute to this
@@ -190,7 +250,7 @@ export function MediaControls({
           </>
         )}
 
-        {/* Chat toggle — LAST button — proximity chat expands to the right */}
+        {/* Chat toggle */}
         <div className="w-px h-6 bg-white/15 mx-0.5" />
         <button
           onClick={toggleChat}
@@ -203,6 +263,133 @@ export function MediaControls({
         >
           <MessageSquare className="w-4 h-4" />
         </button>
+
+        {/* Emoji Reactions */}
+        <div className="w-px  h-6 bg-white/15 mx-0.5" />
+
+        <Popover
+          onOpenChange={(open) => {
+            if (!open) {
+              setEditMode(false);
+              setEditSlot(null);
+            }
+          }}
+        >
+          <PopoverTrigger asChild>
+            <button
+              title="React"
+              className={`${BTN} bg-white/10 text-white hover:bg-white/20`}
+            >
+              <Smile className="w-4 h-4" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent
+            side="top"
+            align="center"
+            sideOffset={10}
+            className="w-auto p-0 mb-1 bg-gray-900 border-2 border-black rounded-xl shadow-2xl overflow-hidden"
+            onOpenAutoFocus={(e) => e.preventDefault()}
+          >
+            {!editMode ? (
+              /* ── Quick mode: 5 slots + pencil ── */
+              <div className="flex items-center gap-1 px-2 py-1.5">
+                {quickEmojis.map((emoji, i) => (
+                  <button
+                    key={i}
+                    onClick={() => sendReaction(emoji)}
+                    className="w-10 h-10 flex items-center justify-center text-xl rounded-lg hover:bg-white/10 active:scale-90 transition-all"
+                    title={`React ${emoji}`}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+                <div className="w-px h-7 bg-white/10 mx-0.5" />
+                <button
+                  onClick={() => {
+                    setEditMode(true);
+                    setEditSlot(0);
+                  }}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 text-white/40 hover:text-white/80 transition-all"
+                  title="Customize reactions"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              /* ── Edit mode ── */
+              <div className="flex flex-col min-w-[220px]">
+                {/* Slot selector */}
+                <div className="flex items-center gap-1 px-2 pt-2 pb-1">
+                  <span className="text-[10px] text-white/40 font-mono uppercase tracking-wider mr-1">
+                    Slot
+                  </span>
+                  {quickEmojis.map((emoji, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setEditSlot(i)}
+                      className={`w-9 h-9 flex items-center justify-center text-lg rounded-lg border-2 transition-all ${
+                        editSlot === i
+                          ? "border-indigo-400 bg-indigo-600/30"
+                          : "border-transparent hover:bg-white/10"
+                      }`}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-indigo-300/70 px-3 pb-1">
+                  {editSlot !== null
+                    ? `Replacing slot ${editSlot + 1} — pick below`
+                    : "Select a slot above"}
+                </p>
+                {/* Full emoji grid */}
+                <div className="grid grid-cols-5 gap-0.5 px-2 pb-1">
+                  {ALL_EMOJIS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      onClick={() => assignSlot(emoji)}
+                      disabled={editSlot === null}
+                      className="w-9 h-9 flex items-center justify-center text-lg rounded-lg hover:bg-white/10 active:scale-90 disabled:opacity-30 transition-all"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+                {/* Custom input */}
+                <div className="flex gap-1 px-2 pb-2 pt-1 border-t border-white/8">
+                  <input
+                    type="text"
+                    value={customEmoji}
+                    onChange={(e) => setCustomEmoji(e.target.value)}
+                    onFocus={() => EventBus.emit("ui:focus")}
+                    onBlur={() => EventBus.emit("ui:blur")}
+                    placeholder="Custom emoji"
+                    maxLength={2}
+                    className="flex-1 bg-white/5 border border-white/15 rounded-lg px-2 py-1 text-sm text-white placeholder:text-white/30 outline-none focus:border-indigo-400/60 text-center"
+                  />
+                  <button
+                    onClick={() => {
+                      if (customEmoji.trim()) assignSlot(customEmoji.trim());
+                    }}
+                    disabled={!customEmoji.trim() || editSlot === null}
+                    className="px-2 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 text-white text-xs font-semibold transition-all"
+                  >
+                    Assign
+                  </button>
+                </div>
+                <button
+                  onClick={() => {
+                    setEditMode(false);
+                    setEditSlot(null);
+                  }}
+                  className="w-full py-1.5 text-[11px] text-white/40 hover:text-white/70 border-t border-white/8 hover:bg-white/5 transition-all"
+                >
+                  ← Back to reactions
+                </button>
+              </div>
+            )}
+          </PopoverContent>
+        </Popover>
       </div>
     </div>
   );

@@ -39,6 +39,8 @@ export default function ServerPage({ params }: ServerPageProps) {
   const [showCharacterSelect, setShowCharacterSelect] = useState(false);
   // The backend map_path for this server (e.g. "phaser_assets/maps/map1.json")
   const [mapPath, setMapPath] = useState<string | undefined>(undefined);
+  // Don't render the game until we know which map to load
+  const [mapReady, setMapReady] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -81,7 +83,8 @@ export default function ServerPage({ params }: ServerPageProps) {
         })
         .catch((err) =>
           console.warn("[ServerPage] Could not fetch server map config:", err),
-        );
+        )
+        .finally(() => setMapReady(true));
     }
   }, [serverId]);
 
@@ -165,14 +168,23 @@ export default function ServerPage({ params }: ServerPageProps) {
       </div>
       {/* Game area: takes all remaining horizontal space, full height */}
       <div className="flex-1 h-screen min-w-0">
-        <GameWrapper
-          userId={userId}
-          username={username}
-          serverId={serverId}
-          token={token}
-          characterId={selectedCharacter}
-          mapPath={mapPath}
-        />
+        {mapReady ? (
+          <GameWrapper
+            userId={userId}
+            username={username}
+            serverId={serverId}
+            token={token}
+            characterId={selectedCharacter}
+            mapPath={mapPath}
+          />
+        ) : (
+          <div className="flex items-center justify-center h-full bg-background">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-primary rounded-lg border-4 border-border shadow-shadow animate-pulse mx-auto mb-4" />
+              <p className="font-bold uppercase">Loading Space...</p>
+            </div>
+          </div>
+        )}
       </div>
       <ProximityChat />
     </div>

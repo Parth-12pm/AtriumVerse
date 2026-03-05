@@ -29,7 +29,9 @@ export enum GameEvents {
   // LiveKit Video Events
   VIDEO_ROOM_JOINED = "video:room:joined",
   VIDEO_ROOM_LEFT = "video:room:left",
-  
+
+  // Emoji Reactions
+  REACTION = "reaction",
 }
 
 export interface PlayerPositionEvent {

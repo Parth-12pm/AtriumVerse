@@ -415,6 +415,18 @@ async def websocket_endpoint(
                         "message_id": message_id
                     }, server_id, target_id)
 
+            # ── Emoji Reactions ───────────────────────────────────────────────
+            elif data.get("type") == "reaction":
+                emoji = data.get("emoji", "")
+                ALLOWED = {"👍", "❤️", "😂", "🎉", "👏"}
+                if emoji in ALLOWED:
+                    await manager.broadcast({
+                        "type": "reaction",
+                        "user_id": user_id,
+                        "emoji": emoji,
+                    }, server_id, websocket)  # exclude sender (they animate locally)
+
+
 
 
     except WebSocketDisconnect:

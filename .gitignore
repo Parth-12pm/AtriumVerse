@@ -151,3 +151,4 @@ cython_debug/
 *.pt
 *.pth
 *.onnx
+frontend/pnpm-lock.yaml
