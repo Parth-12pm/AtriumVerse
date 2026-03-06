@@ -70,6 +70,28 @@ export function Minimap() {
         : "rgba(255, 255, 255, 0.12)";
       ctx.lineWidth = zone.isPrivate ? 1.5 : 1;
       ctx.strokeRect(zx, zy, zw, zh);
+
+      // Zone name label — strip "_room"/"room_", replace _ with space, title-case
+      const label = zone.name
+        .replace(/_?room_?/gi, " ")
+        .replace(/_/g, " ")
+        .trim()
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+
+      const fontSize = Math.max(6, Math.min(9, zw / label.length + 1));
+      ctx.font = `600 ${fontSize}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
+      // Dark shadow for legibility on any background
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillText(label, zx + zw / 2 + 0.5, zy + zh / 2 + 0.5);
+
+      // Label text
+      ctx.fillStyle = zone.isPrivate
+        ? "rgba(199, 210, 254, 0.9)" // indigo-200
+        : "rgba(255, 255, 255, 0.45)";
+      ctx.fillText(label, zx + zw / 2, zy + zh / 2);
     }
 
     // ── Other players (white dots) ────────────────────────────────────────────

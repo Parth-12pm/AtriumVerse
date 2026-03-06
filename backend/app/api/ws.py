@@ -415,16 +415,45 @@ async def websocket_endpoint(
                         "message_id": message_id
                     }, server_id, target_id)
 
-            # ── Emoji Reactions ───────────────────────────────────────────────
+            # ── Emoji Reactions (proximity-scoped) ───────────────────────────
             elif data.get("type") == "reaction":
                 emoji = data.get("emoji", "")
-                ALLOWED = {"👍", "❤️", "😂", "🎉", "👏"}
-                if emoji in ALLOWED:
-                    await manager.broadcast({
-                        "type": "reaction",
-                        "user_id": user_id,
-                        "emoji": emoji,
-                    }, server_id, websocket)  # exclude sender (they animate locally)
+                ALLOWED = {"👍", "❤️", "😂", "🎉", "👏", "🔥", "😍", "😱", "🥳", "💯",
+                           "👀", "🫡", "😎", "🤔", "💀", "✨", "🙌", "😭", "🤣", "🫶"}
+                if emoji not in ALLOWED and len(emoji) > 2:
+                    continue
+
+                REACTION_RADIUS = 8  # same as proximity chat
+
+                sender_pos = None
+                if redis_client.r:
+                    sender_data = await redis_client.r.hgetall(f"user:{user_id}")
+                    if sender_data:
+                        sender_pos = (int(sender_data.get("x", 0)), int(sender_data.get("y", 0)))
+
+                payload = {
+                    "type": "reaction",
+                    "user_id": user_id,
+                    "emoji": emoji,
+                }
+
+                if sender_pos and redis_client.r:
+                    online_users = await redis_client.r.smembers(f"server:{server_id}:users")
+                    for uid in online_users:
+                        if uid == user_id:
+                            continue  # sender already animates locally
+                        pos_data = await redis_client.r.hgetall(f"user:{uid}")
+                        if not pos_data:
+                            continue
+                        rx = int(pos_data.get("x", 0))
+                        ry = int(pos_data.get("y", 0))
+                        dist = abs(rx - sender_pos[0]) + abs(ry - sender_pos[1])
+                        if dist <= REACTION_RADIUS:
+                            await manager.send_personal_message(payload, server_id, uid)
+                else:
+                    # Fallback: broadcast to all if Redis unavailable
+                    await manager.broadcast(payload, server_id, websocket)
+
 
 
 

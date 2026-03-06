@@ -19,17 +19,13 @@ if not NEXT_PUBLIC_URL:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 1. Initialize Database
     try:
-        await init_models() 
-        # Optionally ping the DB to be sure
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
-        print("✅ Database Connected & Tables Verified")
+        print("✅ Database Connected")
     except Exception as e:
         print(f"❌ Database Error: {e}")
 
-    # 2. Initialize Redis
     try:
         await init_redis()
         print("✅ Redis Connected")
@@ -37,12 +33,8 @@ async def lifespan(app: FastAPI):
         print(f"❌ Redis Error: {e}")
 
     yield
-
-    # 3. Shutdown
     await close_redis()
     print("🛑 Shutdown complete")
-
-
 
 
 
