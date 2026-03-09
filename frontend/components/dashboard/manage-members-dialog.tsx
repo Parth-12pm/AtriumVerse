@@ -14,6 +14,8 @@ import { Check, X, Shield, UserPlus } from "lucide-react";
 import { fetchAPI } from "@/lib/api";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { getPrivateKey } from "@/lib/keyStore";
+import { deriveSharedSecret, deriveKey, encryptBytes } from "@/lib/crypto";
 
 interface Member {
   user_id: string;
@@ -57,8 +59,72 @@ export function ManageMembersDialog({ serverId }: ManageMembersDialogProps) {
         method: "POST",
       });
       toast.success(
-        action === "approve" ? "Member Approved" : "Member Rejected",
+        action === "approve" ? "Member Approved" : "Member Removed",
       );
+
+      // --- PHASE 8 E2EE ROTATION ---
+      // If a member is removed/rejected, we must rotate keys for all E2EE channels
+      if (action === "reject") {
+        try {
+          toast.info("Rotating E2EE channel keys...");
+
+          // 1. Get ONLY the encrypted channels in this server that the kicked user was actually a part of
+          const affectedChannelIds: string[] = await fetchAPI(
+            `/channel-keys/server/${serverId}/user/${userId}/encrypted-channels`,
+          );
+
+          const encryptedChannels = affectedChannelIds.map((id) => ({
+            channel_id: id,
+          }));
+
+          if (encryptedChannels.length > 0) {
+            // 2. Fetch the newly updated trusted devices list (kicked user is now gone)
+            const devicesRes = await fetchAPI(`/devices/server/${serverId}`);
+            const myDeviceId = localStorage.getItem("device_id");
+            if (!myDeviceId) throw new Error("No local device_id");
+
+            const myPrivateKey = await getPrivateKey(myDeviceId);
+            if (!myPrivateKey) throw new Error("Missing private key");
+
+            // 3. For every encrypted channel, generate new key, encrypt for remaining members, rotate
+            for (const chan of encryptedChannels) {
+              const newKeyBytes = window.crypto.getRandomValues(
+                new Uint8Array(32),
+              );
+              const encryptedKeys = [];
+
+              for (const device of devicesRes) {
+                const sharedSecret = await deriveSharedSecret(
+                  myPrivateKey,
+                  device.public_key,
+                );
+                const wrapKey = await deriveKey(
+                  sharedSecret,
+                  chan.channel_id,
+                  "channel-key",
+                );
+                const encryptedBlob = await encryptBytes(wrapKey, newKeyBytes);
+                encryptedKeys.push({
+                  device_id: device.id,
+                  encrypted_channel_key: encryptedBlob,
+                });
+              }
+
+              await fetchAPI(`/channel-keys/${chan.channel_id}/rotate`, {
+                method: "POST",
+                body: JSON.stringify({ encrypted_keys: encryptedKeys }),
+              });
+            }
+            toast.success("Channel keys successfully rotated.");
+          }
+        } catch (rotErr) {
+          console.error("Failed to rotate channel keys:", rotErr);
+          toast.error(
+            "Failed to rotate encryption keys. Channels may be insecure.",
+          );
+        }
+      }
+
       loadMembers();
     } catch (error) {
       toast.error("Action failed");
@@ -167,10 +233,23 @@ export function ManageMembersDialog({ serverId }: ManageMembersDialogProps) {
                           variant={
                             member.role === "owner" ? "default" : "neutral"
                           }
-                          className="text-xs"
+                          className="text-xs mr-2"
                         >
                           {member.role}
                         </Badge>
+                        {member.role !== "owner" && (
+                          <Button
+                            size="sm"
+                            variant="noShadow"
+                            className="h-6 w-6 p-0 text-red-600 hover:bg-red-100"
+                            onClick={() =>
+                              handleAction(member.user_id, "reject")
+                            }
+                            title="Kick Member"
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        )}
                       </div>
                     ))}
                   </div>

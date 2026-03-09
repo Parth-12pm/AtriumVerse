@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from app.api import users,ws,servers,channels,messages,direct_messages,livekit
+from app.api import users,ws,servers,channels,messages,direct_messages,livekit,devices,device_linking,channel_keys
 from app.core.database import engine
 from sqlalchemy import text
 from app.init_db import init_models
@@ -56,6 +56,9 @@ app.include_router(channels.router,prefix="/channels", tags=["Channels"])
 app.include_router(messages.router,prefix="/messages",tags=["Messages"])
 app.include_router(direct_messages.router,prefix="/DM",tags=["Direct-Messages"])
 app.include_router(livekit.router,prefix="/livekit", tags=["Livekit"])
+app.include_router(devices.router, prefix="/devices", tags=["Devices"])
+app.include_router(device_linking.router, prefix="/device-linking", tags=["Device Linking"])
+app.include_router(channel_keys.router)
 
 @app.get("/")
 async def hello():

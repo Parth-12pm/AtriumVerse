@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, DateTime, Text, Boolean, Index
+from sqlalchemy import Column, ForeignKey, DateTime, Text, Boolean, Integer, Index
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
 from datetime import datetime
@@ -18,7 +18,13 @@ class DirectMessage(Base):
     sender_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     receiver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     
-    content = Column(Text, nullable=False)
+    content = Column(Text, nullable=False)  # stays NOT NULL — encrypted DMs write "[encrypted]" here
+
+    # E2EE columns (additive — all nullable so existing rows are unaffected)
+    ciphertext = Column(Text, nullable=True)        # base64(IV + AES-256-GCM ciphertext)
+    epoch = Column(Integer, nullable=True)          # per-conversation epoch at time of send
+    is_encrypted = Column(Boolean, default=False)   # False for all pre-E2EE messages
+    sender_device_id = Column(UUID(as_uuid=True), ForeignKey("devices.id", ondelete="SET NULL"), nullable=True)
     
     # Editing
     edited_at = Column(DateTime, nullable=True)

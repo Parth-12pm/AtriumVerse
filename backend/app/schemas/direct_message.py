@@ -4,9 +4,23 @@ from uuid import UUID
 from datetime import datetime
 
 
+from typing import Optional, List
+
+
 class DirectMessageCreate(BaseModel):
     receiver_id: UUID
     content: str
+    is_encrypted: bool = False
+    sender_device_id: Optional[UUID] = None
+
+
+class DeviceCiphertextItem(BaseModel):
+    device_id: UUID
+    encrypted_ciphertext: str
+
+
+class DeviceCiphertextSubmission(BaseModel):
+    device_ciphertexts: List[DeviceCiphertextItem]
 
 
 class DirectMessageResponse(BaseModel):
@@ -19,6 +33,13 @@ class DirectMessageResponse(BaseModel):
     is_read: bool
     read_at: Optional[datetime]
     created_at: datetime
+    
+    # E2EE fields
+    is_encrypted: bool = False
+    epoch: int = 0
+    sender_device_id: Optional[UUID] = None
+    encrypted_ciphertext: Optional[str] = None
+    device_key_status: Optional[str] = None
     
     # Populated from join
     sender_username: Optional[str] = None

@@ -8,11 +8,15 @@ from datetime import datetime
 from app.core.database import get_db
 from app.models.direct_message import DirectMessage
 from app.models.user import User
+from app.models.dm_epoch import DmEpoch
+from app.models.dm_device_key import DmDeviceKey
+from app.models.device import Device
 from app.schemas.direct_message import (
     DirectMessageCreate, 
     DirectMessageResponse, 
     DirectMessageUpdate,
-    ConversationResponse
+    ConversationResponse,
+    DeviceCiphertextSubmission
 )
 from app.api.deps import get_current_user
 
@@ -103,9 +107,10 @@ async def list_conversations(
     return conversations
 
 
-@router.get("/messages/{user_id}", response_model=List[DirectMessageResponse])
+@router.get("/messages/{user_id}")
 async def get_conversation_messages(
     user_id: UUID,
+    device_id: UUID = Query(..., description="The requesting device ID to fetch specific ciphertexts for"),
     limit: int = Query(50, le=100),
     before: UUID = Query(None),
     db: AsyncSession = Depends(get_db),
@@ -113,12 +118,40 @@ async def get_conversation_messages(
 ):
     """
     Get messages in a conversation with a specific user.
+    Returns per-device ciphertext for E2EE messages.
     Marks messages as read.
     """
+    # Verify the device belongs to the requesting user
+    dev_query = select(Device).where(Device.id == device_id, Device.user_id == current_user.id)
+    dev_res = await db.execute(dev_query)
+    if not dev_res.scalar_one_or_none():
+        raise HTTPException(status_code=403, detail="Invalid device_id")
+
+    from sqlalchemy.orm import aliased
+    SenderDevice = aliased(Device)
+
     # Build query for messages between current_user and target user
     query = (
-        select(DirectMessage, User.username.label("sender_username"))
+        select(
+            DirectMessage, 
+            User.username.label("sender_username"),
+            DmDeviceKey.encrypted_ciphertext,
+            DmDeviceKey.device_id.label("ciphertext_active_device"),
+            DmDeviceKey.deleted_device_id,
+            SenderDevice.public_key.label("sender_public_key")
+        )
         .join(User, DirectMessage.sender_id == User.id)
+        .outerjoin(SenderDevice, DirectMessage.sender_device_id == SenderDevice.id)
+        .outerjoin(
+            DmDeviceKey,
+            and_(
+                DirectMessage.id == DmDeviceKey.dm_id,
+                or_(
+                    DmDeviceKey.device_id == device_id,
+                    DmDeviceKey.deleted_device_id == device_id
+                )
+            )
+        )
         .where(
             or_(
                 and_(
@@ -175,7 +208,23 @@ async def get_conversation_messages(
     
     # Build response
     messages = []
-    for msg, sender_username in rows:
+    for row in rows:
+        msg = row.DirectMessage
+        sender_username = row.sender_username
+        
+        # Determine device key status for E2EE messages
+        device_key_status = None
+        encrypted_ciphertext = None
+        
+        if getattr(msg, 'is_encrypted', False):
+            if row.encrypted_ciphertext is not None:
+                device_key_status = "available"
+                encrypted_ciphertext = row.encrypted_ciphertext
+            elif row.ciphertext_active_device is None and row.deleted_device_id is not None:
+                device_key_status = "device_removed"
+            else:
+                device_key_status = "predates_device"
+
         # Get receiver username
         receiver_result = await db.execute(
             select(User.username).where(User.id == msg.receiver_id)
@@ -187,6 +236,12 @@ async def get_conversation_messages(
             "sender_id": msg.sender_id,
             "receiver_id": msg.receiver_id,
             "content": msg.content,
+            "is_encrypted": getattr(msg, 'is_encrypted', False),
+            "epoch": getattr(msg, 'epoch', 0),
+            "sender_device_id": getattr(msg, 'sender_device_id', None),
+            "sender_public_key": row.sender_public_key,
+            "encrypted_ciphertext": encrypted_ciphertext,
+            "device_key_status": device_key_status,
             "edited_at": msg.edited_at,
             "is_deleted": msg.is_deleted,
             "is_read": msg.is_read,
@@ -195,12 +250,12 @@ async def get_conversation_messages(
             "sender_username": sender_username,
             "receiver_username": receiver_username
         }
-        messages.append(DirectMessageResponse(**msg_dict))
+        messages.append(msg_dict)
     
     return messages
 
 
-@router.post("/messages", response_model=DirectMessageResponse)
+@router.post("/messages")
 async def send_direct_message(
     message_in: DirectMessageCreate,
     db: AsyncSession = Depends(get_db),
@@ -208,6 +263,7 @@ async def send_direct_message(
 ):
     """
     Send a direct message to a user.
+    Step 1 of E2EE: Returns the dm_id and current epoch to be used as HKDF salt.
     """
     # Validate receiver exists
     receiver_result = await db.execute(
@@ -222,37 +278,86 @@ async def send_direct_message(
     if receiver.id == current_user.id:
         raise HTTPException(400, detail="Cannot send message to yourself")
     
-    # Validate content
+    # Content still needed if plaintext fallback is used, otherwise clients send "[encrypted]"
     if not message_in.content or len(message_in.content) > 2000:
         raise HTTPException(400, detail="Message must be 1-2000 characters")
     
-    # Create message
-    new_message = DirectMessage(
-        sender_id=current_user.id,
-        receiver_id=message_in.receiver_id,
-        content=message_in.content
-    )
+    async with db.begin():
+        # Canonical Ordering for DM Epoch
+        user_a_id = min(current_user.id, receiver.id)
+        user_b_id = max(current_user.id, receiver.id)
+
+        epoch_query = select(DmEpoch).where(
+            DmEpoch.user_a_id == user_a_id, 
+            DmEpoch.user_b_id == user_b_id
+        ).with_for_update()
+        epoch_res = await db.execute(epoch_query)
+        dm_epoch = epoch_res.scalar_one_or_none()
+
+        if not dm_epoch:
+            dm_epoch = DmEpoch(user_a_id=user_a_id, user_b_id=user_b_id, current_epoch=1)
+            db.add(dm_epoch)
+
+        # Create message
+        new_message = DirectMessage(
+            sender_id=current_user.id,
+            receiver_id=message_in.receiver_id,
+            content=message_in.content,
+            is_encrypted=message_in.is_encrypted,
+            epoch=dm_epoch.current_epoch if message_in.is_encrypted else 0,
+            sender_device_id=message_in.sender_device_id
+        )
+        db.add(new_message)
     
-    db.add(new_message)
-    await db.commit()
     await db.refresh(new_message)
     
-    # Build response
-    response = DirectMessageResponse(
-        id=new_message.id,
-        sender_id=new_message.sender_id,
-        receiver_id=new_message.receiver_id,
-        content=new_message.content,
-        edited_at=new_message.edited_at,
-        is_deleted=new_message.is_deleted,
-        is_read=new_message.is_read,
-        read_at=new_message.read_at,
-        created_at=new_message.created_at,
-        sender_username=current_user.username,
-        receiver_username=receiver.username
-    )
-    
-    return response
+    # Build a raw dict response (we will update DirectMessageResponse schema separately)
+    return {
+        "id": new_message.id,
+        "sender_id": new_message.sender_id,
+        "receiver_id": new_message.receiver_id,
+        "content": new_message.content,
+        "is_encrypted": getattr(new_message, 'is_encrypted', False),
+        "epoch": getattr(new_message, 'epoch', 0),
+        "sender_device_id": new_message.sender_device_id,
+        "created_at": new_message.created_at,
+        "sender_username": current_user.username,
+        "receiver_username": receiver.username
+    }
+
+
+@router.post("/messages/{message_id}/device-keys")
+async def submit_device_keys(
+    message_id: UUID,
+    payload: DeviceCiphertextSubmission,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Step 2 of E2EE DM Sending:
+    Accepts the array of device ciphertexts derived using message_id as HKDF salt.
+    """
+    # 1. Validate the message exists and belongs to sender
+    msg_query = select(DirectMessage).where(DirectMessage.id == message_id)
+    msg_res = await db.execute(msg_query)
+    msg = msg_res.scalar_one_or_none()
+
+    if not msg:
+        raise HTTPException(status_code=404, detail="DirectMessage not found")
+    if msg.sender_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only sender can attach device keys")
+
+    async with db.begin():
+        # Insert all ciphertexts
+        for ciphertext_obj in payload.device_ciphertexts:
+            key_record = DmDeviceKey(
+                dm_id=message_id,
+                device_id=ciphertext_obj.device_id,
+                encrypted_ciphertext=ciphertext_obj.encrypted_ciphertext
+            )
+            db.add(key_record)
+
+    return {"status": "success"}
 
 
 @router.patch("/messages/{message_id}", response_model=DirectMessageResponse)

@@ -7,7 +7,9 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Hash, Send, Edit2, Trash2 } from "lucide-react";
 import { fetchAPI } from "@/lib/api";
 import { toast } from "sonner";
+import EventBus from "@/game/EventBus";
 import { formatChatTimestamp } from "@/lib/time";
+import { useChannelKeys } from "@/hooks/useChannelKeys";
 
 interface Message {
   id: string;
@@ -17,6 +19,10 @@ interface Message {
   created_at: string;
   edited_at?: string;
   reply_to_id?: string;
+  is_encrypted: boolean;
+  epoch?: number;
+  decryptedContent?: string; // Client-side hydration
+  decryptionFailed?: boolean;
 }
 
 interface MessageFeedProps {
@@ -34,9 +40,47 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
   const currentUserId =
     typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
 
+  const { encryptForChannel, decryptForChannel } = useChannelKeys();
+
   useEffect(() => {
     loadMessages();
   }, [channelId]);
+
+  useEffect(() => {
+    const handleRecv = async (data: any) => {
+      // Must match current channel
+      if (data.channel_id !== channelId) return;
+
+      const newMsg: Message = {
+        id: data.id || Date.now().toString(),
+        user_id: data.sender || data.user_id, // backend dict might differ
+        username: data.username,
+        content: data.text || data.content,
+        created_at: data.timestamp || new Date().toISOString(),
+        is_encrypted: data.is_encrypted || false,
+        epoch: data.epoch,
+      };
+
+      if (newMsg.is_encrypted && newMsg.epoch) {
+        try {
+          newMsg.decryptedContent = await decryptForChannel(
+            channelId,
+            newMsg.epoch,
+            newMsg.content,
+          );
+        } catch (err) {
+          newMsg.decryptionFailed = true;
+        }
+      }
+
+      setMessages((prev) => [...prev, newMsg]);
+    };
+
+    EventBus.on("chat:channel_message", handleRecv);
+    return () => {
+      EventBus.off("chat:channel_message", handleRecv);
+    };
+  }, [channelId, decryptForChannel]);
 
   useEffect(() => {
     // Scroll to bottom on new messages
@@ -48,7 +92,26 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
   const loadMessages = async () => {
     try {
       const data = await fetchAPI(`/messages/channels/${channelId}/messages`);
-      setMessages(data.reverse()); // Reverse to show oldest first
+      const msgs = data.reverse(); // Reverse to show oldest first
+
+      // Async hydrate decryptions
+      const hydrated = await Promise.all(
+        msgs.map(async (msg: Message) => {
+          if (msg.is_encrypted && msg.epoch) {
+            try {
+              msg.decryptedContent = await decryptForChannel(
+                channelId,
+                msg.epoch,
+                msg.content,
+              );
+            } catch (err) {
+              msg.decryptionFailed = true;
+            }
+          }
+          return msg;
+        }),
+      );
+      setMessages(hydrated);
     } catch (error) {
       console.error("Failed to load messages:", error);
     }
@@ -59,18 +122,43 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
 
     setLoading(true);
     try {
+      let finalContent = newMessage.trim();
+      let reqBody: any = { content: finalContent };
+
+      try {
+        // Attempt E2EE Encrypt
+        const { ciphertext, epoch } = await encryptForChannel(
+          channelId,
+          finalContent,
+        );
+        reqBody = {
+          content: ciphertext,
+          is_encrypted: true,
+          epoch: epoch,
+        };
+      } catch (err) {
+        // E2EE is not enabled for this channel (or failed) - fall back to plaintext if allowed
+        // Or block. In a strict E2EE system, we might block. But based on UI prompt,
+        // channels can be unencrypted. We'll proceed in plaintext.
+      }
+
       const message = await fetchAPI(
         `/messages/channels/${channelId}/messages`,
         {
           method: "POST",
-          body: JSON.stringify({ content: newMessage.trim() }),
+          body: JSON.stringify(reqBody),
         },
       );
+
+      // Immediately hydrate the sent message so it displays instantly
+      if (message.is_encrypted) {
+        message.decryptedContent = finalContent;
+      }
 
       setMessages([...messages, message]);
       setNewMessage("");
     } catch (error) {
-      toast.error(`Failed to send message : ${error}`);
+      toast.error(`Failed to send message: ${error}`);
     } finally {
       setLoading(false);
     }
@@ -205,7 +293,23 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
                     </Button>
                   </div>
                 ) : (
-                  <p className="text-sm break-words">{msg.content}</p>
+                  <p className="text-sm break-words">
+                    {msg.is_encrypted ? (
+                      msg.decryptedContent ? (
+                        msg.decryptedContent
+                      ) : msg.decryptionFailed ? (
+                        <span className="text-destructive font-mono text-xs">
+                          [Message could not be decrypted]
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground italic">
+                          [Decrypting...]
+                        </span>
+                      )
+                    ) : (
+                      msg.content
+                    )}
+                  </p>
                 )}
               </div>
             </div>

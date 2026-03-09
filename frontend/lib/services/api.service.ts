@@ -130,9 +130,19 @@ export const directMessagesAPI = {
     return apiClient.get("/DM/conversations");
   },
 
-  getMessages: async (userId: string, params?: MessageListParams) => {
+  getMessages: async (
+    userId: string,
+    deviceId: string,
+    params?: MessageListParams,
+  ) => {
     return apiClient.get(`/DM/messages/${userId}`, {
-      params,
+      params: { ...params, device_id: deviceId },
+    });
+  },
+
+  submitDeviceKeys: async (messageId: string, deviceCiphertexts: any[]) => {
+    return apiClient.post(`/DM/messages/${messageId}/device-keys`, {
+      device_ciphertexts: deviceCiphertexts,
     });
   },
 

@@ -22,3 +22,4 @@ class User(Base):
     
     # NEW: Messages sent by user
     messages = relationship("Message", back_populates="user")
+    devices = relationship("Device", back_populates="user")

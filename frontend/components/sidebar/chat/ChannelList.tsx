@@ -32,6 +32,7 @@ interface ChannelListProps {
   onDMSelect: (userId: string) => void;
   loading: boolean;
   isServerOwner: boolean;
+  serverId: string;
   onCreateChannel: (data: ChannelCreate) => Promise<void>;
   onUpdateChannel: (channelId: string, data: Partial<Channel>) => Promise<void>;
   onDeleteChannel: (channelId: string) => Promise<void>;
@@ -46,6 +47,7 @@ export default function ChannelList({
   onDMSelect,
   loading,
   isServerOwner,
+  serverId,
   onCreateChannel,
   onUpdateChannel,
   onDeleteChannel,
@@ -234,6 +236,7 @@ export default function ChannelList({
           channelId={editingChannel.id}
           currentName={editingChannel.name}
           currentType={editingChannel.type === "voice" ? "voice" : "text"}
+          serverId={serverId}
           onUpdateChannel={onUpdateChannel}
         />
       )}

@@ -208,6 +208,7 @@ export default function ChatExpandedView({
           onDMSelect={handleDMSelect}
           loading={loading}
           isServerOwner={isServerOwner}
+          serverId={serverId}
           onCreateChannel={handleCreateChannel}
           onUpdateChannel={handleUpdateChannel}
           onDeleteChannel={handleDeleteChannel}
@@ -257,15 +258,9 @@ export default function ChatExpandedView({
         {/* Message Feed - Takes remaining height */}
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
           {mode === "channel" && selectedChannelId ? (
-            <ChatFeed
-              mode="channel"
-              channelId={selectedChannelId}
-            />
+            <ChatFeed mode="channel" channelId={selectedChannelId} />
           ) : mode === "dm" && selectedDMUserId ? (
-            <ChatFeed
-              mode="dm"
-              dmUserId={selectedDMUserId}
-            />
+            <ChatFeed mode="dm" dmUserId={selectedDMUserId} />
           ) : (
             <div className="flex-1 flex items-center justify-center">
               <div className="max-w-sm rounded-lg border-2 border-border bg-muted/40 p-8 text-center">

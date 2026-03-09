@@ -99,6 +99,10 @@ export interface Message {
   edited_at?: string;
   is_deleted: boolean;
   created_at: string;
+  is_encrypted?: boolean;
+  epoch?: number;
+  decryptedContent?: string;
+  decryptionFailed?: boolean;
 }
 
 export interface MessageCreate {
@@ -122,11 +126,21 @@ export interface DirectMessage {
   created_at: string;
   sender_username?: string;
   receiver_username?: string;
+  is_encrypted?: boolean;
+  epoch?: number;
+  sender_device_id?: string;
+  sender_public_key?: string;
+  encrypted_ciphertext?: string;
+  device_key_status?: string;
+  decryptedContent?: string;
+  decryptionFailed?: boolean;
 }
 
 export interface DirectMessageCreate {
   receiver_id: string;
   content: string;
+  is_encrypted?: boolean;
+  sender_device_id?: string;
 }
 
 export interface DirectMessageUpdate {

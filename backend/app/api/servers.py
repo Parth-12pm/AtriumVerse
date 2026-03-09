@@ -357,6 +357,9 @@ async def reject_member(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    from app.api.channel_keys import rotate_channel_key
+    from app.models.channel import Channel
+
     # 1. Check Owner
     server_res = await db.execute(select(Server).where(Server.id == server_id))
     server = server_res.scalars().first()
@@ -374,6 +377,7 @@ async def reject_member(
     # 3. Delete (Reject/Kick)
     await db.delete(member)
     await db.commit()
+        
     return {"message": "Member rejected/removed"}
 
 
