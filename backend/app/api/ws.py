@@ -388,10 +388,16 @@ async def websocket_endpoint(
                 message_data = data.get("message")
                 
                 if target_id and message_data:
+                    # Notify the recipient
                     await manager.send_personal_message({
                         "type": "dm_received",
                         "message": message_data
                     }, server_id, target_id)
+                    # Notify the sender's other devices so they sync the sent message
+                    await manager.send_personal_message({
+                        "type": "dm_received",
+                        "message": message_data
+                    }, server_id, user_id)
             
             elif data.get("type") == "dm_edited":
                 # Real-time notification when a DM is edited

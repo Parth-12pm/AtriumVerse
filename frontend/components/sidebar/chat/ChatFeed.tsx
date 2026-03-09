@@ -227,9 +227,15 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
         setMessages((prev) => [...prev, sentMsg]);
 
         // Scrub any sensitive plaintext before broadcasting over WS
-        const wsPayload = { ...sentMsg };
-        delete wsPayload.decryptedContent;
-        delete wsPayload.decryptionFailed;
+        // We only transmit a strict shell so devices know WHICH message to fetch
+        const wsPayload = {
+          id: sentMsg.id,
+          epoch: sentMsg.epoch,
+          sender_id: currentUserId,
+          receiver_id: dmUserId,
+          created_at: sentMsg.created_at,
+          is_encrypted: true,
+        };
 
         // Send DM notification via WebSocket
         EventBus.emit("dm:message_sent", {
