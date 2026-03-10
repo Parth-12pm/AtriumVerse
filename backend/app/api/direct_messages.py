@@ -304,7 +304,7 @@ async def send_direct_message(
             receiver_id=message_in.receiver_id,
             content=message_in.content,
             is_encrypted=message_in.is_encrypted,
-            epoch=dm_epoch.current_epoch if message_in.is_encrypted else 0,
+            epoch=dm_epoch.current_epoch if message_in.is_encrypted else None,
             sender_device_id=message_in.sender_device_id
         )
         db.add(new_message)
@@ -350,6 +350,22 @@ async def submit_device_keys(
     async with db.begin():
         # Insert all ciphertexts
         for ciphertext_obj in payload.device_ciphertexts:
+            # Validate each device_id belongs to the sender or receiver
+            dev_res = await db.execute(
+                select(Device).where(
+                    Device.id == ciphertext_obj.device_id,
+                    or_(
+                        Device.user_id == msg.sender_id,
+                        Device.user_id == msg.receiver_id,
+                    )
+                )
+            )
+            if not dev_res.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Device {ciphertext_obj.device_id} does not belong to sender or receiver"
+                )
+
             key_record = DmDeviceKey(
                 dm_id=message_id,
                 device_id=ciphertext_obj.device_id,

@@ -18,6 +18,10 @@ import EventBus, { GameEvents } from "@/game/EventBus";
 import { serversAPI } from "@/lib/services/api.service";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { useDevice } from "@/hooks/useDevice";
+import { DeviceLinkModal } from "@/components/auth/DeviceLinkModal";
+import { BackupSetup } from "@/components/auth/BackupSetup";
+import { RecoveryFlow } from "@/components/auth/RecoveryFlow";
 
 interface BaseSidebarProps {
   serverId: string;
@@ -37,6 +41,21 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
   const [currentZone, setCurrentZone] = useState("Hall");
   const [isServerOwner, setIsServerOwner] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+
+  const { deviceState, backupInfo, recoverDevice, pendingRequest } =
+    useDevice();
+  const [showBackupSetup, setShowBackupSetup] = useState(false);
+
+  // If device just registered as first device, force backup setup
+  useEffect(() => {
+    if (
+      deviceState === "trusted" &&
+      !localStorage.getItem("backup_configured_v1")
+    ) {
+      // Check if we just registered without a backup
+      setShowBackupSetup(true);
+    }
+  }, [deviceState]);
 
   // Fetch server data to determine ownership and pending requests
   useEffect(() => {
@@ -372,6 +391,52 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
                 </Button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* --- Auth / Device Modals --- */}
+
+      {/* 1. Linking Ceremony */}
+      {pendingRequest && (
+        <DeviceLinkModal
+          pendingRequest={pendingRequest}
+          isOpen={true}
+          onSuccess={() => window.location.reload()}
+          onReject={() => window.location.reload()}
+        />
+      )}
+
+      {/* 2. Recovery Prompt */}
+      {deviceState === "recovery_prompt" && (
+        <div className="fixed inset-0 z-[9999] bg-black bg-opacity-80 flex items-center justify-center p-4">
+          <div className="bg-zinc-950 border border-zinc-800 p-8 rounded-xl max-w-md w-full shadow-2xl">
+            <RecoveryFlow
+              backupInfo={backupInfo}
+              onRecovered={async (privateKey: CryptoKey) => {
+                await recoverDevice(privateKey);
+                localStorage.setItem("backup_configured_v1", "true"); // Avoid forcing backup setup again
+              }}
+              onCancel={() => {
+                // If they cancel recovery, they have to link as a new device
+                localStorage.removeItem("device_id");
+                window.location.reload();
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* 3. Mandatory Backup Setup (First Time) */}
+      {showBackupSetup && (
+        <div className="fixed inset-0 z-[9999] bg-black bg-opacity-90 flex items-center mt-20 p-4 justify-center">
+          <div className="bg-zinc-950 border border-zinc-800 p-8 rounded-xl max-w-md w-full shadow-2xl relative">
+            <BackupSetup
+              onComplete={() => {
+                localStorage.setItem("backup_configured_v1", "true");
+                setShowBackupSetup(false);
+              }}
+            />
           </div>
         </div>
       )}

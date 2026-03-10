@@ -181,13 +181,26 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
         try {
           if (!myDeviceId) throw new Error("No device id");
 
-          // Step 1: Fetch target devices
+          // Step 1: Fetch target devices with public keys
+          // Must use /devices/user/{id} (not /my-devices) — only that endpoint returns public_key
+          const myUserId = localStorage.getItem("user_id");
+          if (!myUserId) throw new Error("No user_id in localStorage");
+
           const [myDevicesRes, targetDevicesRes] = await Promise.all([
-            fetchAPI("/devices/my-devices"),
+            fetchAPI(`/devices/user/${myUserId}`),
             fetchAPI(`/devices/user/${dmUserId}`),
           ]);
 
-          const allTargetDevices = [...myDevicesRes, ...targetDevicesRes];
+          // Normalize: both endpoints return { device_id, public_key }
+          const normalize = (d: { device_id: string; public_key: string }) => ({
+            id: d.device_id,
+            public_key: d.public_key,
+          });
+
+          const allTargetDevices = [
+            ...myDevicesRes.map(normalize),
+            ...targetDevicesRes.map(normalize),
+          ];
           if (allTargetDevices.length === 0)
             throw new Error("No devices found for encryption");
 

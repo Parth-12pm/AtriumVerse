@@ -30,7 +30,7 @@ from webauthn.helpers.structs import (
     AuthenticationCredential,
     AuthenticatorAssertionResponse,
 )
-from webauthn.helpers.exceptions import InvalidCBORData, InvalidAuthenticatorResponse
+from webauthn.helpers.exceptions import InvalidCBORData, InvalidAuthenticationResponse
 
 from app.core.database import get_db
 from app.api.deps import get_current_user

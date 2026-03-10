@@ -21,6 +21,7 @@ from app.models.channel_encryption import ChannelEncryption
 from app.models.channel_device_key import ChannelDeviceKey
 from app.models.dm_device_key import DmDeviceKey
 from app.models.dm_epoch import DmEpoch
+from app.models.key_backup import KeyBackup
 
 config = context.config
 fileConfig(config.config_file_name)
