@@ -22,6 +22,7 @@ import { useDevice } from "@/hooks/useDevice";
 import { DeviceLinkModal } from "@/components/auth/DeviceLinkModal";
 import { BackupSetup } from "@/components/auth/BackupSetup";
 import { RecoveryFlow } from "@/components/auth/RecoveryFlow";
+import { clearLocalDeviceIdentity } from "@/lib/deviceIdentity";
 
 interface BaseSidebarProps {
   serverId: string;
@@ -112,7 +113,10 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
   // Emit ui:focus/ui:blur events for game input control
   useEffect(() => {
     const isModalActive =
-      !!pendingRequest || deviceState === "recovery_prompt" || showBackupSetup;
+      !!pendingRequest ||
+      deviceState === "recovery_prompt" ||
+      deviceState === "waiting_for_approval" ||
+      showBackupSetup;
 
     if (currentView !== "collapsed" || isModalActive) {
       // Tell game to disable input
@@ -411,9 +415,31 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
       )}
 
       {/* 2. Recovery Prompt */}
+      {deviceState === "waiting_for_approval" && (
+        <div className="fixed left-16 top-0 bottom-0 w-80 z-[100] bg-zinc-950/95 backdrop-blur-sm flex items-center justify-center p-4 border-r-4 border-black">
+          <div className="w-full rounded-lg border-4 border-black bg-white p-5 text-center space-y-3">
+            <h2 className="text-xl font-black">Approve This Browser</h2>
+            <p className="text-sm text-muted-foreground">
+              This browser has been registered as a new device but is not trusted yet.
+              Approve it from an existing trusted browser or recover from your backup.
+            </p>
+            <Button
+              variant="neutral"
+              onClick={async () => {
+                await clearLocalDeviceIdentity();
+                window.location.reload();
+              }}
+              className="w-full"
+            >
+              Start Over
+            </Button>
+          </div>
+        </div>
+      )}
+
       {deviceState === "recovery_prompt" && (
-        <div className="fixed inset-0 z-[9999] bg-black bg-opacity-80 flex items-center justify-center p-4">
-          <div className="bg-zinc-950 border border-zinc-800 p-8 rounded-xl max-w-md w-full shadow-2xl">
+        <div className="fixed left-16 top-0 bottom-0 w-80 z-[100] bg-zinc-950/95 backdrop-blur-sm flex items-center justify-center p-4 border-r-4 border-black">
+          <div className="w-full">
             <RecoveryFlow
               backupInfo={backupInfo}
               onRecovered={async (
@@ -423,9 +449,9 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
                 await recoverDevice(privateKey, publicKeyBase64);
                 localStorage.setItem("backup_configured_v1", "true"); // Avoid forcing backup setup again
               }}
-              onCancel={() => {
+              onCancel={async () => {
                 // If they cancel recovery, they have to link as a new device
-                localStorage.removeItem("device_id");
+                await clearLocalDeviceIdentity();
                 window.location.reload();
               }}
             />
@@ -435,8 +461,8 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
 
       {/* 3. Mandatory Backup Setup (First Time) */}
       {showBackupSetup && (
-        <div className="fixed inset-0 z-[9999] bg-black bg-opacity-90 flex items-center mt-20 p-4 justify-center">
-          <div className="bg-zinc-950 border border-zinc-800 p-8 rounded-xl max-w-md w-full shadow-2xl relative">
+        <div className="fixed left-16 top-0 bottom-0 w-80 z-[100] bg-zinc-950/95 backdrop-blur-sm flex items-center justify-center p-4 border-r-4 border-black">
+          <div className="w-full relative">
             <BackupSetup
               onComplete={() => {
                 localStorage.setItem("backup_configured_v1", "true");

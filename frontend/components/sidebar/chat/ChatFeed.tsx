@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Send, Edit2, Trash2, User, Hash } from "lucide-react";
@@ -13,6 +13,7 @@ import type { Message, DirectMessage } from "@/types/api.types";
 import { useDMKeys } from "@/hooks/useDMKeys";
 import { useChannelKeys } from "@/hooks/useChannelKeys";
 import { fetchAPI } from "@/lib/api";
+import { resolveTrustedLocalDevice } from "@/lib/trustedDevice";
 
 // Union type for messages that can be either channel messages or DMs
 type ChatMessage = Message | DirectMessage;
@@ -32,8 +33,6 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const currentUserId =
     typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
-  const myDeviceId =
-    typeof window !== "undefined" ? localStorage.getItem("device_id") : null;
 
   const { encryptDM, decryptDM } = useDMKeys();
   const { encryptForChannel, decryptForChannel } = useChannelKeys();
@@ -55,8 +54,15 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
                 msg.epoch,
                 msg.content,
               );
-            } catch {
-              msg.decryptionFailed = true;
+            } catch (err) {
+              if (
+                err instanceof Error &&
+                err.name === "ChannelKeyUnavailableError"
+              ) {
+                msg.device_key_status = "predates_channel_access";
+              } else {
+                msg.decryptionFailed = true;
+              }
             }
           }
           return msg;
@@ -71,9 +77,10 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
   }, [channelId, decryptForChannel]);
 
   const loadDMMessages = useCallback(async () => {
-    if (!dmUserId || !myDeviceId) return;
+    if (!dmUserId) return;
 
     try {
+      const { deviceId: myDeviceId } = await resolveTrustedLocalDevice();
       const response = await directMessagesAPI.getMessages(
         dmUserId,
         myDeviceId,
@@ -109,7 +116,7 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
       console.error("Failed to load DM messages:", error);
       toast.error("Failed to load messages");
     }
-  }, [dmUserId, myDeviceId, decryptDM]);
+  }, [dmUserId, decryptDM]);
 
   // Load messages when channel/DM changes
   useEffect(() => {
@@ -128,16 +135,31 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
 
   // Listen for real-time messages from WebSocket
   useEffect(() => {
-    const handleChannelMessage = (msg: ChatMessage) => {
+    const handleChannelMessage = async (msg: ChatMessage) => {
       if (!("channel_id" in msg)) return;
-      // Only add if for this channel and not from current user (already added locally)
-      if (msg.channel_id === channelId && msg.user_id !== currentUserId) {
-        setMessages((prev) => {
-          // Prevent duplicates
-          if (prev.some((m) => m.id === msg.id)) return prev;
-          return [...prev, msg];
-        });
+      if (msg.channel_id !== channelId || msg.user_id === currentUserId) return;
+
+      const hydratedMsg = { ...msg } as Message;
+      if (hydratedMsg.is_encrypted && hydratedMsg.content && hydratedMsg.epoch != null) {
+        try {
+          hydratedMsg.decryptedContent = await decryptForChannel(
+            channelId,
+            hydratedMsg.epoch,
+            hydratedMsg.content,
+          );
+        } catch (err) {
+          if (err instanceof Error && err.name === "ChannelKeyUnavailableError") {
+            hydratedMsg.device_key_status = "predates_channel_access";
+          } else {
+            hydratedMsg.decryptionFailed = true;
+          }
+        }
       }
+
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === hydratedMsg.id)) return prev;
+        return [...prev, hydratedMsg];
+      });
     };
 
     const handleDMReceived = (msg: ChatMessage) => {
@@ -177,7 +199,7 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
         EventBus.off("dm:deleted", handleDMDeleted);
       };
     }
-  }, [mode, channelId, dmUserId, currentUserId]);
+  }, [mode, channelId, currentUserId, decryptForChannel, dmUserId, loadDMMessages]);
 
   const sendMessage = async () => {
     if (!newMessage.trim()) return;
@@ -189,14 +211,15 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
         let isEncrypted = false;
         let epoch: number | undefined;
 
-        // Attempt E2EE encryption; fall back to plaintext gracefully
         try {
           const encrypted = await encryptForChannel(channelId, content);
           content = encrypted.ciphertext;
           epoch = encrypted.epoch;
           isEncrypted = true;
-        } catch {
-          // Channel not encrypted or key unavailable — send plaintext
+        } catch (err) {
+          if (!(err instanceof Error) || err.name !== "ChannelEncryptionDisabledError") {
+            throw err;
+          }
         }
 
         const response = await messagesAPI.send(channelId, {
@@ -218,66 +241,56 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
           channel_id: channelId,
         });
       } else if (mode === "dm" && dmUserId) {
-        let sentMsg: DirectMessage;
+        const { deviceId: myDeviceId } = await resolveTrustedLocalDevice();
 
-        try {
-          if (!myDeviceId) throw new Error("No device id");
+        // Step 1: Fetch target devices with public keys
+        // Must use /devices/user/{id} (not /my-devices) because only that endpoint returns public_key
+        const myUserId = localStorage.getItem("user_id");
+        if (!myUserId) throw new Error("No user_id in localStorage");
 
-          // Step 1: Fetch target devices with public keys
-          // Must use /devices/user/{id} (not /my-devices) — only that endpoint returns public_key
-          const myUserId = localStorage.getItem("user_id");
-          if (!myUserId) throw new Error("No user_id in localStorage");
+        const [myDevicesRes, targetDevicesRes] = await Promise.all([
+          fetchAPI(`/devices/user/${myUserId}`),
+          fetchAPI(`/devices/user/${dmUserId}`),
+        ]);
 
-          const [myDevicesRes, targetDevicesRes] = await Promise.all([
-            fetchAPI(`/devices/user/${myUserId}`),
-            fetchAPI(`/devices/user/${dmUserId}`),
-          ]);
+        // Normalize: both endpoints return { device_id, public_key }
+        const normalize = (d: { device_id: string; public_key: string }) => ({
+          id: d.device_id,
+          public_key: d.public_key,
+        });
 
-          // Normalize: both endpoints return { device_id, public_key }
-          const normalize = (d: { device_id: string; public_key: string }) => ({
-            id: d.device_id,
-            public_key: d.public_key,
-          });
-
-          const allTargetDevices = [
-            ...myDevicesRes.map(normalize),
-            ...targetDevicesRes.map(normalize),
-          ];
-          if (allTargetDevices.length === 0)
-            throw new Error("No devices found for encryption");
-
-          // Step 2: Send placeholder
-          const step1Response = await directMessagesAPI.send({
-            receiver_id: dmUserId,
-            content: "[encrypted]",
-            is_encrypted: true,
-            sender_device_id: myDeviceId,
-          });
-
-          sentMsg = step1Response.data;
-
-          // Step 3: Encrypt for all target devices
-          const ciphertexts = await encryptDM(
-            sentMsg.id,
-            sentMsg.epoch!,
-            newMessage.trim(),
-            allTargetDevices,
-          );
-
-          // Step 4: Submit keys
-          await directMessagesAPI.submitDeviceKeys(sentMsg.id, ciphertexts);
-
-          // Hydrate sent message locally
-          sentMsg.decryptedContent = newMessage.trim();
-          sentMsg.is_encrypted = true;
-        } catch (err) {
-          console.error("Falling back to plaintext DM:", err);
-          const response = await directMessagesAPI.send({
-            receiver_id: dmUserId,
-            content: newMessage.trim(),
-          });
-          sentMsg = response.data;
+        const allTargetDevices = [
+          ...myDevicesRes.map(normalize),
+          ...targetDevicesRes.map(normalize),
+        ];
+        if (allTargetDevices.length === 0) {
+          throw new Error("No devices found for DM encryption");
         }
+
+        // Step 2: Send placeholder
+        const step1Response = await directMessagesAPI.send({
+          receiver_id: dmUserId,
+          content: "[encrypted]",
+          is_encrypted: true,
+          sender_device_id: myDeviceId,
+        });
+
+        const sentMsg: DirectMessage = step1Response.data;
+
+        // Step 3: Encrypt for all target devices
+        const ciphertexts = await encryptDM(
+          sentMsg.id,
+          sentMsg.epoch!,
+          newMessage.trim(),
+          allTargetDevices,
+        );
+
+        // Step 4: Submit keys
+        await directMessagesAPI.submitDeviceKeys(sentMsg.id, ciphertexts);
+
+        // Hydrate sent message locally
+        sentMsg.decryptedContent = newMessage.trim();
+        sentMsg.is_encrypted = true;
 
         setMessages((prev) => [...prev, sentMsg]);
 
@@ -300,9 +313,9 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
       }
 
       setNewMessage("");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to send message:", error);
-      toast.error("Failed to send message");
+      toast.error(error?.message || "Failed to send message");
     } finally {
       setLoading(false);
     }
@@ -473,11 +486,19 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
                         className={`inline-block px-4 py-2 rounded-2xl flex items-center justify-between min-w-[60px] gap-2 ${isOwnMessage ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}
                       >
                         <p className="text-sm break-words whitespace-pre-wrap">
-                          {"decryptedContent" in msg && msg.is_encrypted
-                            ? msg.decryptedContent ||
-                              (msg.decryptionFailed
-                                ? "🔒 [Decryption Failed]"
-                                : "🔒 [Encrypted]")
+                          {msg.is_encrypted
+                            ? "decryptedContent" in msg && msg.decryptedContent
+                              ? msg.decryptedContent
+                              : msg.decryptionFailed
+                                ? "ðŸ”’ [Decryption Failed]"
+                                : msg.device_key_status === "predates_device"
+                                  ? "[Sent before this device was linked]"
+                                  : msg.device_key_status === "device_removed"
+                                    ? "[Encrypted for a removed device]"
+                                    : msg.device_key_status ===
+                                        "predates_channel_access"
+                                      ? "[Sent before you had access to this channel]"
+                                      : "[Encrypted]"
                             : msg.content}
                         </p>
                       </div>
@@ -544,3 +565,7 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
     </div>
   );
 }
+
+
+
+

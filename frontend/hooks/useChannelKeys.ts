@@ -1,22 +1,44 @@
-"use client";
+﻿"use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
-  deriveSharedSecret,
-  deriveKey,
-  encryptBytes,
   decryptBytes,
-  importPrivateKeyFromBytes,
+  deriveKey,
+  deriveSharedSecret,
+  encryptBytes,
 } from "@/lib/crypto";
-import { getPrivateKey } from "@/lib/keyStore";
+import { resolveTrustedLocalDevice } from "@/lib/trustedDevice";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+type ChannelKeyResponse = {
+  epoch: number;
+  encrypted_channel_key: string;
+  owner_device_public_key: string;
+};
+
+export class ChannelKeyUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ChannelKeyUnavailableError";
+  }
+}
+
+export class ChannelEncryptionDisabledError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ChannelEncryptionDisabledError";
+  }
+}
+
+function makeCacheKey(channelId: string, epoch: number) {
+  return `${channelId}:${epoch}`;
+}
+
 export function useChannelKeys() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  // In-memory strictly: channelId -> ArrayBuffer (raw key bytes)
   const channelKeysRef = useRef<Map<string, ArrayBuffer>>(new Map());
+  const entitledEpochsLoadedRef = useRef<Set<string>>(new Set());
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem("token");
@@ -26,147 +48,169 @@ export function useChannelKeys() {
     };
   };
 
-  /**
-   * 1. Fetch encrypted channel_key from server.
-   * 2. Load permanent private_key from IndexedDB.
-   * 3. ECDH shared secret with owner_device_public_key.
-   * 4. Decrypt channel_key into memory map.
-   */
-  const fetchAndDeriveChannelKey = useCallback(async (channelId: string) => {
-    try {
-      const deviceId = localStorage.getItem("device_id");
-      if (!deviceId) throw new Error("No device ID found in localStorage.");
-
-      // Check if we already have it in memory
-      if (channelKeysRef.current.has(channelId)) {
-        return channelKeysRef.current.get(channelId);
-      }
-
-      const res = await fetch(
-        `${API_URL}/channel-keys/${channelId}/my-key?device_id=${deviceId}`,
-        { headers: getAuthHeaders() },
-      );
-
-      if (!res.ok) {
-        if (res.status === 404 || res.status === 403) return null; // Expected if user removed or E2EE off
-        throw new Error("Failed to fetch channel key");
-      }
-
-      const { encrypted_channel_key, owner_device_public_key } =
-        await res.json();
-
-      // ECDH Handshake to unwrap
-      const myPrivateKey = await getPrivateKey(deviceId);
-      if (!myPrivateKey)
-        throw new Error(
-          "Missing private key in IndexedDB for channel decrytion",
-        );
+  const decryptChannelKeyBlob = useCallback(
+    async (channelId: string, payload: ChannelKeyResponse) => {
+      const { privateKey: myPrivateKey } = await resolveTrustedLocalDevice();
 
       const sharedSecret = await deriveSharedSecret(
         myPrivateKey,
-        owner_device_public_key,
+        payload.owner_device_public_key,
       );
-
       const wrapKey = await deriveKey(sharedSecret, channelId, "channel-key");
-
-      // Decrypt the raw channel_key blob
       const channelKeyBytes = await decryptBytes(
         wrapKey,
-        encrypted_channel_key,
+        payload.encrypted_channel_key,
       );
 
-      // Store in memory ONLY
-      channelKeysRef.current.set(channelId, channelKeyBytes);
+      channelKeysRef.current.set(
+        makeCacheKey(channelId, payload.epoch),
+        channelKeyBytes,
+      );
       return channelKeyBytes;
-    } catch (err: any) {
-      console.error(
-        `[useChannelKeys] Error fetching key for ${channelId}:`,
-        err,
-      );
-      setErrorMsg(err.message);
-      return null;
-    }
-  }, []);
-
-  /**
-   * Derives a temporary AES-GCM CryptoKey for a specific epoch on the fly.
-   */
-  const getEpochKey = useCallback(
-    async (channelId: string, epoch: number): Promise<CryptoKey> => {
-      let keyBytes = channelKeysRef.current.get(channelId);
-
-      if (!keyBytes) {
-        // Try to fetch it natively if it isn't in memory
-        keyBytes = await fetchAndDeriveChannelKey(channelId);
-        if (!keyBytes)
-          throw new Error(`Channel key not available for ${channelId}`);
-      }
-
-      // HKDF derive epoch key from channel key bytes
-      return deriveKey(keyBytes, channelId, `epoch:${epoch}`);
     },
-    [fetchAndDeriveChannelKey],
+    [],
   );
 
-  /**
-   * Encrypts a plaintext message for the specified channel.
-   * Fetches the current epoch via the my-key endpoint.
-   */
-  const encryptForChannel = useCallback(
-    async (channelId: string, plaintext: string) => {
+  const fetchCurrentChannelKey = useCallback(
+    async (channelId: string) => {
       try {
-        const deviceId = localStorage.getItem("device_id");
-        if (!deviceId) throw new Error("No device ID");
+        const { deviceId } = await resolveTrustedLocalDevice();
 
-        // 1. We must know the *current* epoch to encrypt a new message.
-        // Easiest reliable way is to ensure we have my-key fetched which returns epoch.
-        // For production, this should be cached locally to avoid roundtrips per message.
         const res = await fetch(
           `${API_URL}/channel-keys/${channelId}/my-key?device_id=${deviceId}`,
           { headers: getAuthHeaders() },
         );
-        if (!res.ok)
-          throw new Error("Channel encryption not active or inaccessible");
-        const { epoch } = await res.json();
 
-        // 2. Derive that specific epoch's key
-        const epochKey = await getEpochKey(channelId, epoch);
+        if (!res.ok) {
+          if (res.status === 404) {
+            throw new ChannelEncryptionDisabledError(
+              `Channel encryption is not enabled for ${channelId}`,
+            );
+          }
+          if (res.status === 403) {
+            throw new ChannelKeyUnavailableError(
+              `Channel key not available for ${channelId}`,
+            );
+          }
+          throw new Error("Failed to fetch current channel key");
+        }
 
-        // 3. Encrypt!
-        // We use the string encrypt generator here because messages are valid strings
-        const encodedData = new TextEncoder().encode(plaintext);
-        const ciphertext = await encryptBytes(epochKey, encodedData);
+        const payload = (await res.json()) as ChannelKeyResponse;
+        const cacheKey = makeCacheKey(channelId, payload.epoch);
+        const cached = channelKeysRef.current.get(cacheKey);
+        if (cached) {
+          return { keyBytes: cached, epoch: payload.epoch };
+        }
 
-        return { ciphertext, epoch };
+        const keyBytes = await decryptChannelKeyBlob(channelId, payload);
+        return { keyBytes, epoch: payload.epoch };
       } catch (err: any) {
-        console.error("Encryption failed:", err);
+        setErrorMsg(err.message || "Failed to fetch current channel key");
         throw err;
       }
     },
-    [getEpochKey],
+    [decryptChannelKeyBlob],
   );
 
-  /**
-   * Reconstructs the chain to decrypt a historical message.
-   */
+  const fetchEntitledChannelKeys = useCallback(
+    async (channelId: string) => {
+      try {
+        const { deviceId } = await resolveTrustedLocalDevice();
+
+        const res = await fetch(
+          `${API_URL}/channel-keys/${channelId}/entitled-epochs?device_id=${deviceId}`,
+          { headers: getAuthHeaders() },
+        );
+
+        if (!res.ok) {
+          if (res.status === 404 || res.status === 403) {
+            return false;
+          }
+          throw new Error("Failed to fetch entitled channel epochs");
+        }
+
+        const payloads = (await res.json()) as ChannelKeyResponse[];
+        for (const payload of payloads) {
+          const cacheKey = makeCacheKey(channelId, payload.epoch);
+          if (!channelKeysRef.current.has(cacheKey)) {
+            await decryptChannelKeyBlob(channelId, payload);
+          }
+        }
+
+        entitledEpochsLoadedRef.current.add(channelId);
+        return true;
+      } catch (err: any) {
+        setErrorMsg(err.message || "Failed to fetch entitled channel epochs");
+        return false;
+      }
+    },
+    [decryptChannelKeyBlob],
+  );
+
+  const getEpochKey = useCallback(
+    async (channelId: string, epoch: number): Promise<CryptoKey> => {
+      const cached = channelKeysRef.current.get(makeCacheKey(channelId, epoch));
+      if (cached) {
+        return deriveKey(cached, channelId, `epoch:${epoch}`);
+      }
+
+      if (!entitledEpochsLoadedRef.current.has(channelId)) {
+        await fetchEntitledChannelKeys(channelId);
+      }
+
+      const entitledKey = channelKeysRef.current.get(makeCacheKey(channelId, epoch));
+      if (entitledKey) {
+        return deriveKey(entitledKey, channelId, `epoch:${epoch}`);
+      }
+
+      try {
+        const currentKey = await fetchCurrentChannelKey(channelId);
+        if (currentKey.epoch === epoch) {
+          return deriveKey(currentKey.keyBytes, channelId, `epoch:${epoch}`);
+        }
+      } catch (err) {
+        if (err instanceof ChannelEncryptionDisabledError) {
+          throw err;
+        }
+      }
+
+      throw new ChannelKeyUnavailableError(
+        `Channel key not available for ${channelId} at epoch ${epoch}`,
+      );
+    },
+    [fetchCurrentChannelKey, fetchEntitledChannelKeys],
+  );
+
+  const encryptForChannel = useCallback(
+    async (channelId: string, plaintext: string) => {
+      const current = await fetchCurrentChannelKey(channelId);
+      const epochKey = await deriveKey(
+        current.keyBytes,
+        channelId,
+        `epoch:${current.epoch}`,
+      );
+      const encodedData = new TextEncoder().encode(plaintext);
+      const ciphertext = await encryptBytes(epochKey, encodedData);
+      return { ciphertext, epoch: current.epoch };
+    },
+    [fetchCurrentChannelKey],
+  );
+
   const decryptForChannel = useCallback(
-    async (
-      channelId: string,
-      epoch: number,
-      ciphertext: string,
-    ): Promise<string> => {
+    async (channelId: string, epoch: number, ciphertext: string): Promise<string> => {
       try {
         const epochKey = await getEpochKey(channelId, epoch);
         const rawPlaintextBytes = await decryptBytes(epochKey, ciphertext);
         return new TextDecoder().decode(rawPlaintextBytes);
       } catch (err) {
-        console.error(
-          `[Decrypt error msg=${ciphertext.substring(0, 10)}...]`,
-          err,
-        );
-        throw new Error(
-          "Message could not be decrypted (integrity check failed)",
-        );
+        if (
+          err instanceof ChannelKeyUnavailableError ||
+          err instanceof ChannelEncryptionDisabledError
+        ) {
+          throw err;
+        }
+        console.error(`[Decrypt error msg=${ciphertext.substring(0, 10)}...]`, err);
+        throw new Error("Message could not be decrypted (integrity check failed)");
       }
     },
     [getEpochKey],
@@ -174,7 +218,7 @@ export function useChannelKeys() {
 
   return {
     errorMsg,
-    fetchAndDeriveChannelKey,
+    fetchCurrentChannelKey,
     encryptForChannel,
     decryptForChannel,
   };

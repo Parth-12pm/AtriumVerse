@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   encryptMessage,
@@ -11,17 +11,13 @@ import {
 
 import { fetchAPI } from "./api";
 
-// Use a simple base64/bytes conversion for the exported raw private key bytes
 function bytesToBase64url(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   let binary = "";
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
-  return btoa(binary)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 function base64urlToBytes(base64url: string): ArrayBuffer {
@@ -37,7 +33,18 @@ function base64urlToBytes(base64url: string): ArrayBuffer {
   return bytes.buffer;
 }
 
-// --- API Calls ---
+function serializeRegistrationCredential(credential: PublicKeyCredential) {
+  const response = credential.response as AuthenticatorAttestationResponse;
+  return {
+    id: credential.id,
+    rawId: bufferToBase64url(credential.rawId),
+    response: {
+      clientDataJSON: bufferToBase64url(response.clientDataJSON),
+      attestationObject: bufferToBase64url(response.attestationObject),
+    },
+    type: credential.type,
+  };
+}
 
 export async function fetchKeyBackup() {
   try {
@@ -49,10 +56,17 @@ export async function fetchKeyBackup() {
   }
 }
 
+async function fetchKeyBackupChallenge(): Promise<string> {
+  const res = await fetchAPI("/account/key-backup/challenge", { method: "GET" });
+  return res.challenge as string;
+}
+
 export async function postKeyBackup(data: {
   encrypted_blob: string;
   backup_method: "prf" | "passphrase";
   prf_credential_id?: string;
+  prf_registration_credential?: Record<string, unknown>;
+  prf_registration_challenge?: string;
   salt?: string;
 }) {
   return fetchAPI("/account/key-backup", {
@@ -60,8 +74,6 @@ export async function postKeyBackup(data: {
     body: JSON.stringify(data),
   });
 }
-
-// --- PRF Path (Primary) ---
 
 const PRF_CONTEXT_STRING = "atriumverse-key-backup-v1";
 const RP_ID = process.env.NEXT_PUBLIC_WEBAUTHN_RP_ID || "localhost";
@@ -72,23 +84,25 @@ export async function createBackupViaPRF(
   privateKey: CryptoKey,
   publicKeyBase64: string,
 ) {
-  // 1. Generate local challenge for PRF authentication
-  const challenge = window.crypto.getRandomValues(new Uint8Array(32));
+  const registrationChallenge = await fetchKeyBackupChallenge();
+  const registrationChallengeBuffer = base64urlToBuffer(registrationChallenge);
 
-  // 2. Create Passkey requesting PRF
   const credential = (await navigator.credentials.create({
     publicKey: {
-      challenge,
+      challenge: registrationChallengeBuffer,
       rp: { id: RP_ID, name: "AtriumVerse" },
       user: {
         id: new TextEncoder().encode(userId),
         name: username,
         displayName: username,
       },
-      pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+      pubKeyCredParams: [
+        { type: "public-key", alg: -7 },
+        { type: "public-key", alg: -257 },
+      ],
       authenticatorSelection: {
         userVerification: "required",
-        residentKey: "required", // Passkey
+        residentKey: "required",
       },
       extensions: {
         prf: {
@@ -100,17 +114,15 @@ export async function createBackupViaPRF(
     },
   })) as PublicKeyCredential;
 
-  // 3. Check PRF support
-  const prfSupported = (credential.getClientExtensionResults() as any)?.prf
-    ?.enabled;
+  const prfSupported = (credential.getClientExtensionResults() as any)?.prf?.enabled;
   if (!prfSupported) {
     return { supported: false };
   }
 
-  // 4. Authenticate to get PRF output
+  const prfChallenge = window.crypto.getRandomValues(new Uint8Array(32));
   const assertion = (await navigator.credentials.get({
     publicKey: {
-      challenge,
+      challenge: prfChallenge,
       rpId: RP_ID,
       allowCredentials: [{ id: credential.rawId, type: "public-key" }],
       userVerification: "required",
@@ -124,13 +136,11 @@ export async function createBackupViaPRF(
     },
   })) as PublicKeyCredential;
 
-  const prfOutput = (assertion.getClientExtensionResults() as any)?.prf?.results
-    ?.first;
+  const prfOutput = (assertion.getClientExtensionResults() as any)?.prf?.results?.first;
   if (!prfOutput) {
     return { supported: false };
   }
 
-  // 5. Encrypt Private Key + Public Key together
   const privateKeyBytes = await exportKeyAsBytes(privateKey);
   const prfKey = await crypto.subtle.importKey(
     "raw",
@@ -145,11 +155,12 @@ export async function createBackupViaPRF(
   });
   const encryptedBlob = await encryptMessage(prfKey, blobPayload);
 
-  // 6. Save Backup
   await postKeyBackup({
     encrypted_blob: encryptedBlob,
     backup_method: "prf",
     prf_credential_id: bufferToBase64url(credential.rawId),
+    prf_registration_credential: serializeRegistrationCredential(credential),
+    prf_registration_challenge: registrationChallenge,
   });
 
   return { supported: true };
@@ -159,10 +170,8 @@ export async function recoverViaWebAuthn(
   backupBlob: string,
   prfCredentialIdBase64: string,
 ) {
-  // 1. Generate local challenge
   const challenge = window.crypto.getRandomValues(new Uint8Array(32));
 
-  // 2. Authenticate
   const assertion = (await navigator.credentials.get({
     publicKey: {
       challenge,
@@ -181,14 +190,11 @@ export async function recoverViaWebAuthn(
     },
   })) as PublicKeyCredential;
 
-  // 3. Check PRF output
-  const prfOutput = (assertion.getClientExtensionResults() as any)?.prf?.results
-    ?.first;
+  const prfOutput = (assertion.getClientExtensionResults() as any)?.prf?.results?.first;
   if (!prfOutput) {
     throw new Error("PRF not supported on this device/authenticator");
   }
 
-  // 4. Decrypt Private Key + Public Key
   const prfKey = await crypto.subtle.importKey(
     "raw",
     prfOutput,
@@ -198,23 +204,19 @@ export async function recoverViaWebAuthn(
   );
   const blobPayloadStr = await decryptMessage(prfKey, backupBlob);
   let privateKeyBase64url: string;
-  let publicKeyBase64: string = "";
+  let publicKeyBase64 = "";
   try {
     const parsed = JSON.parse(blobPayloadStr);
     privateKeyBase64url = parsed.privateKey;
     publicKeyBase64 = parsed.publicKey || "";
   } catch {
-    // Legacy format: blob was just the raw private key base64url
     privateKeyBase64url = blobPayloadStr;
   }
   const privateKeyBytes = base64urlToBytes(privateKeyBase64url);
 
-  // 5. Import Key
   const privateKey = await importPrivateKeyFromBytes(privateKeyBytes);
   return { privateKey, publicKeyBase64 };
 }
-
-// --- Passphrase Path (Fallback) ---
 
 export async function createBackupViaPassphrase(
   privateKey: CryptoKey,
@@ -280,13 +282,12 @@ export async function recoverViaPassphrase(
 
   const blobPayloadStr = await decryptMessage(backupKey, backupBlob);
   let privateKeyBase64url: string;
-  let publicKeyBase64: string = "";
+  let publicKeyBase64 = "";
   try {
     const parsed = JSON.parse(blobPayloadStr);
     privateKeyBase64url = parsed.privateKey;
     publicKeyBase64 = parsed.publicKey || "";
   } catch {
-    // Legacy format: blob was just the raw private key base64url
     privateKeyBase64url = blobPayloadStr;
   }
   const privateKeyBytes = base64urlToBytes(privateKeyBase64url);
@@ -296,8 +297,6 @@ export async function recoverViaPassphrase(
     publicKeyBase64,
   };
 }
-
-// --- Recovery Code (Last Resort Fallback) ---
 
 const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
@@ -321,7 +320,7 @@ function bytesToBase32(bytes: Uint8Array): string {
 }
 
 export function generateRecoveryCode(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(20)); // 160 bits
+  const bytes = crypto.getRandomValues(new Uint8Array(20));
   const base32 = bytesToBase32(bytes);
   return (base32.match(/.{1,4}/g) || []).join("-");
 }
@@ -349,3 +348,4 @@ export async function deriveKeyFromRecoveryCode(code: string, userId: string) {
     ["encrypt", "decrypt"],
   );
 }
+

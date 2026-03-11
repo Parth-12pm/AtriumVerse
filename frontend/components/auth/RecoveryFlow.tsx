@@ -1,10 +1,10 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
+import { Fingerprint, Lock, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { recoverViaWebAuthn, recoverViaPassphrase } from "@/lib/keyBackup";
-import { ShieldAlert, KeyRound, Fingerprint, Lock } from "lucide-react";
+import { recoverViaPassphrase, recoverViaWebAuthn } from "@/lib/keyBackup";
 
 export function RecoveryFlow({
   backupInfo,
@@ -15,16 +15,13 @@ export function RecoveryFlow({
   onRecovered: (privateKey: CryptoKey, publicKeyBase64: string) => void;
   onCancel: () => void;
 }) {
-  const [method, setMethod] = useState<"choose" | "prf" | "passphrase">(
-    "choose",
+  const hasPrf = backupInfo?.backup_method === "prf";
+  const [method, setMethod] = useState<"choose" | "passphrase">(
+    hasPrf ? "choose" : "passphrase",
   );
   const [passphrase, setPassphrase] = useState("");
-  const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-
-  // If the server says PRF was used, offer it. Otherwise skip to passphrase.
-  const hasPrf = backupInfo?.backup_method === "prf";
 
   const handlePrfRecovery = async () => {
     setError(null);
@@ -53,7 +50,7 @@ export function RecoveryFlow({
         passphrase,
       );
       onRecovered(privateKey, publicKeyBase64);
-    } catch (err: any) {
+    } catch {
       setError("Incorrect backup passphrase. Please try again.");
     } finally {
       setIsLoading(false);
@@ -72,37 +69,14 @@ export function RecoveryFlow({
           </p>
         </div>
 
-        {hasPrf && (
-          <Button
-            onClick={handlePrfRecovery}
-            disabled={isLoading}
-            className="w-full h-12 flex items-center justify-center gap-2"
-          >
-            <Fingerprint className="w-5 h-5" />
-            Recover with Face ID / Windows Hello
-          </Button>
-        )}
-
-        {backupInfo?.backup_method === "passphrase" && (
-          <Button
-            onClick={() => setMethod("passphrase")}
-            variant="noShadow"
-            className="w-full h-12"
-          >
-            <Lock className="w-5 h-5 mr-2" />
-            Recover with Passphrase
-          </Button>
-        )}
-
-        {hasPrf && (
-          <Button
-            onClick={() => setMethod("passphrase")}
-            variant="neutral"
-            className="w-full text-zinc-400"
-          >
-            Passkey not working? Try Passphrase
-          </Button>
-        )}
+        <Button
+          onClick={handlePrfRecovery}
+          disabled={isLoading}
+          className="w-full h-12 flex items-center justify-center gap-2"
+        >
+          <Fingerprint className="w-5 h-5" />
+          Recover with Face ID / Windows Hello
+        </Button>
 
         {error && <p className="text-red-500 text-sm text-center">{error}</p>}
 
@@ -113,37 +87,32 @@ export function RecoveryFlow({
     );
   }
 
-  if (method === "passphrase") {
-    return (
-      <form
-        onSubmit={handlePassphraseRecovery}
-        onKeyDown={(e) => e.stopPropagation()}
-        className="flex flex-col space-y-4"
-      >
-        <h2 className="text-xl font-bold text-center">
-          Enter Backup Passphrase
-        </h2>
-        <Input
-          type="password"
-          placeholder="Your Backup Passphrase"
-          value={passphrase}
-          onChange={(e) => setPassphrase(e.target.value)}
-          required
-        />
-        {error && <p className="text-red-500 text-sm">{error}</p>}
-        <div className="flex justify-between mt-4">
-          <Button
-            type="button"
-            variant="noShadow"
-            onClick={() => setMethod("choose")}
-          >
-            Back
-          </Button>
-          <Button type="submit" disabled={isLoading || !passphrase}>
-            Recover
-          </Button>
-        </div>
-      </form>
-    );
-  }
+  return (
+    <form
+      onSubmit={handlePassphraseRecovery}
+      onKeyDown={(e) => e.stopPropagation()}
+      className="flex flex-col space-y-4"
+    >
+      <div className="text-center">
+        <Lock className="w-12 h-12 mx-auto text-zinc-400 mb-2" />
+        <h2 className="text-xl font-bold">Enter Backup Passphrase</h2>
+      </div>
+      <Input
+        type="password"
+        placeholder="Your Backup Passphrase"
+        value={passphrase}
+        onChange={(e) => setPassphrase(e.target.value)}
+        required
+      />
+      {error && <p className="text-red-500 text-sm">{error}</p>}
+      <div className="flex justify-between mt-4">
+        <Button type="button" variant="noShadow" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={isLoading || !passphrase}>
+          Recover
+        </Button>
+      </div>
+    </form>
+  );
 }

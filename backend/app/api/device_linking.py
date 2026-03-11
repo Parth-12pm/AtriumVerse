@@ -12,7 +12,6 @@ From the new device's perspective both paths are identical — it always polls.
 """
 
 import os
-import json
 import secrets
 import base64
 from datetime import datetime, timedelta, timezone
@@ -26,11 +25,6 @@ from sqlalchemy.future import select
 from sqlalchemy import update, or_
 
 import webauthn
-from webauthn.helpers.structs import (
-    AuthenticationCredential,
-    AuthenticatorAssertionResponse,
-)
-from webauthn.helpers.exceptions import InvalidCBORData, InvalidAuthenticationResponse
 
 from app.core.database import get_db
 from app.api.deps import get_current_user
@@ -38,6 +32,7 @@ from app.models.user import User
 from app.models.device import Device
 from app.models.device_link_request import DeviceLinkRequest
 from app.models.dm_epoch import DmEpoch
+from app.models.key_backup import KeyBackup
 from app.core.redis_client import r
 from app.core.socket_manager import manager
 
@@ -66,6 +61,7 @@ class LinkRequestResponse(BaseModel):
 
 class PendingRequestResponse(BaseModel):
     request_id: UUID
+    new_device_id: UUID
     new_device_label: Optional[str]
     temp_public_key: str
     expires_at: datetime
@@ -76,11 +72,14 @@ class StatusResponse(BaseModel):
     status: str
     encrypted_private_key: Optional[str] = None
     approved_by_device_public_key: Optional[str] = None
+    permanent_public_key: Optional[str] = None
 
 
 class ApproveBody(BaseModel):
+    approving_device_id: UUID
     webauthn_assertion: dict   # raw assertion JSON from navigator.credentials.get()
     encrypted_private_key: str  # base64(IV + AES-GCM ciphertext of user's private key)
+    permanent_public_key: str  # the approving trusted device's permanent public key to apply to the new device
 
 
 class ChallengeResponse(BaseModel):
@@ -95,6 +94,11 @@ def _now_utc() -> datetime:
 
 def _redis_challenge_key(request_id: UUID) -> str:
     return f"webauthn_challenge:{request_id}"
+
+
+def _base64url_to_bytes(value: str) -> bytes:
+    padding = "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode(value + padding)
 
 
 # ── GET /device-linking/challenge ────────────────────────────────────────────
@@ -213,8 +217,10 @@ async def create_link_request(
     ws_payload = {
         "type": "device_link_request",
         "request_id": str(link_request.id),
+        "new_device_id": str(link_request.new_device_id),
         "new_device_label": body.device_label,
         "temp_public_key": body.temp_public_key,
+        "expires_at": expires_at.isoformat(),
     }
     user_id_str = str(current_user.id)
     for server_id, connections in manager.active_connections.items():
@@ -250,20 +256,19 @@ async def get_pending_requests(
     """
     now = _now_utc()
 
-    # Find the current device for this user (approving device) to get its credential_id.
-    # We look up by user_id since the device is identified by the JWT session.
-    result = await db.execute(
-        select(Device).where(
-            Device.user_id == current_user.id,
-            Device.is_trusted == True,
+    # Device-link approval is bound to the verified PRF credential we stored during
+    # backup setup. That gives the browser an allowCredentials target and gives the
+    # server the credential public key/sign-count needed for py_webauthn verification.
+    backup_result = await db.execute(
+        select(KeyBackup).where(
+            KeyBackup.user_id == current_user.id,
+            KeyBackup.backup_method == "prf",
+            KeyBackup.prf_credential_id != None,
+            KeyBackup.prf_credential_public_key != None,
         )
     )
-    approving_devices = result.scalars().all()
-    # Take the most recently created trusted device's credential_id as the approver
-    webauthn_credential_id = None
-    if approving_devices:
-        latest = max(approving_devices, key=lambda d: d.created_at or datetime.min)
-        webauthn_credential_id = latest.webauthn_credential_id
+    key_backup = backup_result.scalars().first()
+    webauthn_credential_id = key_backup.prf_credential_id if key_backup else None
 
     result = await db.execute(
         select(DeviceLinkRequest).where(
@@ -277,6 +282,7 @@ async def get_pending_requests(
     return [
         PendingRequestResponse(
             request_id=req.id,
+            new_device_id=req.new_device_id,
             new_device_label=req.new_device_label,
             temp_public_key=req.temp_public_key,
             expires_at=req.expires_at,
@@ -319,10 +325,19 @@ async def get_request_status(
         if approving_device:
             approving_device_pubkey = approving_device.public_key
 
+    new_device_public_key = None
+    result = await db.execute(
+        select(Device).where(Device.id == link_request.new_device_id)
+    )
+    new_device = result.scalars().first()
+    if new_device:
+        new_device_public_key = new_device.public_key
+
     return StatusResponse(
         status=link_request.status,
         encrypted_private_key=link_request.encrypted_private_key,
         approved_by_device_public_key=approving_device_pubkey,
+        permanent_public_key=new_device_public_key,
     )
 
 
@@ -379,17 +394,41 @@ async def approve_link_request(
     # This is what stops the attacker from approving on behalf of the victim.
     result = await db.execute(
         select(Device).where(
+            Device.id == body.approving_device_id,
             Device.user_id == current_user.id,
             Device.is_trusted == True,
-            Device.webauthn_credential_id != None,
-        ).limit(1)
+            Device.deleted_at == None,
+        )
     )
     approving_device = result.scalars().first()
 
     if not approving_device:
         raise HTTPException(
             status_code=403,
-            detail="No trusted device with WebAuthn credential found for your account",
+            detail="Approving device is not a trusted active device on your account",
+        )
+
+    if approving_device.public_key != body.permanent_public_key:
+        raise HTTPException(
+            status_code=400,
+            detail="Permanent public key does not match the approving trusted device",
+        )
+
+    result = await db.execute(
+        select(KeyBackup).where(
+            KeyBackup.user_id == current_user.id,
+            KeyBackup.backup_method == "prf",
+            KeyBackup.prf_credential_id != None,
+            KeyBackup.prf_credential_public_key != None,
+            KeyBackup.prf_sign_count != None,
+        )
+    )
+    key_backup = result.scalars().first()
+
+    if not key_backup:
+        raise HTTPException(
+            status_code=409,
+            detail="Device approval requires a verified WebAuthn PRF backup credential",
         )
 
     # ── Step 3: Fetch the stored challenge from Redis ─────────────────────
@@ -409,44 +448,18 @@ async def approve_link_request(
     # This is the cryptographic proof of physical presence.
     # If this fails, do not proceed — return 403 immediately.
     try:
-        assertion_data = body.webauthn_assertion
-
-        # Reconstruct the AuthenticationCredential from the raw assertion dict
-        credential = AuthenticationCredential(
-            id=assertion_data["id"],
-            raw_id=base64.urlsafe_b64decode(
-                assertion_data["rawId"] + "=="  # pad for base64url
-            ),
-            response=AuthenticatorAssertionResponse(
-                client_data_json=base64.urlsafe_b64decode(
-                    assertion_data["response"]["clientDataJSON"] + "=="
-                ),
-                authenticator_data=base64.urlsafe_b64decode(
-                    assertion_data["response"]["authenticatorData"] + "=="
-                ),
-                signature=base64.urlsafe_b64decode(
-                    assertion_data["response"]["signature"] + "=="
-                ),
-                user_handle=base64.urlsafe_b64decode(
-                    assertion_data["response"].get("userHandle", "") + "=="
-                ) if assertion_data["response"].get("userHandle") else None,
-            ),
-            type="public-key",
-        )
-
-        webauthn.verify_authentication_response(
-            credential=credential,
-            expected_challenge=stored_challenge.encode(),
+        challenge_value = stored_challenge.decode() if isinstance(stored_challenge, bytes) else stored_challenge
+        verified_authentication = webauthn.verify_authentication_response(
+            credential=body.webauthn_assertion,
+            expected_challenge=_base64url_to_bytes(challenge_value),
             expected_rp_id=WEBAUTHN_RP_ID,
             expected_origin=WEBAUTHN_ORIGIN,
-            credential_public_key=base64.urlsafe_b64decode(
-                approving_device.public_key + "=="
-            ),
-            credential_current_sign_count=0,   # we don't track sign count
+            credential_public_key=_base64url_to_bytes(key_backup.prf_credential_public_key),
+            credential_current_sign_count=key_backup.prf_sign_count,
             require_user_verification=True,
         )
     except Exception as e:
-        # Verification failed — do NOT proceed — return 403
+        # Verification failed ? do NOT proceed ? return 403
         raise HTTPException(
             status_code=403,
             detail=f"WebAuthn verification failed: {str(e)}",
@@ -462,13 +475,17 @@ async def approve_link_request(
     link_request.status = "approved"
     link_request.approved_by_device_id = approving_device.id
 
-    # Elevate the new device to trusted
+    # Elevate the new device to trusted and assign its permanent public key
     result = await db.execute(
         select(Device).where(Device.id == link_request.new_device_id)
     )
     new_device = result.scalars().first()
-    if new_device:
-        new_device.is_trusted = True
+    if not new_device or new_device.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Linked device not found")
+
+    new_device.is_trusted = True
+    new_device.public_key = body.permanent_public_key
+    key_backup.prf_sign_count = verified_authentication.new_sign_count
 
     # Increment DM Epochs for all conversations involving this user
     # This forces future DMs to use the new epoch (containing this new device's public key)

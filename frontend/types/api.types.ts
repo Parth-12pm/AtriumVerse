@@ -103,6 +103,7 @@ export interface Message {
   epoch?: number;
   decryptedContent?: string;
   decryptionFailed?: boolean;
+  device_key_status?: string;
 }
 
 export interface MessageCreate {

@@ -15,12 +15,13 @@ import {
   deriveKey,
   encryptBytes,
   decryptBytes,
-  importPublicKey,
+  base64urlToBuffer,
+  bufferToBase64url,
 } from "@/lib/crypto";
 import { getEncryptedBackup, getPrivateKey } from "@/lib/keyStore";
 import { toast } from "sonner";
-import { base64urlToBuffer, bufferToBase64url } from "@/lib/crypto";
 import { PendingRequest } from "@/hooks/useDevice";
+import { resolveTrustedLocalDevice } from "@/lib/trustedDevice";
 import { ShieldCheck, XCircle, Loader2 } from "lucide-react";
 
 interface DeviceLinkModalProps {
@@ -62,8 +63,11 @@ export function DeviceLinkModal({
     setLoading(true);
     try {
       const token = localStorage.getItem("token");
-      const deviceId = localStorage.getItem("device_id");
-      if (!token || !deviceId) throw new Error("Not logged in");
+      if (!token) throw new Error("Not logged in");
+      const { deviceId } = await resolveTrustedLocalDevice();
+      if (!pendingRequest.webauthn_credential_id) {
+        throw new Error("Set up a verified passkey backup before approving a new device");
+      }
 
       // 1. Fetch Challenge
       const chalRes = await fetch(
@@ -156,7 +160,12 @@ export function DeviceLinkModal({
 
       const theBlob = await encryptBytes(linkWrapKey, rawPrivateBuffer);
 
-      // 4. Send Approval Payload
+      // P0 Issue 1 Fix: The new device inherits our exact permanent private key.
+      // We must pass our permanent public key to the backend so the backend can update
+      // the new device's placeholder public key to the real permanent identical public key.
+      const myPermanentPubKey = localStorage.getItem("device_public_key");
+      if (!myPermanentPubKey) throw new Error("Missing local permanent public key");
+
       const appRes = await fetch(
         `${API_URL}/device-linking/approve/${pendingRequest.request_id}`,
         {
@@ -166,8 +175,10 @@ export function DeviceLinkModal({
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
+            approving_device_id: deviceId,
             webauthn_assertion: serializeAssertion(credential),
             encrypted_private_key: theBlob,
+            permanent_public_key: myPermanentPubKey,
           }),
         },
       );
@@ -213,9 +224,17 @@ export function DeviceLinkModal({
                   ep.encrypted_channel_key,
                 );
 
-                // 5b. Re-encrypt for the NEW device (using the shared secret we already built for the link ceremony)
+                // 5b. P0 Issue 2 Fix: Re-encrypt for the NEW device using its PERMANENT identity.
+                // Since the new device inherits our identical private key, its permanent public key
+                // is exactly identical to our permanent public key. We MUST NOT wrap this with the temporary
+                // session key (sharedSecret), because the new device's channel logic un-wraps using its permanent key!
+                const permanentSharedSecret = await deriveSharedSecret(
+                  myPrivateKey,
+                  myPermanentPubKey, // The exact key we just sent to the backend
+                );
+                
                 const newWrapKey = await deriveKey(
-                  sharedSecret,
+                  permanentSharedSecret,
                   chan.channel_id,
                   "channel-key",
                 );

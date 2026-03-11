@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.models.message import Message
 from app.models.channel import Channel
 from app.models.server_member import ServerMember, MemberStatus
+from app.models.channel_encryption import ChannelEncryption
 from app.models.user import User
 from app.schemas.message import MessageCreate, MessageResponse, MessageUpdate
 from app.api.deps import get_current_user
@@ -134,6 +135,31 @@ async def create_message(
     # Validate content
     if not message_in.content or len(message_in.content) > 2000:
         raise HTTPException(400, detail="Message must be 1-2000 characters")
+
+    enc_result = await db.execute(
+        select(ChannelEncryption).where(
+            ChannelEncryption.channel_id == channel_id,
+            ChannelEncryption.is_enabled == True,
+        )
+    )
+    channel_encryption = enc_result.scalars().first()
+
+    if channel_encryption:
+        if not message_in.is_encrypted or message_in.epoch is None:
+            raise HTTPException(
+                400,
+                detail="This channel requires encrypted messages",
+            )
+        if message_in.epoch != channel_encryption.current_epoch:
+            raise HTTPException(
+                409,
+                detail="Channel key has rotated. Fetch the latest channel key and retry.",
+            )
+    elif message_in.is_encrypted:
+        raise HTTPException(
+            400,
+            detail="Channel encryption is not enabled for this channel",
+        )
     
     # Create message
     new_message = Message(

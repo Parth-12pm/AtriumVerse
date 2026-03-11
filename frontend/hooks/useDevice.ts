@@ -1,6 +1,6 @@
-"use client";
+﻿"use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   generateKeypair,
   exportPublicKey,
@@ -8,6 +8,7 @@ import {
   deriveKey,
   decryptBytes,
   importPrivateKeyFromBytes,
+  exportKeyAsBytes,
 } from "@/lib/crypto";
 import {
   getPrivateKey,
@@ -18,6 +19,7 @@ import {
   storeEncryptedBackup,
 } from "@/lib/keyStore";
 import { fetchKeyBackup } from "@/lib/keyBackup";
+import { clearLocalDeviceIdentity, persistDeviceOwner } from "@/lib/deviceIdentity";
 import EventBus from "@/game/EventBus";
 
 export type DeviceState =
@@ -27,7 +29,6 @@ export type DeviceState =
   | "waiting_for_approval" // New device waiting for Old device
   | "approval_pending" // Old device has a request to approve
   | "recovery_prompt" // Backend has backup, prompt user to recover
-  | "linked" // Ceremony just finished successfully
   | "expired"
   | "rejected"
   | "error";
@@ -35,9 +36,9 @@ export type DeviceState =
 export interface PendingRequest {
   request_id: string;
   new_device_id: string;
-  new_device_label: string;
+  new_device_label?: string;
   temp_public_key: string;
-  webauthn_credential_id: string;
+  webauthn_credential_id: string | null;
   expires_at: string;
 }
 
@@ -52,6 +53,7 @@ export function useDevice() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<Date | null>(null);
   const [backupInfo, setBackupInfo] = useState<any | null>(null);
+  const bootstrapInFlightRef = useRef(false);
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem("token");
@@ -61,38 +63,138 @@ export function useDevice() {
     };
   };
 
+  const storeInterimEncryptedBackup = async (
+    targetDeviceId: string,
+    rawBytes: ArrayBuffer,
+  ) => {
+    const wrapKeyString = crypto.randomUUID();
+    localStorage.setItem("interim_wrap_key", wrapKeyString);
+
+    const wrapKeyMaterial = await window.crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(wrapKeyString.padEnd(32, "0")),
+      { name: "PBKDF2" },
+      false,
+      ["deriveKey"],
+    );
+
+    const aesWrapKey = await window.crypto.subtle.deriveKey(
+      {
+        name: "PBKDF2",
+        salt: new TextEncoder().encode("interim-salt"),
+        iterations: 100000,
+        hash: "SHA-256",
+      },
+      wrapKeyMaterial,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["encrypt"],
+    );
+
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    const ciphertextBuffer = await window.crypto.subtle.encrypt(
+      { name: "AES-GCM", iv },
+      aesWrapKey,
+      rawBytes,
+    );
+
+    const combined = new Uint8Array(iv.length + ciphertextBuffer.byteLength);
+    combined.set(iv, 0);
+    combined.set(new Uint8Array(ciphertextBuffer), iv.length);
+
+    let binaryStr = "";
+    combined.forEach((b) => (binaryStr += String.fromCharCode(b)));
+    await storeEncryptedBackup(targetDeviceId, btoa(binaryStr));
+  };
+
   const checkDeviceState = useCallback(async () => {
+    if (bootstrapInFlightRef.current) {
+      return;
+    }
+    bootstrapInFlightRef.current = true;
+
     try {
       const storedDeviceId = localStorage.getItem("device_id");
+      const storedDeviceOwnerUserId = localStorage.getItem("device_owner_user_id");
+      const pendingLinkRequestId = localStorage.getItem("pending_link_request_id");
       const token = localStorage.getItem("token");
+      const currentUserId = localStorage.getItem("user_id");
 
-      if (!token) {
+      if (!token || !currentUserId) {
         setDeviceState("checking"); // Not logged in yet
         return;
       }
 
-      if (storedDeviceId) {
-        const hasKey = await getPrivateKey(storedDeviceId);
-        if (hasKey) {
-          setDeviceId(storedDeviceId);
-          setDeviceState("trusted");
-          checkForPendingApprovals(); // Check if I need to approve anyone
-          return;
-        } else {
-          // Corrupted state: ID exists but key is gone
-          console.error(
-            "Device ID found but private key missing. Resetting...",
-          );
-          localStorage.removeItem("device_id");
-        }
+      if (storedDeviceId && storedDeviceOwnerUserId && storedDeviceOwnerUserId !== currentUserId) {
+        await clearLocalDeviceIdentity(storedDeviceId);
       }
 
-      // If we are here, we are not trusted. Need to check if there are any devices.
+      // Always verify the stored browser device against the current account before trusting it.
       const res = await fetch(`${API_URL}/devices/my-devices`, {
         headers: getAuthHeaders(),
       });
       if (!res.ok) throw new Error("Failed to fetch devices");
       const devices = await res.json();
+
+      const verifiedStoredDeviceId = localStorage.getItem("device_id");
+      const storedDevice = verifiedStoredDeviceId
+        ? devices.find((device: any) => device.device_id === verifiedStoredDeviceId)
+        : null;
+
+      // Recover from duplicate bootstrap/link side effects by preferring any trusted
+      // server device whose private key is already present locally in this browser.
+      let trustedLocalDeviceId: string | null = null;
+      for (const device of devices) {
+        if (!device.is_trusted) continue;
+        const key = await getPrivateKey(device.device_id);
+        if (key) {
+          trustedLocalDeviceId = device.device_id;
+          break;
+        }
+      }
+
+      if (trustedLocalDeviceId) {
+        if (pendingLinkRequestId) {
+          await deleteTempKeypair(pendingLinkRequestId);
+          localStorage.removeItem("pending_link_request_id");
+        }
+        localStorage.setItem("device_id", trustedLocalDeviceId);
+        persistDeviceOwner(currentUserId);
+        const backup = await fetchKeyBackup();
+        if (backup) {
+          setBackupInfo(backup);
+          localStorage.setItem("backup_configured_v1", "true");
+        }
+        setDeviceId(trustedLocalDeviceId);
+        setDeviceState("trusted");
+        checkForPendingApprovals();
+        return;
+      }
+
+      if (verifiedStoredDeviceId) {
+        const hasKey = await getPrivateKey(verifiedStoredDeviceId);
+
+        if (storedDevice?.is_trusted && hasKey) {
+          persistDeviceOwner(currentUserId);
+          const backup = await fetchKeyBackup();
+          if (backup) {
+            setBackupInfo(backup);
+            localStorage.setItem("backup_configured_v1", "true");
+          }
+          setDeviceId(verifiedStoredDeviceId);
+          setDeviceState("trusted");
+          checkForPendingApprovals();
+          return;
+        }
+
+        if (storedDevice && !storedDevice.is_trusted && pendingLinkRequestId) {
+          setDeviceId(verifiedStoredDeviceId);
+          setDeviceState("waiting_for_approval");
+          return;
+        }
+
+        await clearLocalDeviceIdentity(verifiedStoredDeviceId);
+      }
 
       if (devices.length === 0) {
         // First device ever
@@ -112,6 +214,8 @@ export function useDevice() {
       console.error(err);
       setDeviceState("error");
       setErrorMsg(err.message);
+    } finally {
+      bootstrapInFlightRef.current = false;
     }
   }, []);
 
@@ -138,59 +242,19 @@ export function useDevice() {
         headers: getAuthHeaders(),
         body: JSON.stringify({
           public_key: pubBase64,
-          label: navigator.userAgent.substring(0, 30),
+          device_label: navigator.userAgent.substring(0, 30),
         }),
       });
       if (!res.ok) throw new Error("Failed to register device");
       const data = await res.json();
 
-      // 5. Encrypt backup bytes (Interim fake PRF: random wrap key in localStorage)
-      const wrapKeyString = crypto.randomUUID();
-      localStorage.setItem("interim_wrap_key", wrapKeyString);
-
-      // derive AES-GCM wrap key from the string
-      const wrapKeyMaterial = await window.crypto.subtle.importKey(
-        "raw",
-        new TextEncoder().encode(wrapKeyString.padEnd(32, "0")),
-        { name: "PBKDF2" },
-        false,
-        ["deriveKey"],
-      );
-
-      const aesWrapKey = await window.crypto.subtle.deriveKey(
-        {
-          name: "PBKDF2",
-          salt: new TextEncoder().encode("interim-salt"),
-          iterations: 100000,
-          hash: "SHA-256",
-        },
-        wrapKeyMaterial,
-        { name: "AES-GCM", length: 256 },
-        false,
-        ["encrypt"],
-      );
-
-      const iv = window.crypto.getRandomValues(new Uint8Array(12));
-      const ciphertextBuffer = await window.crypto.subtle.encrypt(
-        { name: "AES-GCM", iv },
-        aesWrapKey,
-        rawBytes,
-      );
-
-      // Combine IV + ciphertext for storage
-      const combined = new Uint8Array(iv.length + ciphertextBuffer.byteLength);
-      combined.set(iv, 0);
-      combined.set(new Uint8Array(ciphertextBuffer), iv.length);
-
-      // Store in IDB
-      let binaryStr = "";
-      combined.forEach((b) => (binaryStr += String.fromCharCode(b)));
-      const b64Ciphertext = btoa(binaryStr);
-      await storeEncryptedBackup(data.device_id, b64Ciphertext);
+      // 5. Store a local encrypted backup for future device-link approvals
+      await storeInterimEncryptedBackup(data.device_id, rawBytes);
 
       // 6. Store permanent key and ID
       await storePrivateKey(data.device_id, permanentKey);
       localStorage.setItem("device_id", data.device_id);
+      persistDeviceOwner(localStorage.getItem("user_id") || "");
       setDeviceId(data.device_id);
       setDeviceState("trusted");
     } catch (err: any) {
@@ -220,8 +284,7 @@ export function useDevice() {
         headers: getAuthHeaders(),
         body: JSON.stringify({
           public_key: pubBase64,
-          label: navigator.userAgent.substring(0, 30) + " (Recovered)",
-          is_recovery: true, // Assuming backend accepts this or ignores it
+          device_label: navigator.userAgent.substring(0, 30) + " (Recovered)",
         }),
       });
       if (!res.ok) throw new Error("Failed to register recovered device");
@@ -231,7 +294,10 @@ export function useDevice() {
       // 3. Store in IDB and localStorage
       await storePrivateKey(newDeviceId, recoveredPrivateKey);
       localStorage.setItem("device_id", newDeviceId);
+      persistDeviceOwner(localStorage.getItem("user_id") || "");
       localStorage.setItem("device_public_key", pubBase64);
+      const recoveredRawBytes = await exportKeyAsBytes(recoveredPrivateKey);
+      await storeInterimEncryptedBackup(newDeviceId, recoveredRawBytes);
       setDeviceId(newDeviceId);
       setDeviceState("trusted");
 
@@ -249,7 +315,7 @@ export function useDevice() {
         const channels = await chanRes.json();
         for (const c of channels) {
           const epRes = await fetch(
-            `${API_URL}/channel-keys/${c.channel_id}/entitled-epochs`,
+            `${API_URL}/channel-keys/${c.channel_id}/entitled-epochs?device_id=${newDeviceId}`,
             { headers: getAuthHeaders() },
           );
           if (epRes.ok) {
@@ -266,8 +332,8 @@ export function useDevice() {
       EventBus.emit("device:recovery_complete", { deviceId: newDeviceId });
     } catch (err: any) {
       console.error(err);
-      // Clear any partially-set device_id to avoid stale state
-      localStorage.removeItem("device_id");
+      // Clear any partially-set device context to avoid stale state
+      await clearLocalDeviceIdentity(localStorage.getItem("device_id"));
       setDeviceId(null);
       setDeviceState("error");
       setErrorMsg(err.message);
@@ -284,13 +350,14 @@ export function useDevice() {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({
-          public_key: "pending_permanent_key", // Placeholder until verified
-          label: navigator.userAgent.substring(0, 30),
+          public_key: tempPub, // Temporary identity until approval assigns the permanent shared key
+          device_label: navigator.userAgent.substring(0, 30),
         }),
       });
       if (!res1.ok) throw new Error("Failed to register pending device");
       const deviceData = await res1.json();
       localStorage.setItem("device_id", deviceData.device_id);
+      persistDeviceOwner(localStorage.getItem("user_id") || "");
       setDeviceId(deviceData.device_id);
 
       // Request strict link
@@ -306,8 +373,8 @@ export function useDevice() {
       if (!res2.ok) throw new Error("Failed to request link");
       const reqData = await res2.json();
 
-      await storeTempKeypair(reqData.id, tempKeypair);
-      localStorage.setItem("pending_link_request_id", reqData.id);
+      await storeTempKeypair(reqData.request_id, tempKeypair);
+      localStorage.setItem("pending_link_request_id", reqData.request_id);
       setExpiresAt(new Date(reqData.expires_at));
       setDeviceState("waiting_for_approval");
     } catch (err: any) {
@@ -346,15 +413,10 @@ export function useDevice() {
     // Fast-path WS listener
     const handleWsMsg = (data: any) => {
       if (data.type === "device_link_request" && deviceState === "trusted") {
-        setPendingRequest({
-          request_id: data.request_id,
-          new_device_id: data.new_device_id,
-          new_device_label: data.new_device_label,
-          temp_public_key: data.temp_public_key,
-          webauthn_credential_id: data.webauthn_credential_id,
-          expires_at: data.expires_at,
-        });
-        setDeviceState("approval_pending");
+        // Fast-path: WebSocket says there's a request, but it lacks some secure
+        // fields like webauthn_credential_id that are bound to this session's HTTP request.
+        // Fetch the full pending request natively via REST:
+        checkForPendingApprovals();
       }
 
       if (
@@ -381,6 +443,13 @@ export function useDevice() {
         const data = await res.json();
 
         if (data.status === "approved") {
+          if (!data.approved_by_device_public_key) {
+            throw new Error("Approving device public key missing from approval status");
+          }
+          if (!data.permanent_public_key) {
+            throw new Error("Permanent public key missing from approval status");
+          }
+
           // Handle cryptographic transfer
           const tempKeys = await getTempKeypair(reqId);
           if (!tempKeys) throw new Error("Temp keys missing");
@@ -398,22 +467,17 @@ export function useDevice() {
 
           const permKey = await importPrivateKeyFromBytes(rawBytes);
           const dId = localStorage.getItem("device_id");
-          if (dId) {
-            await storePrivateKey(dId, permKey);
-            // Export temp public key and store it
-            const tempPub = await exportPublicKey(tempKeys.publicKey);
-            localStorage.setItem("device_public_key", tempPub);
-            // Encrypt backup via interim approach
-            const wrapKeyString = crypto.randomUUID();
-            localStorage.setItem("interim_wrap_key", wrapKeyString);
-            // Simplified backup store for new device (since Phase 10 will fix this properly)
-            const iv = window.crypto.getRandomValues(new Uint8Array(12));
-            // For brevity in interim, we just store it.
+          if (!dId) {
+            throw new Error("Linked device ID missing from localStorage");
           }
+
+          await storePrivateKey(dId, permKey);
+          localStorage.setItem("device_public_key", data.permanent_public_key);
+          await storeInterimEncryptedBackup(dId, rawBytes);
 
           await deleteTempKeypair(reqId);
           localStorage.removeItem("pending_link_request_id");
-          setDeviceState("linked");
+          setDeviceState("trusted");
         } else if (data.status === "rejected") {
           setDeviceState("rejected");
           localStorage.removeItem("pending_link_request_id");
@@ -449,3 +513,4 @@ export function useDevice() {
     setPendingRequest,
   };
 }
+

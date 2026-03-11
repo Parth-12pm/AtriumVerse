@@ -14,8 +14,8 @@ import { Check, X, Shield, UserPlus } from "lucide-react";
 import { fetchAPI } from "@/lib/api";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
-import { getPrivateKey } from "@/lib/keyStore";
 import { deriveSharedSecret, deriveKey, encryptBytes } from "@/lib/crypto";
+import { resolveTrustedLocalDevice } from "@/lib/trustedDevice";
 
 interface Member {
   user_id: string;
@@ -32,6 +32,7 @@ export function ManageMembersDialog({ serverId }: ManageMembersDialogProps) {
   const [open, setOpen] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(false);
+  const [rekeying, setRekeying] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -53,6 +54,59 @@ export function ManageMembersDialog({ serverId }: ManageMembersDialogProps) {
     }
   };
 
+  const getMyEncryptedChannelIds = async () => {
+    const currentUserId = localStorage.getItem("user_id");
+    if (!currentUserId) {
+      throw new Error("Missing current user id for channel rekey");
+    }
+
+    return fetchAPI(
+      `/channel-keys/server/${serverId}/user/${currentUserId}/encrypted-channels`,
+    ) as Promise<string[]>;
+  };
+
+  const rotateEncryptedChannels = async (channelIds: string[], successMessage: string) => {
+    if (channelIds.length === 0) {
+      return;
+    }
+
+    const devicesRes = await fetchAPI(`/devices/server/${serverId}`);
+    const { deviceId, privateKey: myPrivateKey } =
+      await resolveTrustedLocalDevice();
+
+    for (const channelId of channelIds) {
+      const newKeyBytes = window.crypto.getRandomValues(new Uint8Array(32));
+      const encryptedKeys = [];
+
+      for (const device of devicesRes) {
+        const sharedSecret = await deriveSharedSecret(
+          myPrivateKey,
+          device.public_key,
+        );
+        const wrapKey = await deriveKey(
+          sharedSecret,
+          channelId,
+          "channel-key",
+        );
+        const encryptedBlob = await encryptBytes(wrapKey, newKeyBytes);
+        encryptedKeys.push({
+          device_id: device.device_id,
+          encrypted_channel_key: encryptedBlob,
+        });
+      }
+
+      await fetchAPI(`/channel-keys/${channelId}/rotate`, {
+        method: "POST",
+        body: JSON.stringify({
+          submitting_device_id: deviceId,
+          encrypted_keys: encryptedKeys,
+        }),
+      });
+    }
+
+    toast.success(successMessage);
+  };
+
   const handleAction = async (userId: string, action: "approve" | "reject") => {
     try {
       await fetchAPI(`/servers/${serverId}/members/${userId}/${action}`, {
@@ -62,72 +116,60 @@ export function ManageMembersDialog({ serverId }: ManageMembersDialogProps) {
         action === "approve" ? "Member Approved" : "Member Removed",
       );
 
-      // --- PHASE 8 E2EE ROTATION ---
-      // If a member is removed/rejected, we must rotate keys for all E2EE channels
-      if (action === "reject") {
-        try {
-          toast.info("Rotating E2EE channel keys...");
+      try {
+        if (action === "approve") {
+          toast.info("Rotating E2EE channel keys for the new member...");
+          const encryptedChannelIds = await getMyEncryptedChannelIds();
+          await rotateEncryptedChannels(
+            encryptedChannelIds,
+            "Channel keys rotated for the new member.",
+          );
+        }
 
-          // 1. Get ONLY the encrypted channels in this server that the kicked user was actually a part of
+        if (action === "reject") {
+          toast.info("Rotating E2EE channel keys...");
           const affectedChannelIds: string[] = await fetchAPI(
             `/channel-keys/server/${serverId}/user/${userId}/encrypted-channels`,
           );
-
-          const encryptedChannels = affectedChannelIds.map((id) => ({
-            channel_id: id,
-          }));
-
-          if (encryptedChannels.length > 0) {
-            // 2. Fetch the newly updated trusted devices list (kicked user is now gone)
-            const devicesRes = await fetchAPI(`/devices/server/${serverId}`);
-            const myDeviceId = localStorage.getItem("device_id");
-            if (!myDeviceId) throw new Error("No local device_id");
-
-            const myPrivateKey = await getPrivateKey(myDeviceId);
-            if (!myPrivateKey) throw new Error("Missing private key");
-
-            // 3. For every encrypted channel, generate new key, encrypt for remaining members, rotate
-            for (const chan of encryptedChannels) {
-              const newKeyBytes = window.crypto.getRandomValues(
-                new Uint8Array(32),
-              );
-              const encryptedKeys = [];
-
-              for (const device of devicesRes) {
-                const sharedSecret = await deriveSharedSecret(
-                  myPrivateKey,
-                  device.public_key,
-                );
-                const wrapKey = await deriveKey(
-                  sharedSecret,
-                  chan.channel_id,
-                  "channel-key",
-                );
-                const encryptedBlob = await encryptBytes(wrapKey, newKeyBytes);
-                encryptedKeys.push({
-                  device_id: device.id,
-                  encrypted_channel_key: encryptedBlob,
-                });
-              }
-
-              await fetchAPI(`/channel-keys/${chan.channel_id}/rotate`, {
-                method: "POST",
-                body: JSON.stringify({ encrypted_keys: encryptedKeys }),
-              });
-            }
-            toast.success("Channel keys successfully rotated.");
-          }
-        } catch (rotErr) {
-          console.error("Failed to rotate channel keys:", rotErr);
-          toast.error(
-            "Failed to rotate encryption keys. Channels may be insecure.",
+          await rotateEncryptedChannels(
+            affectedChannelIds,
+            "Channel keys successfully rotated.",
           );
         }
+      } catch (rotErr) {
+        console.error("Failed to rotate channel keys:", rotErr);
+        toast.error(
+          action === "approve"
+            ? "Member approved, but channel rekey failed. The new member cannot read encrypted channels yet."
+            : "Failed to rotate encryption keys. Channels may be insecure.",
+        );
       }
 
       loadMembers();
     } catch (error) {
       toast.error("Action failed");
+    }
+  };
+
+  const handleRekeyAllChannels = async () => {
+    setRekeying(true);
+    try {
+      const encryptedChannelIds = await getMyEncryptedChannelIds();
+      if (encryptedChannelIds.length === 0) {
+        toast.info("No encrypted channels need rekeying in this server.");
+        return;
+      }
+
+      toast.info("Rekeying encrypted channels for all current members...");
+      await rotateEncryptedChannels(
+        encryptedChannelIds,
+        "Encrypted channels rekeyed for all current members.",
+      );
+    } catch (error) {
+      console.error("Failed to rekey encrypted channels:", error);
+      toast.error("Failed to rekey encrypted channels.");
+    } finally {
+      setRekeying(false);
     }
   };
 
@@ -158,6 +200,18 @@ export function ManageMembersDialog({ serverId }: ManageMembersDialogProps) {
             Manage server members and pending join requests.
           </DialogDescription>
         </DialogHeader>
+
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            variant="neutral"
+            size="sm"
+            onClick={handleRekeyAllChannels}
+            disabled={loading || rekeying}
+          >
+            {rekeying ? "Rekeying..." : "Rekey E2EE"}
+          </Button>
+        </div>
 
         <div className="space-y-4 max-h-[60vh] overflow-y-auto">
           {loading ? (

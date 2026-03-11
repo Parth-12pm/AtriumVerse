@@ -13,13 +13,10 @@ import {
 import {
   createBackupViaPRF,
   createBackupViaPassphrase,
-  generateRecoveryCode,
 } from "@/lib/keyBackup";
-import { useDevice } from "@/hooks/useDevice";
 import { getPrivateKey } from "@/lib/keyStore";
 
 export function BackupSetup({ onComplete }: { onComplete: () => void }) {
-  const { deviceId } = useDevice();
   const [step, setStep] = useState<
     "intro" | "prf" | "passphrase" | "recovery_code"
   >("intro");
@@ -35,20 +32,21 @@ export function BackupSetup({ onComplete }: { onComplete: () => void }) {
     setIsProcessing(true);
     setError(null);
     try {
+      const deviceId = localStorage.getItem("device_id");
       if (!deviceId) throw new Error("Device ID not found.");
       const privateKey = await getPrivateKey(deviceId);
       if (!privateKey) throw new Error("Private Key not found.");
 
-      const token = localStorage.getItem("token");
-      if (!token) throw new Error("User not logged in");
-      const userObj = JSON.parse(atob(token.split(".")[1]));
+      const userId = localStorage.getItem("user_id");
+      const username = localStorage.getItem("username");
+      if (!userId || !username) throw new Error("User identity not found.");
 
       const publicKey = localStorage.getItem("device_public_key");
       if (!publicKey) throw new Error("Public Key not found in local storage.");
 
       const res = await createBackupViaPRF(
-        userObj.sub,
-        userObj.username,
+        userId,
+        username,
         privateKey,
         publicKey,
       );
@@ -79,6 +77,7 @@ export function BackupSetup({ onComplete }: { onComplete: () => void }) {
     setIsProcessing(true);
     setError(null);
     try {
+      const deviceId = localStorage.getItem("device_id");
       if (!deviceId) throw new Error("Device ID not found.");
       const privateKey = await getPrivateKey(deviceId);
       if (!privateKey) throw new Error("Private Key not found.");

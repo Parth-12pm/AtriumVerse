@@ -1,22 +1,47 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+﻿import base64
+import os
+import secrets
+from datetime import datetime
+from typing import Any, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import update
-from pydantic import BaseModel
-from typing import Optional
-from datetime import datetime
+from webauthn import verify_registration_response
 
-from app.core.database import get_db
-from app.models.user import User
 from app.api.deps import get_current_user
+from app.core.database import get_db
+from app.core.redis_client import r
 from app.models.key_backup import KeyBackup
+from app.models.user import User
 
 router = APIRouter()
 
+WEBAUTHN_RP_ID = os.getenv("WEBAUTHN_RP_ID", "localhost")
+WEBAUTHN_ORIGIN = os.getenv("WEBAUTHN_ORIGIN", "http://localhost:3000")
+BACKUP_CHALLENGE_TTL = 60
+
+
+def buffer_to_base64url(buffer: bytes) -> str:
+    return base64.urlsafe_b64encode(buffer).rstrip(b"=").decode()
+
+
+def base64url_to_bytes(value: str) -> bytes:
+    padding = "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode(value + padding)
+
+
+def _redis_challenge_key(user_id) -> str:
+    return f"key_backup_challenge:{user_id}"
+
+
 class KeyBackupCreate(BaseModel):
     encrypted_blob: str
-    backup_method: str  # "prf" or "passphrase"
+    backup_method: str
     prf_credential_id: Optional[str] = None
+    prf_registration_credential: Optional[dict[str, Any]] = None
+    prf_registration_challenge: Optional[str] = None
     salt: Optional[str] = None
 
 
@@ -28,24 +53,87 @@ class KeyBackupResponse(BaseModel):
     updated_at: datetime
 
 
+class ChallengeResponse(BaseModel):
+    challenge: str
+
+
+@router.get("/key-backup/challenge", response_model=ChallengeResponse)
+async def get_key_backup_challenge(
+    current_user: User = Depends(get_current_user),
+):
+    challenge = buffer_to_base64url(secrets.token_bytes(32))
+    await r.setex(_redis_challenge_key(current_user.id), BACKUP_CHALLENGE_TTL, challenge)
+    return ChallengeResponse(challenge=challenge)
+
+
 @router.post("/key-backup")
 async def upsert_key_backup(
     body: KeyBackupCreate,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Stores the user's encrypted private key backup.
-    The PRF output or passphrase that produced the encryption key is NEVER sent here.
-    The server receives only the result of encryption, not the key that produced it.
+    The PRF output or passphrase that produced the encryption key is never sent here.
     """
     if body.backup_method not in ("prf", "passphrase"):
         raise HTTPException(status_code=400, detail="Invalid backup method")
-    
-    if body.backup_method == "prf" and not body.prf_credential_id:
-        raise HTTPException(status_code=400, detail="prf_credential_id is required for PRF backups")
-    
-    if body.backup_method == "passphrase" and not body.salt:
+
+    prf_credential_id = None
+    prf_credential_public_key = None
+    prf_sign_count = None
+
+    if body.backup_method == "prf":
+        if not body.prf_registration_credential or not body.prf_registration_challenge:
+            raise HTTPException(
+                status_code=400,
+                detail="PRF backups require a registration credential and challenge",
+            )
+
+        stored_challenge = await r.get(_redis_challenge_key(current_user.id))
+        if not stored_challenge:
+            raise HTTPException(
+                status_code=400,
+                detail="PRF registration challenge expired. Fetch a new challenge and retry.",
+            )
+
+        stored_challenge_value = (
+            stored_challenge.decode() if isinstance(stored_challenge, bytes) else stored_challenge
+        )
+        if body.prf_registration_challenge != stored_challenge_value:
+            raise HTTPException(
+                status_code=400,
+                detail="PRF registration challenge did not match the server-issued challenge.",
+            )
+
+        try:
+            verified_registration = verify_registration_response(
+                credential=body.prf_registration_credential,
+                expected_challenge=base64url_to_bytes(stored_challenge_value),
+                expected_rp_id=WEBAUTHN_RP_ID,
+                expected_origin=WEBAUTHN_ORIGIN,
+                require_user_verification=True,
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid PRF registration: {exc}",
+            ) from exc
+
+        await r.delete(_redis_challenge_key(current_user.id))
+
+        prf_credential_id = buffer_to_base64url(verified_registration.credential_id)
+        if body.prf_credential_id and body.prf_credential_id != prf_credential_id:
+            raise HTTPException(
+                status_code=400,
+                detail="PRF credential ID mismatch between registration payloads",
+            )
+
+        prf_credential_public_key = buffer_to_base64url(
+            verified_registration.credential_public_key,
+        )
+        prf_sign_count = verified_registration.sign_count
+    elif not body.salt:
         raise HTTPException(status_code=400, detail="salt is required for passphrase backups")
 
     result = await db.execute(select(KeyBackup).where(KeyBackup.user_id == current_user.id))
@@ -54,7 +142,9 @@ async def upsert_key_backup(
     if backup:
         backup.encrypted_blob = body.encrypted_blob
         backup.backup_method = body.backup_method
-        backup.prf_credential_id = body.prf_credential_id
+        backup.prf_credential_id = prf_credential_id
+        backup.prf_credential_public_key = prf_credential_public_key
+        backup.prf_sign_count = prf_sign_count
         backup.salt = body.salt
         backup.updated_at = datetime.utcnow()
     else:
@@ -62,26 +152,25 @@ async def upsert_key_backup(
             user_id=current_user.id,
             encrypted_blob=body.encrypted_blob,
             backup_method=body.backup_method,
-            prf_credential_id=body.prf_credential_id,
-            salt=body.salt
+            prf_credential_id=prf_credential_id,
+            prf_credential_public_key=prf_credential_public_key,
+            prf_sign_count=prf_sign_count,
+            salt=body.salt,
         )
         db.add(backup)
 
     await db.commit()
     await db.refresh(backup)
-    
     return {"updated_at": backup.updated_at}
 
 
 @router.get("/key-backup", response_model=KeyBackupResponse)
 async def get_key_backup(
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Returns the encrypted blob and metadata so the browser can attempt recovery.
-    Returns the backup_method so the frontend knows whether to trigger WebAuthn PRF or
-    prompt for a passphrase.
     """
     result = await db.execute(select(KeyBackup).where(KeyBackup.user_id == current_user.id))
     backup = result.scalars().first()
@@ -94,18 +183,17 @@ async def get_key_backup(
         backup_method=backup.backup_method,
         prf_credential_id=backup.prf_credential_id,
         salt=backup.salt,
-        updated_at=datetime.utcnow() # Missing from model
+        updated_at=backup.updated_at,
     )
 
 
 @router.delete("/key-backup")
 async def delete_key_backup(
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
-    Deletes the backup. The frontend must heavily warn the user before calling this,
-    as losing a device without a backup means permanent data loss.
+    Deletes the backup. The frontend must heavily warn before calling this.
     """
     result = await db.execute(select(KeyBackup).where(KeyBackup.user_id == current_user.id))
     backup = result.scalars().first()
@@ -115,5 +203,4 @@ async def delete_key_backup(
 
     await db.delete(backup)
     await db.commit()
-
     return {"status": "success"}

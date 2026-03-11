@@ -1,15 +1,15 @@
-"use client";
+﻿"use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Hash, Send, Edit2, Trash2 } from "lucide-react";
-import { fetchAPI } from "@/lib/api";
-import { toast } from "sonner";
 import EventBus from "@/game/EventBus";
+import { fetchAPI } from "@/lib/api";
 import { formatChatTimestamp } from "@/lib/time";
 import { useChannelKeys } from "@/hooks/useChannelKeys";
+import { toast } from "sonner";
 
 interface Message {
   id: string;
@@ -21,8 +21,9 @@ interface Message {
   reply_to_id?: string;
   is_encrypted: boolean;
   epoch?: number;
-  decryptedContent?: string; // Client-side hydration
+  decryptedContent?: string;
   decryptionFailed?: boolean;
+  device_key_status?: "predates_channel_access";
 }
 
 interface MessageFeedProps {
@@ -48,12 +49,11 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
 
   useEffect(() => {
     const handleRecv = async (data: any) => {
-      // Must match current channel
       if (data.channel_id !== channelId) return;
 
       const newMsg: Message = {
         id: data.id || Date.now().toString(),
-        user_id: data.sender || data.user_id, // backend dict might differ
+        user_id: data.sender || data.user_id,
         username: data.username,
         content: data.text || data.content,
         created_at: data.timestamp || new Date().toISOString(),
@@ -69,7 +69,11 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
             newMsg.content,
           );
         } catch (err) {
-          newMsg.decryptionFailed = true;
+          if (err instanceof Error && err.name === "ChannelKeyUnavailableError") {
+            newMsg.device_key_status = "predates_channel_access";
+          } else {
+            newMsg.decryptionFailed = true;
+          }
         }
       }
 
@@ -83,7 +87,6 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
   }, [channelId, decryptForChannel]);
 
   useEffect(() => {
-    // Scroll to bottom on new messages
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
@@ -92,9 +95,8 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
   const loadMessages = async () => {
     try {
       const data = await fetchAPI(`/messages/channels/${channelId}/messages`);
-      const msgs = data.reverse(); // Reverse to show oldest first
+      const msgs = data.reverse();
 
-      // Async hydrate decryptions
       const hydrated = await Promise.all(
         msgs.map(async (msg: Message) => {
           if (msg.is_encrypted && msg.epoch) {
@@ -105,7 +107,11 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
                 msg.content,
               );
             } catch (err) {
-              msg.decryptionFailed = true;
+              if (err instanceof Error && err.name === "ChannelKeyUnavailableError") {
+                msg.device_key_status = "predates_channel_access";
+              } else {
+                msg.decryptionFailed = true;
+              }
             }
           }
           return msg;
@@ -122,11 +128,10 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
 
     setLoading(true);
     try {
-      let finalContent = newMessage.trim();
+      const finalContent = newMessage.trim();
       let reqBody: any = { content: finalContent };
 
       try {
-        // Attempt E2EE Encrypt
         const { ciphertext, epoch } = await encryptForChannel(
           channelId,
           finalContent,
@@ -134,31 +139,27 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
         reqBody = {
           content: ciphertext,
           is_encrypted: true,
-          epoch: epoch,
+          epoch,
         };
       } catch (err) {
-        // E2EE is not enabled for this channel (or failed) - fall back to plaintext if allowed
-        // Or block. In a strict E2EE system, we might block. But based on UI prompt,
-        // channels can be unencrypted. We'll proceed in plaintext.
+        if (!(err instanceof Error) || err.name !== "ChannelEncryptionDisabledError") {
+          throw err;
+        }
       }
 
-      const message = await fetchAPI(
-        `/messages/channels/${channelId}/messages`,
-        {
-          method: "POST",
-          body: JSON.stringify(reqBody),
-        },
-      );
+      const message = await fetchAPI(`/messages/channels/${channelId}/messages`, {
+        method: "POST",
+        body: JSON.stringify(reqBody),
+      });
 
-      // Immediately hydrate the sent message so it displays instantly
       if (message.is_encrypted) {
         message.decryptedContent = finalContent;
       }
 
-      setMessages([...messages, message]);
+      setMessages((prev) => [...prev, message]);
       setNewMessage("");
-    } catch (error) {
-      toast.error(`Failed to send message: ${error}`);
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to send message");
     } finally {
       setLoading(false);
     }
@@ -178,7 +179,7 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
         body: JSON.stringify({ content: editContent.trim() }),
       });
 
-      setMessages(messages.map((m) => (m.id === messageId ? updated : m)));
+      setMessages((prev) => prev.map((msg) => (msg.id === messageId ? updated : msg)));
       setEditingId(null);
       toast.success("Message updated");
     } catch (error) {
@@ -189,7 +190,7 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
   const deleteMessage = async (messageId: string) => {
     try {
       await fetchAPI(`/messages/${messageId}`, { method: "DELETE" });
-      setMessages(messages.filter((m) => m.id !== messageId));
+      setMessages((prev) => prev.filter((msg) => msg.id !== messageId));
       toast.success("Message deleted");
     } catch (error) {
       toast.error(`Failed to delete message : ${error}`);
@@ -198,13 +199,11 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
 
   return (
     <div className="flex-1 flex flex-col h-full bg-background">
-      {/* Channel Header */}
       <div className="h-14 border-b-4 border-border bg-card flex items-center px-4">
         <Hash className="h-5 w-5 mr-2 text-muted-foreground" />
         <span className="font-black uppercase text-lg">{channelName}</span>
       </div>
 
-      {/* Messages Area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
@@ -242,7 +241,6 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
                     </span>
                   )}
 
-                  {/* Actions (only for own messages) */}
                   {msg.user_id === currentUserId && (
                     <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
                       <Button
@@ -276,11 +274,7 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
                       }}
                       className="h-8"
                     />
-                    <Button
-                      size="sm"
-                      onClick={() => saveEdit(msg.id)}
-                      className="h-8"
-                    >
+                    <Button size="sm" onClick={() => saveEdit(msg.id)} className="h-8">
                       Save
                     </Button>
                     <Button
@@ -301,6 +295,10 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
                         <span className="text-destructive font-mono text-xs">
                           [Message could not be decrypted]
                         </span>
+                      ) : msg.device_key_status === "predates_channel_access" ? (
+                        <span className="text-muted-foreground italic">
+                          [Sent before you had access to this channel]
+                        </span>
                       ) : (
                         <span className="text-muted-foreground italic">
                           [Decrypting...]
@@ -317,7 +315,6 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
         )}
       </div>
 
-      {/* Message Input */}
       <div className="p-4 border-t-4 border-border bg-card">
         <div className="flex gap-2">
           <Input

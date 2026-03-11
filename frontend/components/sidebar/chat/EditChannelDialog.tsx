@@ -15,15 +15,9 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { fetchAPI } from "@/lib/api";
-import { getPrivateKey } from "@/lib/keyStore";
-import {
-  exportPublicKey,
-  generateKeypair,
-  deriveSharedSecret,
-  deriveKey,
-  encryptBytes,
-} from "@/lib/crypto";
+import { deriveSharedSecret, deriveKey, encryptBytes } from "@/lib/crypto";
 import type { ChannelUpdate } from "@/types/api.types";
+import { resolveTrustedLocalDevice } from "@/lib/trustedDevice";
 
 interface EditChannelDialogProps {
   open: boolean;
@@ -72,10 +66,8 @@ export default function EditChannelDialog({
         // 1. Fetch all trusted devices for all users in server
         const devicesRes = await fetchAPI(`/devices/server/${serverId}`);
 
-        const deviceId = localStorage.getItem("device_id");
-        if (!deviceId) throw new Error("No local device_id");
-        const myPrivateKey = await getPrivateKey(deviceId);
-        if (!myPrivateKey) throw new Error("Private key missing");
+        const { deviceId, privateKey: myPrivateKey } =
+          await resolveTrustedLocalDevice();
 
         // 2. Generate the very first channel key (Epoch 1)
         const channelKeyBytes = window.crypto.getRandomValues(
@@ -110,7 +102,7 @@ export default function EditChannelDialog({
         // 4. Submit to atomic API
         await fetchAPI(`/channel-keys/${channelId}/enable`, {
           method: "POST",
-          body: JSON.stringify({ encrypted_keys: encryptedKeys }),
+          body: JSON.stringify({ submitting_device_id: deviceId, encrypted_keys: encryptedKeys }),
         });
 
         toast.success("E2E Encryption enabled!");

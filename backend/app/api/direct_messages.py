@@ -122,7 +122,7 @@ async def get_conversation_messages(
     Marks messages as read.
     """
     # Verify the device belongs to the requesting user
-    dev_query = select(Device).where(Device.id == device_id, Device.user_id == current_user.id)
+    dev_query = select(Device).where(Device.id == device_id, Device.user_id == current_user.id, Device.deleted_at == None)
     dev_res = await db.execute(dev_query)
     if not dev_res.scalar_one_or_none():
         raise HTTPException(status_code=403, detail="Invalid device_id")
@@ -278,6 +278,21 @@ async def send_direct_message(
     if receiver.id == current_user.id:
         raise HTTPException(400, detail="Cannot send message to yourself")
     
+    if message_in.is_encrypted:
+        if not message_in.sender_device_id:
+            raise HTTPException(400, detail="Encrypted DMs require sender_device_id")
+
+        sender_device_result = await db.execute(
+            select(Device).where(
+                Device.id == message_in.sender_device_id,
+                Device.user_id == current_user.id,
+                Device.is_trusted == True,
+                Device.deleted_at == None,
+            )
+        )
+        if not sender_device_result.scalar_one_or_none():
+            raise HTTPException(400, detail="Sender device is invalid or not trusted")
+
     # Content still needed if plaintext fallback is used, otherwise clients send "[encrypted]"
     if not message_in.content or len(message_in.content) > 2000:
         raise HTTPException(400, detail="Message must be 1-2000 characters")
@@ -361,7 +376,8 @@ async def submit_device_keys(
                     or_(
                         Device.user_id == msg.sender_id,
                         Device.user_id == msg.receiver_id,
-                    )
+                    ),
+                    Device.deleted_at == None,
                 )
             )
             if not dev_res.scalar_one_or_none():

@@ -1,42 +1,186 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+﻿from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import case, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from typing import List, Dict, Any
+from sqlalchemy.orm import aliased
+from typing import List, Set
 from pydantic import BaseModel
-import uuid
 
-from app.core.database import get_db
-from app.models.user import User
 from app.api.deps import get_current_user
-from app.models.channel_encryption import ChannelEncryption
-from app.models.channel_device_key import ChannelDeviceKey
-from app.models.device import Device
+from app.core.database import get_db
 from app.models.channel import Channel
+from app.models.channel_device_key import ChannelDeviceKey
+from app.models.channel_encryption import ChannelEncryption
+from app.models.device import Device
 from app.models.server import Server
 from app.models.server_member import ServerMember
+from app.models.user import User
 
 router = APIRouter(prefix="/channel-keys", tags=["Channel Keys"])
+
 
 class EncryptedKeySubmission(BaseModel):
     device_id: str
     encrypted_channel_key: str
 
+
 class EnableEncryptionRequest(BaseModel):
+    submitting_device_id: str
     encrypted_keys: List[EncryptedKeySubmission]
+
 
 class DistributeKeyRequest(BaseModel):
     target_device_id: str
     epoch: int
     encrypted_channel_key: str
 
+
+async def _get_expected_trusted_device_ids_for_server(
+    server_id: str,
+    db: AsyncSession,
+) -> Set[str]:
+    result = await db.execute(
+        select(Device.id)
+        .join(ServerMember, Device.user_id == ServerMember.user_id)
+        .where(
+            ServerMember.server_id == server_id,
+            ServerMember.status == "accepted",
+            Device.is_trusted == True,
+            Device.deleted_at == None,
+        )
+    )
+    return {str(device_id) for device_id in result.scalars().all()}
+
+
+def _validate_submitted_device_ids(
+    encrypted_keys: List[EncryptedKeySubmission],
+    expected_device_ids: Set[str],
+):
+    submitted_device_ids = [key.device_id for key in encrypted_keys]
+    submitted_set = set(submitted_device_ids)
+
+    if len(submitted_set) != len(submitted_device_ids):
+        raise HTTPException(
+            status_code=400,
+            detail="Duplicate device_id entries are not allowed in encrypted_keys.",
+        )
+
+    if submitted_set != expected_device_ids:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Encrypted keys must match the exact set of trusted accepted member devices.",
+                "missing_device_ids": sorted(expected_device_ids - submitted_set),
+                "unexpected_device_ids": sorted(submitted_set - expected_device_ids),
+            },
+        )
+
+
+async def _get_requesting_trusted_device(
+    device_id: str,
+    current_user: User,
+    db: AsyncSession,
+) -> Device:
+    result = await db.execute(
+        select(Device).where(
+            Device.id == device_id,
+            Device.user_id == current_user.id,
+            Device.is_trusted == True,
+            Device.deleted_at == None,
+        )
+    )
+    device = result.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=403, detail="Invalid device_id for current user.")
+    return device
+
+
+async def _get_channel_key_row_for_device_or_public_key(
+    channel_id: str,
+    epoch: int,
+    requesting_device: Device,
+    db: AsyncSession,
+):
+    owner_device = aliased(Device)
+
+    exact_result = await db.execute(
+        select(ChannelDeviceKey, owner_device.public_key.label("owner_public_key"))
+        .join(owner_device, ChannelDeviceKey.owner_device_id == owner_device.id)
+        .where(
+            ChannelDeviceKey.channel_id == channel_id,
+            ChannelDeviceKey.device_id == requesting_device.id,
+            ChannelDeviceKey.epoch == epoch,
+        )
+    )
+    exact_row = exact_result.first()
+    if exact_row:
+        return exact_row
+
+    target_device = aliased(Device)
+    fallback_result = await db.execute(
+        select(ChannelDeviceKey, owner_device.public_key.label("owner_public_key"))
+        .join(owner_device, ChannelDeviceKey.owner_device_id == owner_device.id)
+        .join(target_device, ChannelDeviceKey.device_id == target_device.id)
+        .where(
+            ChannelDeviceKey.channel_id == channel_id,
+            ChannelDeviceKey.epoch == epoch,
+            target_device.user_id == requesting_device.user_id,
+            target_device.public_key == requesting_device.public_key,
+        )
+        .order_by(ChannelDeviceKey.created_at.desc())
+    )
+    return fallback_result.first()
+
+
+async def _get_entitled_epoch_rows_for_device_or_public_key(
+    channel_id: str,
+    requesting_device: Device,
+    db: AsyncSession,
+):
+    owner_device = aliased(Device)
+    target_device = aliased(Device)
+
+    result = await db.execute(
+        select(
+            ChannelDeviceKey.epoch,
+            ChannelDeviceKey.encrypted_channel_key,
+            owner_device.public_key.label("owner_public_key"),
+            target_device.id.label("matched_device_id"),
+        )
+        .join(owner_device, ChannelDeviceKey.owner_device_id == owner_device.id)
+        .join(target_device, ChannelDeviceKey.device_id == target_device.id)
+        .where(
+            ChannelDeviceKey.channel_id == channel_id,
+            target_device.user_id == requesting_device.user_id,
+            or_(
+                target_device.id == requesting_device.id,
+                target_device.public_key == requesting_device.public_key,
+            ),
+        )
+        .order_by(
+            ChannelDeviceKey.epoch.asc(),
+            case((target_device.id == requesting_device.id, 0), else_=1),
+            ChannelDeviceKey.created_at.desc(),
+        )
+    )
+
+    deduped_rows = []
+    seen_epochs = set()
+    for row in result.all():
+        if row.epoch in seen_epochs:
+            continue
+        seen_epochs.add(row.epoch)
+        deduped_rows.append(row)
+    return deduped_rows
+
+
 @router.get("/my-channels")
 async def get_my_encrypted_channels(
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
-    Returns a list of { channel_id, is_encrypted } for all channels the user is a member of 
-    where encryption is enabled. Used by the old device during P2P sync to know which channels to process.
+    Returns a list of { channel_id, is_encrypted } for all encrypted channels the user can access.
     """
     query = (
         select(Channel.id)
@@ -46,13 +190,12 @@ async def get_my_encrypted_channels(
         .where(
             ServerMember.user_id == current_user.id,
             ServerMember.status == "accepted",
-            ChannelEncryption.is_enabled == True
+            ChannelEncryption.is_enabled == True,
         )
     )
     result = await db.execute(query)
     channels = result.scalars().all()
-    
-    return [{"channel_id": str(c), "is_encrypted": True} for c in channels]
+    return [{"channel_id": str(channel_id), "is_encrypted": True} for channel_id in channels]
 
 
 @router.get("/server/{server_id}/user/{user_id}/encrypted-channels")
@@ -60,32 +203,29 @@ async def get_user_encrypted_channels_in_server(
     server_id: str,
     user_id: str,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
-    Returns a distinct list of channel IDs within a specific server that a given user
-    currently holds encrypted keys for. Used during member removal to only rotate
-    the channels the kicked member actually had access to.
+    Returns channel IDs in a server for which the given user currently has encrypted history rows.
     """
-    # Enforce Owner Auth for the server
     serv_query = select(Server).where(Server.id == server_id, Server.owner_id == current_user.id)
     serv_res = await db.execute(serv_query)
     if not serv_res.scalar_one_or_none():
         raise HTTPException(status_code=403, detail="Only server owner can query this information.")
 
     query = (
-        select(ChannelDeviceKey.channel_id).distinct()
+        select(ChannelDeviceKey.channel_id)
+        .distinct()
         .join(Device, ChannelDeviceKey.device_id == Device.id)
         .join(Channel, ChannelDeviceKey.channel_id == Channel.id)
         .where(
             Device.user_id == user_id,
-            Channel.server_id == server_id
+            Channel.server_id == server_id,
         )
     )
     result = await db.execute(query)
     channels = result.scalars().all()
-    
-    return [str(c) for c in channels]
+    return [str(channel_id) for channel_id in channels]
 
 
 @router.post("/{channel_id}/enable")
@@ -93,50 +233,55 @@ async def enable_channel_encryption(
     channel_id: str,
     req: EnableEncryptionRequest,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
-    # Enforce Owner Auth
-    chan_query = select(Channel).join(Server).where(Channel.id == channel_id, Server.owner_id == current_user.id)
+    chan_query = (
+        select(Channel)
+        .join(Server)
+        .where(Channel.id == channel_id, Server.owner_id == current_user.id)
+    )
     chan_res = await db.execute(chan_query)
-    if not chan_res.scalar_one_or_none():
+    channel = chan_res.scalar_one_or_none()
+    if not channel:
         raise HTTPException(status_code=403, detail="Only server owner can enable channel encryption.")
 
-    # Get the owner's active device to record who encrypted the keys
-    dev_query = select(Device).where(Device.user_id == current_user.id, Device.is_trusted == True, Device.deleted_at == None).limit(1)
-    dev_res = await db.execute(dev_query)
-    owner_device = dev_res.scalar_one_or_none()
-    if not owner_device:
-        raise HTTPException(status_code=400, detail="Owner has no active trusted devices.")
+    owner_device = await _get_requesting_trusted_device(req.submitting_device_id, current_user, db)
 
-    # CRITICAL: Atomic Transaction Block
+    expected_device_ids = await _get_expected_trusted_device_ids_for_server(
+        str(channel.server_id),
+        db,
+    )
+    _validate_submitted_device_ids(req.encrypted_keys, expected_device_ids)
+
     try:
-        # Has it already been enabled?
         enc_query = select(ChannelEncryption).where(ChannelEncryption.channel_id == channel_id)
         enc_res = await db.execute(enc_query)
-        enc = enc_res.scalar_one_or_none()
-        if enc:
+        if enc_res.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="Encryption already enabled on this channel.")
 
-        # 1. Create ChannelEncryption row
-        encryption_record = ChannelEncryption(channel_id=channel_id, is_enabled=True, current_epoch=1)
+        encryption_record = ChannelEncryption(
+            channel_id=channel_id,
+            is_enabled=True,
+            current_epoch=1,
+        )
         db.add(encryption_record)
 
-        # 2. Insert all ChannelDeviceKey rows
-        for k in req.encrypted_keys:
-            key_record = ChannelDeviceKey(
-                channel_id=channel_id,
-                device_id=k.device_id,
-                epoch=1,
-                encrypted_channel_key=k.encrypted_channel_key,
-                owner_device_id=owner_device.id
+        for key in req.encrypted_keys:
+            db.add(
+                ChannelDeviceKey(
+                    channel_id=channel_id,
+                    device_id=key.device_id,
+                    epoch=1,
+                    encrypted_channel_key=key.encrypted_channel_key,
+                    owner_device_id=owner_device.id,
+                )
             )
-            db.add(key_record)
-            
+
         await db.commit()
-    except Exception as e:
+    except Exception:
         await db.rollback()
-        raise e
-        
+        raise
+
     return {"channel_id": channel_id, "epoch": 1}
 
 
@@ -145,45 +290,47 @@ async def get_my_current_channel_key(
     channel_id: str,
     device_id: str,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
-    # Verify the device belongs to the requesting user
-    dev_query = select(Device).where(Device.id == device_id, Device.user_id == current_user.id, Device.deleted_at == None)
-    dev_res = await db.execute(dev_query)
-    if not dev_res.scalar_one_or_none():
-        raise HTTPException(status_code=403, detail="Invalid device_id for current user.")
+    requesting_device = await _get_requesting_trusted_device(device_id, current_user, db)
 
-    # Get current epoch
-    enc_query = select(ChannelEncryption).where(ChannelEncryption.channel_id == channel_id, ChannelEncryption.is_enabled == True)
+    membership_query = (
+        select(ServerMember)
+        .join(Channel, Channel.server_id == ServerMember.server_id)
+        .where(
+            Channel.id == channel_id,
+            ServerMember.user_id == current_user.id,
+            ServerMember.status == "accepted",
+        )
+    )
+    membership_res = await db.execute(membership_query)
+    if not membership_res.scalar_one_or_none():
+        raise HTTPException(status_code=403, detail="You are not an accepted member of this channel's server.")
+
+    enc_query = select(ChannelEncryption).where(
+        ChannelEncryption.channel_id == channel_id,
+        ChannelEncryption.is_enabled == True,
+    )
     enc_res = await db.execute(enc_query)
     enc = enc_res.scalar_one_or_none()
     if not enc:
         raise HTTPException(status_code=404, detail="Channel encryption not enabled.")
 
-    current_epoch = enc.current_epoch
-
-    # Get the key for this epoch
-    key_query = (
-        select(ChannelDeviceKey, Device.public_key.label("owner_public_key"))
-        .join(Device, ChannelDeviceKey.owner_device_id == Device.id)
-        .where(
-            ChannelDeviceKey.channel_id == channel_id,
-            ChannelDeviceKey.device_id == device_id,
-            ChannelDeviceKey.epoch == current_epoch
-        )
+    row = await _get_channel_key_row_for_device_or_public_key(
+        channel_id,
+        enc.current_epoch,
+        requesting_device,
+        db,
     )
-    key_res = await db.execute(key_query)
-    row = key_res.first()
-    
     if not row:
         raise HTTPException(status_code=403, detail="No key found for this device at the current epoch.")
 
     key_record, owner_public_key = row
-
     return {
-        "epoch": current_epoch,
+        "epoch": enc.current_epoch,
         "encrypted_channel_key": key_record.encrypted_channel_key,
-        "owner_device_public_key": owner_public_key
+        "owner_device_id": str(key_record.owner_device_id) if key_record.owner_device_id else None,
+        "owner_device_public_key": owner_public_key,
     }
 
 
@@ -192,46 +339,58 @@ async def rotate_channel_key(
     channel_id: str,
     req: EnableEncryptionRequest,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
-    # Owner auth
-    chan_query = select(Channel).join(Server).where(Channel.id == channel_id, Server.owner_id == current_user.id)
+    chan_query = (
+        select(Channel)
+        .join(Server)
+        .where(Channel.id == channel_id, Server.owner_id == current_user.id)
+    )
     chan_res = await db.execute(chan_query)
-    if not chan_res.scalar_one_or_none():
+    channel = chan_res.scalar_one_or_none()
+    if not channel:
         raise HTTPException(status_code=403, detail="Only server owner can rotate channel keys.")
 
-    dev_query = select(Device).where(Device.user_id == current_user.id, Device.is_trusted == True, Device.deleted_at == None).limit(1)
-    dev_res = await db.execute(dev_query)
-    owner_device = dev_res.scalar_one_or_none()
-    if not owner_device:
-        raise HTTPException(status_code=400, detail="Owner has no active trusted devices.")
+    owner_device = await _get_requesting_trusted_device(req.submitting_device_id, current_user, db)
 
-    # CRITICAL: Atomic Transaction Block
+    expected_device_ids = await _get_expected_trusted_device_ids_for_server(
+        str(channel.server_id),
+        db,
+    )
+    _validate_submitted_device_ids(req.encrypted_keys, expected_device_ids)
+
     try:
-        enc_query = select(ChannelEncryption).where(ChannelEncryption.channel_id == channel_id, ChannelEncryption.is_enabled == True).with_for_update()
+        enc_query = (
+            select(ChannelEncryption)
+            .where(
+                ChannelEncryption.channel_id == channel_id,
+                ChannelEncryption.is_enabled == True,
+            )
+            .with_for_update()
+        )
         enc_res = await db.execute(enc_query)
         enc = enc_res.scalar_one_or_none()
         if not enc:
             raise HTTPException(status_code=400, detail="Channel encryption not enabled.")
 
-        # 1. Increment Epoch
         new_epoch = enc.current_epoch + 1
         enc.current_epoch = new_epoch
 
-        # 2. Insert new keys (Do not delete old ones)
-        for k in req.encrypted_keys:
-            key_record = ChannelDeviceKey(
-                channel_id=channel_id,
-                device_id=k.device_id,
-                epoch=new_epoch,
-                encrypted_channel_key=k.encrypted_channel_key,
-                owner_device_id=owner_device.id
+        for key in req.encrypted_keys:
+            db.add(
+                ChannelDeviceKey(
+                    channel_id=channel_id,
+                    device_id=key.device_id,
+                    epoch=new_epoch,
+                    encrypted_channel_key=key.encrypted_channel_key,
+                    owner_device_id=owner_device.id,
+                )
             )
-            db.add(key_record)
+
         await db.commit()
-    except Exception as e:
+    except Exception:
         await db.rollback()
-        raise e
+        raise
 
     return {"channel_id": channel_id, "epoch": new_epoch}
 
@@ -239,39 +398,73 @@ async def rotate_channel_key(
 @router.post("/{channel_id}/distribute-to-device")
 async def distribute_key_to_device(
     channel_id: str,
-    device_id: str, # The SUBMITTING device
+    device_id: str,
     req: DistributeKeyRequest,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
-    Called by an old trusted device to peer-to-peer distribute an epoch key 
-    to a newly linked device.
+    Called by an existing trusted device to distribute a channel key copy to another trusted device.
     """
-    # 1. Submitting device must belong to current user and be trusted
-    sub_dev_query = select(Device).where(Device.id == device_id, Device.user_id == current_user.id, Device.is_trusted == True, Device.deleted_at == None)
-    sub_res = await db.execute(sub_dev_query)
-    submitting_device = sub_res.scalar_one_or_none()
-    if not submitting_device:
-        raise HTTPException(status_code=403, detail="Invalid submitting device.")
+    submitting_device = await _get_requesting_trusted_device(device_id, current_user, db)
 
-    # 2. Target device MUST belong to the exact same user (P2P syncing)
-    targ_dev_query = select(Device).where(Device.id == req.target_device_id, Device.user_id == current_user.id, Device.is_trusted == True, Device.deleted_at == None)
+    membership_query = (
+        select(ServerMember)
+        .join(Channel, Channel.server_id == ServerMember.server_id)
+        .where(
+            Channel.id == channel_id,
+            ServerMember.user_id == current_user.id,
+            ServerMember.status == "accepted",
+        )
+    )
+    membership_res = await db.execute(membership_query)
+    if not membership_res.scalar_one_or_none():
+        raise HTTPException(status_code=403, detail="You are not an accepted member of this encrypted channel.")
+
+    enc_query = select(ChannelEncryption).where(
+        ChannelEncryption.channel_id == channel_id,
+        ChannelEncryption.is_enabled == True,
+    )
+    enc_res = await db.execute(enc_query)
+    enc = enc_res.scalar_one_or_none()
+    if not enc:
+        raise HTTPException(status_code=400, detail="Channel encryption not enabled.")
+    if req.epoch < 1 or req.epoch > enc.current_epoch:
+        raise HTTPException(status_code=400, detail="Invalid epoch for channel key distribution.")
+
+    targ_dev_query = select(Device).where(
+        Device.id == req.target_device_id,
+        Device.user_id == current_user.id,
+        Device.is_trusted == True,
+        Device.deleted_at == None,
+    )
     targ_res = await db.execute(targ_dev_query)
     if not targ_res.scalar_one_or_none():
         raise HTTPException(status_code=403, detail="Target device does not belong to you or is untrusted.")
 
-    # Insert historical/current key
-    key_record = ChannelDeviceKey(
-        channel_id=channel_id,
-        device_id=req.target_device_id,
-        epoch=req.epoch,
-        encrypted_channel_key=req.encrypted_channel_key,
-        owner_device_id=submitting_device.id  # Note: The submitting device became the encryptor for this specific copy
+    existing_query = select(ChannelDeviceKey).where(
+        ChannelDeviceKey.channel_id == channel_id,
+        ChannelDeviceKey.device_id == req.target_device_id,
+        ChannelDeviceKey.epoch == req.epoch,
     )
-    db.add(key_record)
-    await db.commit()
+    existing_res = await db.execute(existing_query)
+    existing_key = existing_res.scalar_one_or_none()
 
+    if existing_key:
+        existing_key.encrypted_channel_key = req.encrypted_channel_key
+        existing_key.owner_device_id = submitting_device.id
+    else:
+        db.add(
+            ChannelDeviceKey(
+                channel_id=channel_id,
+                device_id=req.target_device_id,
+                epoch=req.epoch,
+                encrypted_channel_key=req.encrypted_channel_key,
+                owner_device_id=submitting_device.id,
+            )
+        )
+
+    await db.commit()
     return {"status": "success"}
 
 
@@ -280,32 +473,20 @@ async def get_entitled_epochs(
     channel_id: str,
     device_id: str,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
-    # Verify querying device
-    dev_query = select(Device).where(Device.id == device_id, Device.user_id == current_user.id, Device.deleted_at == None)
-    dev_res = await db.execute(dev_query)
-    if not dev_res.scalar_one_or_none():
-        raise HTTPException(status_code=403, detail="Invalid device_id.")
-
-    query = (
-        select(ChannelDeviceKey.epoch, ChannelDeviceKey.encrypted_channel_key, Device.public_key.label("owner_public_key"))
-        .join(Device, ChannelDeviceKey.owner_device_id == Device.id)
-        .where(
-            ChannelDeviceKey.channel_id == channel_id,
-            ChannelDeviceKey.device_id == device_id
-        )
-        .order_by(ChannelDeviceKey.epoch.asc())
+    requesting_device = await _get_requesting_trusted_device(device_id, current_user, db)
+    rows = await _get_entitled_epoch_rows_for_device_or_public_key(
+        channel_id,
+        requesting_device,
+        db,
     )
-    
-    result = await db.execute(query)
-    rows = result.all()
 
     return [
         {
-            "epoch": r.epoch,
-            "encrypted_channel_key": r.encrypted_channel_key,
-            "owner_device_public_key": r.owner_public_key
+            "epoch": row.epoch,
+            "encrypted_channel_key": row.encrypted_channel_key,
+            "owner_device_public_key": row.owner_public_key,
         }
-        for r in rows
+        for row in rows
     ]

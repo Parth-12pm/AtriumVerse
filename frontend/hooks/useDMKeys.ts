@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { getPrivateKey } from "@/lib/keyStore";
+import { resolveTrustedLocalDevice } from "@/lib/trustedDevice";
 import {
   deriveSharedSecret,
   deriveKey,
@@ -18,11 +18,8 @@ export function useDMKeys() {
       plaintext: string,
       targetDevices: { id: string; public_key: string }[],
     ) => {
-      const myDeviceId = localStorage.getItem("device_id");
-      if (!myDeviceId) throw new Error("No local device_id found");
-
-      const myPrivateKey = await getPrivateKey(myDeviceId);
-      if (!myPrivateKey) throw new Error("No private key found in IndexedDB");
+      const { deviceId: myDeviceId, privateKey: myPrivateKey } =
+        await resolveTrustedLocalDevice();
 
       const encoder = new TextEncoder();
       const plaintextBytes = encoder.encode(plaintext);
@@ -30,31 +27,31 @@ export function useDMKeys() {
       const deviceCiphertexts = [];
 
       for (const device of targetDevices) {
-        try {
-          // ECDH: My Private + Their Public -> Shared Secret
-          const sharedSecret = await deriveSharedSecret(
-            myPrivateKey,
-            device.public_key,
-          );
+        // ECDH: My Private + Their Public -> Shared Secret
+        const sharedSecret = await deriveSharedSecret(
+          myPrivateKey,
+          device.public_key,
+        );
 
-          // HKDF: Shared Secret + Salt (dmId) + Info ("dm-epoch:{N}") -> Message Key
-          const messageKey = await deriveKey(
-            sharedSecret,
-            dmId,
-            `dm-epoch:${epoch}`,
-          );
+        // HKDF: Shared Secret + Salt (dmId) + Info ("dm-epoch:{N}") -> Message Key
+        const messageKey = await deriveKey(
+          sharedSecret,
+          dmId,
+          `dm-epoch:${epoch}`,
+        );
 
-          // AES-GCM
-          const encryptedBlob = await encryptBytes(messageKey, plaintextBytes);
+        // AES-GCM
+        const encryptedBlob = await encryptBytes(messageKey, plaintextBytes);
 
-          deviceCiphertexts.push({
-            device_id: device.id,
-            sender_device_id: myDeviceId,
-            encrypted_ciphertext: encryptedBlob,
-          });
-        } catch (error) {
-          console.error(`Failed to encrypt for device ${device.id}`, error);
-        }
+        deviceCiphertexts.push({
+          device_id: device.id,
+          sender_device_id: myDeviceId,
+          encrypted_ciphertext: encryptedBlob,
+        });
+      }
+
+      if (deviceCiphertexts.length !== targetDevices.length) {
+        throw new Error("Failed to encrypt for every DM target device");
       }
 
       return deviceCiphertexts;
@@ -72,11 +69,7 @@ export function useDMKeys() {
       encryptedCiphertext: string,
       senderPublicKeyBase64: string,
     ) => {
-      const myDeviceId = localStorage.getItem("device_id");
-      if (!myDeviceId) throw new Error("No local device_id found");
-
-      const myPrivateKey = await getPrivateKey(myDeviceId);
-      if (!myPrivateKey) throw new Error("No private key found in IndexedDB");
+      const { privateKey: myPrivateKey } = await resolveTrustedLocalDevice();
 
       // ECDH: My Private + Sender's Public -> Shared Secret
       const sharedSecret = await deriveSharedSecret(

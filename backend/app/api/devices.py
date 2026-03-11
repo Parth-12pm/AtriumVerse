@@ -95,17 +95,36 @@ async def register_device(
         select(Device).where(
             Device.user_id == current_user.id,
             Device.is_trusted == True,
+            Device.deleted_at == None,
         ).limit(1)
     )
     has_trusted_device = result.scalars().first() is not None
 
     # If no trusted device exists → this IS the first device → auto-trust it.
-    # Protected by partial unique index against concurrent races.
+    # If a trusted device exists, check if this is a recovery of an already trusted key.
+    # An attacker gains no decryption ability by registering an already-trusted public key
+    # without possessing the private key, so we can safely mirror the trust status.
+    is_trusted = False
+    if not has_trusted_device:
+        is_trusted = True
+    else:
+        # Check if they are recovering an existing trusted public key
+        trusted_key_res = await db.execute(
+            select(Device).where(
+                Device.user_id == current_user.id,
+                Device.is_trusted == True,
+                Device.deleted_at == None,
+                Device.public_key == body.public_key
+            ).limit(1)
+        )
+        if trusted_key_res.scalar_one_or_none():
+            is_trusted = True
+
     new_device = Device(
         user_id=current_user.id,
         public_key=body.public_key,
         device_label=body.device_label,
-        is_trusted=not has_trusted_device,  # True if first device, False otherwise
+        is_trusted=is_trusted,
     )
 
     db.add(new_device)
@@ -150,7 +169,7 @@ async def get_my_devices(
     """
     result = await db.execute(
         select(Device)
-        .where(Device.user_id == current_user.id)
+        .where(Device.user_id == current_user.id, Device.deleted_at == None)
         .order_by(Device.created_at.desc())
     )
     devices = result.scalars().all()
@@ -195,6 +214,7 @@ async def get_user_trusted_devices(
         select(Device).where(
             Device.user_id == user_id,
             Device.is_trusted == True,
+            Device.deleted_at == None,
         )
     )
     devices = result.scalars().all()
