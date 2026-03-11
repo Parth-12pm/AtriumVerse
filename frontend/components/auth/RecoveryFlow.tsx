@@ -3,11 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  recoverViaWebAuthn,
-  recoverViaPassphrase,
-  deriveKeyFromRecoveryCode,
-} from "@/lib/keyBackup";
+import { recoverViaWebAuthn, recoverViaPassphrase } from "@/lib/keyBackup";
 import { ShieldAlert, KeyRound, Fingerprint, Lock } from "lucide-react";
 
 export function RecoveryFlow({
@@ -16,12 +12,12 @@ export function RecoveryFlow({
   onCancel,
 }: {
   backupInfo: any;
-  onRecovered: (privateKey: CryptoKey) => void;
+  onRecovered: (privateKey: CryptoKey, publicKeyBase64: string) => void;
   onCancel: () => void;
 }) {
-  const [method, setMethod] = useState<
-    "choose" | "prf" | "passphrase" | "code"
-  >("choose");
+  const [method, setMethod] = useState<"choose" | "prf" | "passphrase">(
+    "choose",
+  );
   const [passphrase, setPassphrase] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -34,11 +30,11 @@ export function RecoveryFlow({
     setError(null);
     setIsLoading(true);
     try {
-      const privateKey = await recoverViaWebAuthn(
+      const { privateKey, publicKeyBase64 } = await recoverViaWebAuthn(
         backupInfo.encrypted_blob,
         backupInfo.prf_credential_id,
       );
-      onRecovered(privateKey);
+      onRecovered(privateKey, publicKeyBase64);
     } catch (err: any) {
       setError(err.message || "Face ID / Windows Hello recovery failed.");
     } finally {
@@ -51,48 +47,18 @@ export function RecoveryFlow({
     setError(null);
     setIsLoading(true);
     try {
-      const privateKey = await recoverViaPassphrase(
+      const { privateKey, publicKeyBase64 } = await recoverViaPassphrase(
         backupInfo.encrypted_blob,
         backupInfo.salt,
         passphrase,
       );
-      onRecovered(privateKey);
+      onRecovered(privateKey, publicKeyBase64);
     } catch (err: any) {
       setError("Incorrect backup passphrase. Please try again.");
     } finally {
       setIsLoading(false);
     }
   };
-
-  const handleCodeRecovery = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setIsLoading(true);
-    try {
-      const token = localStorage.getItem("token");
-      if (!token) throw new Error("Not logged in");
-      const userId = parseJwt(token).sub; // Assuming userId is in sub
-
-      const privateKey = await deriveKeyFromRecoveryCode(code, userId);
-      // Wait, the recovery code derives the key but we need to see if it actually decrypts history or is the permanent key?
-      // Actually, if we use the recovery code, we can't fetch the blob from server because the recovery code ITSELF
-      // is the entropy to derive the private key? Wait, in Phase 10: "Derive private key from recovery code ... return crypto.subtle.deriveKey(...)".
-      // Let's assume onRecovered(privateKey) works because the private key IS the derived key.
-      onRecovered(privateKey as CryptoKey);
-    } catch (err: any) {
-      setError("Invalid recovery code.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  function parseJwt(token: string) {
-    try {
-      return JSON.parse(atob(token.split(".")[1]));
-    } catch (e) {
-      return null;
-    }
-  }
 
   if (method === "choose") {
     return (
@@ -138,14 +104,6 @@ export function RecoveryFlow({
           </Button>
         )}
 
-        <Button
-          onClick={() => setMethod("code")}
-          variant="default"
-          className="w-full text-zinc-500"
-        >
-          Use 20-Character Recovery Code Instead
-        </Button>
-
         {error && <p className="text-red-500 text-sm text-center">{error}</p>}
 
         <Button onClick={onCancel} variant="neutral" className="mt-4">
@@ -159,6 +117,7 @@ export function RecoveryFlow({
     return (
       <form
         onSubmit={handlePassphraseRecovery}
+        onKeyDown={(e) => e.stopPropagation()}
         className="flex flex-col space-y-4"
       >
         <h2 className="text-xl font-bold text-center">
@@ -181,37 +140,6 @@ export function RecoveryFlow({
             Back
           </Button>
           <Button type="submit" disabled={isLoading || !passphrase}>
-            Recover
-          </Button>
-        </div>
-      </form>
-    );
-  }
-
-  if (method === "code") {
-    return (
-      <form onSubmit={handleCodeRecovery} className="flex flex-col space-y-4">
-        <h2 className="text-xl font-bold text-center">Enter Recovery Code</h2>
-        <p className="text-sm text-zinc-400 text-center">
-          Enter the 20-character code you saved during account setup.
-        </p>
-        <Input
-          type="text"
-          placeholder="XXXX-XXXX-XXXX-XXXX-XXXX"
-          value={code}
-          onChange={(e) => setCode(e.target.value.toUpperCase())}
-          required
-        />
-        {error && <p className="text-red-500 text-sm">{error}</p>}
-        <div className="flex justify-between mt-4">
-          <Button
-            type="button"
-            variant="noShadow"
-            onClick={() => setMethod("choose")}
-          >
-            Back
-          </Button>
-          <Button type="submit" disabled={isLoading || code.length < 20}>
             Recover
           </Button>
         </div>

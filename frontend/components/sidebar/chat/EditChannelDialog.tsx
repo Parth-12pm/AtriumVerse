@@ -70,9 +70,7 @@ export default function EditChannelDialog({
         toast.info("Initializing End-to-End Encryption...");
 
         // 1. Fetch all trusted devices for all users in server
-        // This requires an endpoint we might need to add, but we can hit /devices/server/{serverId}
-        // Let's assume we fetch them:
-        const devicesRes = await fetchAPI(`/devices/server/${serverId}`); // Assume this exists or we need to build it
+        const devicesRes = await fetchAPI(`/devices/server/${serverId}`);
 
         const deviceId = localStorage.getItem("device_id");
         if (!deviceId) throw new Error("No local device_id");
@@ -91,15 +89,21 @@ export default function EditChannelDialog({
             myPrivateKey,
             device.public_key,
           );
+
           const wrapKey = await deriveKey(
             sharedSecret,
             channelId,
             "channel-key",
           );
-          const encryptedBlob = await encryptBytes(wrapKey, channelKeyBytes);
+
+          const encryptedBlobBase64url = await encryptBytes(
+            wrapKey,
+            channelKeyBytes,
+          );
+
           encryptedKeys.push({
-            device_id: device.id,
-            encrypted_channel_key: encryptedBlob,
+            device_id: device.device_id,
+            encrypted_channel_key: encryptedBlobBase64url,
           });
         }
 

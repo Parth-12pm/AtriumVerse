@@ -109,7 +109,7 @@ async def enable_channel_encryption(
         raise HTTPException(status_code=400, detail="Owner has no active trusted devices.")
 
     # CRITICAL: Atomic Transaction Block
-    async with db.begin():
+    try:
         # Has it already been enabled?
         enc_query = select(ChannelEncryption).where(ChannelEncryption.channel_id == channel_id)
         enc_res = await db.execute(enc_query)
@@ -131,6 +131,11 @@ async def enable_channel_encryption(
                 owner_device_id=owner_device.id
             )
             db.add(key_record)
+            
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise e
         
     return {"channel_id": channel_id, "epoch": 1}
 
@@ -202,7 +207,7 @@ async def rotate_channel_key(
         raise HTTPException(status_code=400, detail="Owner has no active trusted devices.")
 
     # CRITICAL: Atomic Transaction Block
-    async with db.begin():
+    try:
         enc_query = select(ChannelEncryption).where(ChannelEncryption.channel_id == channel_id, ChannelEncryption.is_enabled == True).with_for_update()
         enc_res = await db.execute(enc_query)
         enc = enc_res.scalar_one_or_none()
@@ -223,7 +228,11 @@ async def rotate_channel_key(
                 owner_device_id=owner_device.id
             )
             db.add(key_record)
-            
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise e
+
     return {"channel_id": channel_id, "epoch": new_epoch}
 
 

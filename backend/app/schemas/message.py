@@ -7,6 +7,8 @@ from datetime import datetime
 class MessageCreate(BaseModel):
     content: str
     reply_to_id: Optional[UUID] = None
+    is_encrypted: bool = False
+    epoch: Optional[int] = None
 
 
 class MessageResponse(BaseModel):
@@ -21,6 +23,8 @@ class MessageResponse(BaseModel):
     
     # Populated from join
     username: Optional[str] = None
+    is_encrypted: bool = False
+    epoch: Optional[int] = None
     
     class Config:
         from_attributes = True

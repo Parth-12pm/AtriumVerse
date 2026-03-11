@@ -282,7 +282,7 @@ async def send_direct_message(
     if not message_in.content or len(message_in.content) > 2000:
         raise HTTPException(400, detail="Message must be 1-2000 characters")
     
-    async with db.begin():
+    try:
         # Canonical Ordering for DM Epoch
         user_a_id = min(current_user.id, receiver.id)
         user_b_id = max(current_user.id, receiver.id)
@@ -308,6 +308,10 @@ async def send_direct_message(
             sender_device_id=message_in.sender_device_id
         )
         db.add(new_message)
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise e
     
     await db.refresh(new_message)
     
@@ -347,7 +351,7 @@ async def submit_device_keys(
     if msg.sender_id != current_user.id:
         raise HTTPException(status_code=403, detail="Only sender can attach device keys")
 
-    async with db.begin():
+    try:
         # Insert all ciphertexts
         for ciphertext_obj in payload.device_ciphertexts:
             # Validate each device_id belongs to the sender or receiver
@@ -372,6 +376,10 @@ async def submit_device_keys(
                 encrypted_ciphertext=ciphertext_obj.encrypted_ciphertext
             )
             db.add(key_record)
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise e
 
     return {"status": "success"}
 

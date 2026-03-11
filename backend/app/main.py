@@ -42,7 +42,7 @@ app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[NEXT_PUBLIC_URL,"https://atriumverse.vercel.app","http://localhost:3000"],
+    allow_origins=[NEXT_PUBLIC_URL, "https://atriumverse.vercel.app", "http://localhost:3000", "http://192.168.1.100:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

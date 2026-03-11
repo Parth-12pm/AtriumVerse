@@ -43,20 +43,22 @@ export function BackupSetup({ onComplete }: { onComplete: () => void }) {
       if (!token) throw new Error("User not logged in");
       const userObj = JSON.parse(atob(token.split(".")[1]));
 
+      const publicKey = localStorage.getItem("device_public_key");
+      if (!publicKey) throw new Error("Public Key not found in local storage.");
+
       const res = await createBackupViaPRF(
         userObj.sub,
         userObj.username,
         privateKey,
+        publicKey,
       );
 
       if (!res.supported) {
         // Fallback to passphrase
         setStep("passphrase");
       } else {
-        // PRF success, go to recovery code
-        const code = generateRecoveryCode();
-        setRecoveryCode(code);
-        setStep("recovery_code");
+        // PRF success
+        onComplete();
       }
     } catch (err: any) {
       setError(err.message || "Failed to setup Passkey backup.");
@@ -81,10 +83,11 @@ export function BackupSetup({ onComplete }: { onComplete: () => void }) {
       const privateKey = await getPrivateKey(deviceId);
       if (!privateKey) throw new Error("Private Key not found.");
 
-      await createBackupViaPassphrase(privateKey, passphrase);
-      const code = generateRecoveryCode();
-      setRecoveryCode(code);
-      setStep("recovery_code");
+      const publicKey = localStorage.getItem("device_public_key");
+      if (!publicKey) throw new Error("Public Key not found in local storage.");
+
+      await createBackupViaPassphrase(privateKey, passphrase, publicKey);
+      onComplete();
     } catch (err: any) {
       setError(err.message || "Failed to setup passphrase backup.");
     } finally {
@@ -135,6 +138,7 @@ export function BackupSetup({ onComplete }: { onComplete: () => void }) {
     return (
       <form
         onSubmit={handlePassphraseSetup}
+        onKeyDown={(e) => e.stopPropagation()}
         className="flex flex-col space-y-4 text-center max-w-sm mx-auto"
       >
         <Lock className="w-12 h-12 mx-auto text-zinc-400 mb-2" />

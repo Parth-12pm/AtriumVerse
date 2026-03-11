@@ -94,7 +94,7 @@ async def get_key_backup(
         backup_method=backup.backup_method,
         prf_credential_id=backup.prf_credential_id,
         salt=backup.salt,
-        updated_at=backup.updated_at
+        updated_at=datetime.utcnow() # Missing from model
     )
 
 

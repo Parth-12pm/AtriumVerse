@@ -92,7 +92,9 @@ async def list_messages(
             "edited_at": msg.edited_at,
             "is_deleted": msg.is_deleted,
             "created_at": msg.created_at,
-            "username": username
+            "username": username,
+            "is_encrypted": getattr(msg, "is_encrypted", False) or False,
+            "epoch": getattr(msg, "epoch", None),
         }
         messages.append(MessageResponse(**msg_dict))
     
@@ -138,7 +140,9 @@ async def create_message(
         channel_id=channel_id,
         user_id=current_user.id,
         content=message_in.content,
-        reply_to_id=message_in.reply_to_id
+        reply_to_id=message_in.reply_to_id,
+        is_encrypted=message_in.is_encrypted,
+        epoch=message_in.epoch,
     )
     
     db.add(new_message)
@@ -155,7 +159,9 @@ async def create_message(
         edited_at=new_message.edited_at,
         is_deleted=new_message.is_deleted,
         created_at=new_message.created_at,
-        username=current_user.username
+        username=current_user.username,
+        is_encrypted=new_message.is_encrypted or False,
+        epoch=new_message.epoch,
     )
     
     return response

@@ -111,14 +111,17 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
 
   // Emit ui:focus/ui:blur events for game input control
   useEffect(() => {
-    if (currentView !== "collapsed") {
+    const isModalActive =
+      !!pendingRequest || deviceState === "recovery_prompt" || showBackupSetup;
+
+    if (currentView !== "collapsed" || isModalActive) {
       // Tell game to disable input
       EventBus.emit("ui:focus");
     } else {
       // Tell game to re-enable input
       EventBus.emit("ui:blur");
     }
-  }, [currentView]);
+  }, [currentView, pendingRequest, deviceState, showBackupSetup]);
 
   const toggleView = (view: SidebarView) => {
     if (currentView === view) {
@@ -413,8 +416,11 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
           <div className="bg-zinc-950 border border-zinc-800 p-8 rounded-xl max-w-md w-full shadow-2xl">
             <RecoveryFlow
               backupInfo={backupInfo}
-              onRecovered={async (privateKey: CryptoKey) => {
-                await recoverDevice(privateKey);
+              onRecovered={async (
+                privateKey: CryptoKey,
+                publicKeyBase64: string,
+              ) => {
+                await recoverDevice(privateKey, publicKeyBase64);
                 localStorage.setItem("backup_configured_v1", "true"); // Avoid forcing backup setup again
               }}
               onCancel={() => {

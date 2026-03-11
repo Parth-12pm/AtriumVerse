@@ -45,10 +45,17 @@ class ChannelDeviceKey(Base):
     # The channel_key was ECDH-derived between distributing device and this device
     encrypted_channel_key = Column(Text, nullable=False)
 
+    owner_device_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("devices.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
-    device = relationship("Device", backref="channel_keys")
+    device = relationship("Device", backref="channel_keys", foreign_keys=[device_id])
+    owner_device = relationship("Device", foreign_keys=[owner_device_id])
 
     __table_args__ = (
         # A device should receive the channel key for a given epoch exactly once.

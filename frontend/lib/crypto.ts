@@ -195,7 +195,7 @@ export async function importPrivateKeyFromBytes(
     "pkcs8",
     bytes,
     { name: "X25519" },
-    false, // Once imported on the new device, it becomes permanent and non-extractable again
+    true, // Must be true so Phase 10 Key Backup can dynamically extract and encrypt it
     ["deriveKey", "deriveBits"],
   );
 }

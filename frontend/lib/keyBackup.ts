@@ -70,12 +70,10 @@ export async function createBackupViaPRF(
   userId: string,
   username: string,
   privateKey: CryptoKey,
+  publicKeyBase64: string,
 ) {
-  // 1. Fetch challenge
-  const challengeRes = await fetchAPI(
-    "/device-linking/challenge?request_id=" + crypto.randomUUID(),
-  );
-  const challenge = base64urlToBuffer(challengeRes.challenge);
+  // 1. Generate local challenge for PRF authentication
+  const challenge = window.crypto.getRandomValues(new Uint8Array(32));
 
   // 2. Create Passkey requesting PRF
   const credential = (await navigator.credentials.create({
@@ -132,7 +130,7 @@ export async function createBackupViaPRF(
     return { supported: false };
   }
 
-  // 5. Encrypt Private Key
+  // 5. Encrypt Private Key + Public Key together
   const privateKeyBytes = await exportKeyAsBytes(privateKey);
   const prfKey = await crypto.subtle.importKey(
     "raw",
@@ -141,10 +139,11 @@ export async function createBackupViaPRF(
     false,
     ["encrypt"],
   );
-  const encryptedBlob = await encryptMessage(
-    prfKey,
-    bytesToBase64url(privateKeyBytes),
-  );
+  const blobPayload = JSON.stringify({
+    privateKey: bytesToBase64url(privateKeyBytes),
+    publicKey: publicKeyBase64,
+  });
+  const encryptedBlob = await encryptMessage(prfKey, blobPayload);
 
   // 6. Save Backup
   await postKeyBackup({
@@ -160,11 +159,8 @@ export async function recoverViaWebAuthn(
   backupBlob: string,
   prfCredentialIdBase64: string,
 ) {
-  // 1. Fetch challenge
-  const challengeRes = await fetchAPI(
-    "/device-linking/challenge?request_id=" + crypto.randomUUID(),
-  );
-  const challenge = base64urlToBuffer(challengeRes.challenge);
+  // 1. Generate local challenge
+  const challenge = window.crypto.getRandomValues(new Uint8Array(32));
 
   // 2. Authenticate
   const assertion = (await navigator.credentials.get({
@@ -192,7 +188,7 @@ export async function recoverViaWebAuthn(
     throw new Error("PRF not supported on this device/authenticator");
   }
 
-  // 4. Decrypt Private Key
+  // 4. Decrypt Private Key + Public Key
   const prfKey = await crypto.subtle.importKey(
     "raw",
     prfOutput,
@@ -200,11 +196,22 @@ export async function recoverViaWebAuthn(
     false,
     ["decrypt"],
   );
-  const privateKeyBase64url = await decryptMessage(prfKey, backupBlob);
+  const blobPayloadStr = await decryptMessage(prfKey, backupBlob);
+  let privateKeyBase64url: string;
+  let publicKeyBase64: string = "";
+  try {
+    const parsed = JSON.parse(blobPayloadStr);
+    privateKeyBase64url = parsed.privateKey;
+    publicKeyBase64 = parsed.publicKey || "";
+  } catch {
+    // Legacy format: blob was just the raw private key base64url
+    privateKeyBase64url = blobPayloadStr;
+  }
   const privateKeyBytes = base64urlToBytes(privateKeyBase64url);
 
   // 5. Import Key
-  return importPrivateKeyFromBytes(privateKeyBytes);
+  const privateKey = await importPrivateKeyFromBytes(privateKeyBytes);
+  return { privateKey, publicKeyBase64 };
 }
 
 // --- Passphrase Path (Fallback) ---
@@ -212,6 +219,7 @@ export async function recoverViaWebAuthn(
 export async function createBackupViaPassphrase(
   privateKey: CryptoKey,
   passphrase: string,
+  publicKeyBase64: string,
 ) {
   const salt = crypto.getRandomValues(new Uint8Array(32)).buffer;
 
@@ -232,10 +240,11 @@ export async function createBackupViaPassphrase(
   );
 
   const privateKeyBytes = await exportKeyAsBytes(privateKey);
-  const encryptedBlob = await encryptMessage(
-    backupKey,
-    bytesToBase64url(privateKeyBytes),
-  );
+  const blobPayload = JSON.stringify({
+    privateKey: bytesToBase64url(privateKeyBytes),
+    publicKey: publicKeyBase64,
+  });
+  const encryptedBlob = await encryptMessage(backupKey, blobPayload);
 
   await postKeyBackup({
     encrypted_blob: encryptedBlob,
@@ -269,10 +278,23 @@ export async function recoverViaPassphrase(
     ["decrypt"],
   );
 
-  const privateKeyBase64url = await decryptMessage(backupKey, backupBlob);
+  const blobPayloadStr = await decryptMessage(backupKey, backupBlob);
+  let privateKeyBase64url: string;
+  let publicKeyBase64: string = "";
+  try {
+    const parsed = JSON.parse(blobPayloadStr);
+    privateKeyBase64url = parsed.privateKey;
+    publicKeyBase64 = parsed.publicKey || "";
+  } catch {
+    // Legacy format: blob was just the raw private key base64url
+    privateKeyBase64url = blobPayloadStr;
+  }
   const privateKeyBytes = base64urlToBytes(privateKeyBase64url);
 
-  return importPrivateKeyFromBytes(privateKeyBytes);
+  return {
+    privateKey: await importPrivateKeyFromBytes(privateKeyBytes),
+    publicKeyBase64,
+  };
 }
 
 // --- Recovery Code (Last Resort Fallback) ---

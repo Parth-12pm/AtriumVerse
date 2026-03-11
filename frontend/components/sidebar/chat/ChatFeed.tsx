@@ -11,6 +11,7 @@ import { formatChatTimestamp } from "@/lib/time";
 import EventBus from "@/game/EventBus";
 import type { Message, DirectMessage } from "@/types/api.types";
 import { useDMKeys } from "@/hooks/useDMKeys";
+import { useChannelKeys } from "@/hooks/useChannelKeys";
 import { fetchAPI } from "@/lib/api";
 
 // Union type for messages that can be either channel messages or DMs
@@ -35,18 +36,39 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
     typeof window !== "undefined" ? localStorage.getItem("device_id") : null;
 
   const { encryptDM, decryptDM } = useDMKeys();
+  const { encryptForChannel, decryptForChannel } = useChannelKeys();
 
   const loadChannelMessages = useCallback(async () => {
     if (!channelId) return;
 
     try {
       const response = await messagesAPI.list(channelId);
-      setMessages(response.data.reverse()); // Oldest first
+      const msgs: Message[] = response.data.reverse(); // Oldest first
+
+      // Hydrate decryption for E2EE messages
+      const hydrated = await Promise.all(
+        msgs.map(async (msg) => {
+          if (msg.is_encrypted && msg.content && msg.epoch != null) {
+            try {
+              msg.decryptedContent = await decryptForChannel(
+                channelId,
+                msg.epoch,
+                msg.content,
+              );
+            } catch {
+              msg.decryptionFailed = true;
+            }
+          }
+          return msg;
+        }),
+      );
+
+      setMessages(hydrated);
     } catch (error) {
       console.error("Failed to load channel messages:", error);
       toast.error("Failed to load messages");
     }
-  }, [channelId]);
+  }, [channelId, decryptForChannel]);
 
   const loadDMMessages = useCallback(async () => {
     if (!dmUserId || !myDeviceId) return;
@@ -163,16 +185,36 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
     setLoading(true);
     try {
       if (mode === "channel" && channelId) {
-        // Use messagesAPI directly for reliable REST calls
-        const response = await messagesAPI.send(channelId, {
-          content: newMessage.trim(),
-        });
-        // Add the new message to the list locally
-        setMessages((prev) => [...prev, response.data]);
+        let content = newMessage.trim();
+        let isEncrypted = false;
+        let epoch: number | undefined;
 
-        // Broadcast via WebSocket so other users receive it in real-time
-        EventBus.emit("channel:message_sent", {
+        // Attempt E2EE encryption; fall back to plaintext gracefully
+        try {
+          const encrypted = await encryptForChannel(channelId, content);
+          content = encrypted.ciphertext;
+          epoch = encrypted.epoch;
+          isEncrypted = true;
+        } catch {
+          // Channel not encrypted or key unavailable — send plaintext
+        }
+
+        const response = await messagesAPI.send(channelId, {
+          content,
+          is_encrypted: isEncrypted,
+          epoch,
+        } as any);
+
+        const newMsg: Message = {
           ...response.data,
+          // Show the plaintext locally immediately without re-decrypting
+          decryptedContent: isEncrypted ? newMessage.trim() : undefined,
+        };
+
+        setMessages((prev) => [...prev, newMsg]);
+
+        EventBus.emit("channel:message_sent", {
+          ...newMsg,
           channel_id: channelId,
         });
       } else if (mode === "dm" && dmUserId) {

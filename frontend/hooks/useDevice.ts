@@ -121,6 +121,7 @@ export function useDevice() {
       // 1. Generate temp extractable keys
       const tempKeypair = await generateKeypair(true);
       const pubBase64 = await exportPublicKey(tempKeypair.publicKey);
+      localStorage.setItem("device_public_key", pubBase64);
 
       // 2. Export to raw pkcs8 bytes
       const rawBytes = await window.crypto.subtle.exportKey(
@@ -185,12 +186,12 @@ export function useDevice() {
       let binaryStr = "";
       combined.forEach((b) => (binaryStr += String.fromCharCode(b)));
       const b64Ciphertext = btoa(binaryStr);
-      await storeEncryptedBackup(data.id, b64Ciphertext);
+      await storeEncryptedBackup(data.device_id, b64Ciphertext);
 
       // 6. Store permanent key and ID
-      await storePrivateKey(data.id, permanentKey);
-      localStorage.setItem("device_id", data.id);
-      setDeviceId(data.id);
+      await storePrivateKey(data.device_id, permanentKey);
+      localStorage.setItem("device_id", data.device_id);
+      setDeviceId(data.device_id);
       setDeviceState("trusted");
     } catch (err: any) {
       console.error(err);
@@ -199,11 +200,14 @@ export function useDevice() {
     }
   };
 
-  const recoverDevice = async (recoveredPrivateKey: CryptoKey) => {
+  const recoverDevice = async (
+    recoveredPrivateKey: CryptoKey,
+    publicKeyBase64: string,
+  ) => {
     setDeviceState("registering");
     try {
-      // 1. Export public key to register
-      const pubBase64 = await exportPublicKey(recoveredPrivateKey);
+      // 1. We already recovered the public key from the backup blob
+      const pubBase64 = publicKeyBase64;
 
       // 2. Register with backend (automatically marked trusted by backend if we pass a special recovery flag?
       // Actually, standard registration creates it as untrusted. But wait, if recovering, the user
@@ -222,11 +226,12 @@ export function useDevice() {
       });
       if (!res.ok) throw new Error("Failed to register recovered device");
       const data = await res.json();
-      const newDeviceId = data.id;
+      const newDeviceId = data.device_id;
 
       // 3. Store in IDB and localStorage
       await storePrivateKey(newDeviceId, recoveredPrivateKey);
       localStorage.setItem("device_id", newDeviceId);
+      localStorage.setItem("device_public_key", pubBase64);
       setDeviceId(newDeviceId);
       setDeviceState("trusted");
 
@@ -261,6 +266,9 @@ export function useDevice() {
       EventBus.emit("device:recovery_complete", { deviceId: newDeviceId });
     } catch (err: any) {
       console.error(err);
+      // Clear any partially-set device_id to avoid stale state
+      localStorage.removeItem("device_id");
+      setDeviceId(null);
       setDeviceState("error");
       setErrorMsg(err.message);
     }
@@ -282,15 +290,15 @@ export function useDevice() {
       });
       if (!res1.ok) throw new Error("Failed to register pending device");
       const deviceData = await res1.json();
-      localStorage.setItem("device_id", deviceData.id);
-      setDeviceId(deviceData.id);
+      localStorage.setItem("device_id", deviceData.device_id);
+      setDeviceId(deviceData.device_id);
 
       // Request strict link
       const res2 = await fetch(`${API_URL}/device-linking/request`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({
-          new_device_id: deviceData.id,
+          new_device_id: deviceData.device_id,
           temp_public_key: tempPub,
           device_label: navigator.userAgent.substring(0, 30),
         }),
@@ -392,6 +400,9 @@ export function useDevice() {
           const dId = localStorage.getItem("device_id");
           if (dId) {
             await storePrivateKey(dId, permKey);
+            // Export temp public key and store it
+            const tempPub = await exportPublicKey(tempKeys.publicKey);
+            localStorage.setItem("device_public_key", tempPub);
             // Encrypt backup via interim approach
             const wrapKeyString = crypto.randomUUID();
             localStorage.setItem("interim_wrap_key", wrapKeyString);
