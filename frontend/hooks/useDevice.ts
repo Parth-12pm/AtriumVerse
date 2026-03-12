@@ -68,6 +68,112 @@ export function useDevice() {
     };
   };
 
+    const registerFirstDevice = useCallback(async () => {
+    setDeviceState("registering");
+    try {
+      // 1. Generate temp extractable keys
+      const tempKeypair = await generateKeypair(true);
+      const pubBase64 = await exportPublicKey(tempKeypair.publicKey);
+      localStorage.setItem("device_public_key", pubBase64);
+
+      // 2. Export to raw pkcs8 bytes
+      const rawBytes = await window.crypto.subtle.exportKey(
+        "pkcs8",
+        tempKeypair.privateKey,
+      );
+
+      // 3. Import back as extractable: false for permanent ops
+      const permanentKey = await importPrivateKeyFromBytes(rawBytes);
+
+      // 4. Register with backend
+      const res = await fetch(`${API_URL}/devices/register`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          public_key: pubBase64,
+          device_label: navigator.userAgent.substring(0, 30),
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to register device");
+      const data = await res.json();
+
+      // 5. Store a local encrypted backup for future device-link approvals
+      await storeInterimEncryptedBackup(data.device_id, rawBytes);
+
+      // 6. Store permanent key and ID
+      await storePrivateKey(data.device_id, permanentKey);
+      localStorage.setItem("device_id", data.device_id);
+      persistDeviceOwner(localStorage.getItem("user_id") || "");
+      setDeviceId(data.device_id);
+      setDeviceState("trusted");
+    } catch (err) {
+      console.error(err);
+      setDeviceState("error");
+      setErrorMsg(err.message);
+    }
+  }, []);
+
+  const initiateLinkingCeremony = useCallback(async () => {
+    try {
+      const tempKeypair = await generateKeypair(true);
+      const tempPub = await exportPublicKey(tempKeypair.publicKey);
+
+      // Register untrusted device
+      const res1 = await fetch(`${API_URL}/devices/register`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          public_key: tempPub, // Temporary identity until approval assigns the permanent shared key
+          device_label: navigator.userAgent.substring(0, 30),
+        }),
+      });
+      if (!res1.ok) throw new Error("Failed to register pending device");
+      const deviceData = await res1.json();
+      localStorage.setItem("device_id", deviceData.device_id);
+      persistDeviceOwner(localStorage.getItem("user_id") || "");
+      setDeviceId(deviceData.device_id);
+
+      // Request strict link
+      const res2 = await fetch(`${API_URL}/device-linking/request`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          new_device_id: deviceData.device_id,
+          temp_public_key: tempPub,
+          device_label: navigator.userAgent.substring(0, 30),
+        }),
+      });
+      if (!res2.ok) throw new Error("Failed to request link");
+      const reqData = await res2.json();
+
+      await storeTempKeypair(reqData.request_id, tempKeypair);
+      localStorage.setItem("pending_link_request_id", reqData.request_id);
+      setExpiresAt(new Date(reqData.expires_at));
+      setDeviceState("waiting_for_approval");
+    } catch (err) {
+      console.error(err);
+      setDeviceState("error");
+      setErrorMsg(err.message);
+    }
+  }, []);
+
+  const checkForPendingApprovals = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/device-linking/pending`, {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const pending = await res.json();
+        if (pending.length > 0) {
+          setPendingRequest(pending[0]); // Handle first pending request
+          setDeviceState("approval_pending");
+        }
+      }
+    } catch (err) {
+      console.error("Error checking pending approvals", err);
+    }
+  }, []);
+
   const storeInterimEncryptedBackup = async (
     targetDeviceId: string,
     rawBytes: ArrayBuffer,
@@ -232,52 +338,9 @@ export function useDevice() {
     } finally {
       bootstrapInFlightRef.current = false;
     }
-  }, []);
+  }, [checkForPendingApprovals, initiateLinkingCeremony, registerFirstDevice]);
 
-  const registerFirstDevice = async () => {
-    setDeviceState("registering");
-    try {
-      // 1. Generate temp extractable keys
-      const tempKeypair = await generateKeypair(true);
-      const pubBase64 = await exportPublicKey(tempKeypair.publicKey);
-      localStorage.setItem("device_public_key", pubBase64);
 
-      // 2. Export to raw pkcs8 bytes
-      const rawBytes = await window.crypto.subtle.exportKey(
-        "pkcs8",
-        tempKeypair.privateKey,
-      );
-
-      // 3. Import back as extractable: false for permanent ops
-      const permanentKey = await importPrivateKeyFromBytes(rawBytes);
-
-      // 4. Register with backend
-      const res = await fetch(`${API_URL}/devices/register`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({
-          public_key: pubBase64,
-          device_label: navigator.userAgent.substring(0, 30),
-        }),
-      });
-      if (!res.ok) throw new Error("Failed to register device");
-      const data = await res.json();
-
-      // 5. Store a local encrypted backup for future device-link approvals
-      await storeInterimEncryptedBackup(data.device_id, rawBytes);
-
-      // 6. Store permanent key and ID
-      await storePrivateKey(data.device_id, permanentKey);
-      localStorage.setItem("device_id", data.device_id);
-      persistDeviceOwner(localStorage.getItem("user_id") || "");
-      setDeviceId(data.device_id);
-      setDeviceState("trusted");
-    } catch (err: any) {
-      console.error(err);
-      setDeviceState("error");
-      setErrorMsg(err.message);
-    }
-  };
 
   const recoverDevice = async (
     recoveredPrivateKey: CryptoKey,
@@ -349,73 +412,12 @@ export function useDevice() {
         }
       }
       EventBus.emit("device:recovery_complete", { deviceId: data.device_id });
-    } catch (err: any) {
+    } catch (err) {
       const dangling = localStorage.getItem("device_id");
       if (dangling) await clearLocalDeviceIdentity(dangling);
       setDeviceId(null);
       setDeviceState("error");
       setErrorMsg(err.message);
-    }
-  };
-
-  const initiateLinkingCeremony = async () => {
-    try {
-      const tempKeypair = await generateKeypair(true);
-      const tempPub = await exportPublicKey(tempKeypair.publicKey);
-
-      // Register untrusted device
-      const res1 = await fetch(`${API_URL}/devices/register`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({
-          public_key: tempPub, // Temporary identity until approval assigns the permanent shared key
-          device_label: navigator.userAgent.substring(0, 30),
-        }),
-      });
-      if (!res1.ok) throw new Error("Failed to register pending device");
-      const deviceData = await res1.json();
-      localStorage.setItem("device_id", deviceData.device_id);
-      persistDeviceOwner(localStorage.getItem("user_id") || "");
-      setDeviceId(deviceData.device_id);
-
-      // Request strict link
-      const res2 = await fetch(`${API_URL}/device-linking/request`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({
-          new_device_id: deviceData.device_id,
-          temp_public_key: tempPub,
-          device_label: navigator.userAgent.substring(0, 30),
-        }),
-      });
-      if (!res2.ok) throw new Error("Failed to request link");
-      const reqData = await res2.json();
-
-      await storeTempKeypair(reqData.request_id, tempKeypair);
-      localStorage.setItem("pending_link_request_id", reqData.request_id);
-      setExpiresAt(new Date(reqData.expires_at));
-      setDeviceState("waiting_for_approval");
-    } catch (err: any) {
-      console.error(err);
-      setDeviceState("error");
-      setErrorMsg(err.message);
-    }
-  };
-
-  const checkForPendingApprovals = async () => {
-    try {
-      const res = await fetch(`${API_URL}/device-linking/pending`, {
-        headers: getAuthHeaders(),
-      });
-      if (res.ok) {
-        const pending = await res.json();
-        if (pending.length > 0) {
-          setPendingRequest(pending[0]); // Handle first pending request
-          setDeviceState("approval_pending");
-        }
-      }
-    } catch (err) {
-      console.error("Error checking pending approvals", err);
     }
   };
 
@@ -507,7 +509,7 @@ export function useDevice() {
           setDeviceState("expired");
           localStorage.removeItem("pending_link_request_id");
         }
-      } catch (err: any) {
+      } catch (err) {
         console.error(err);
       }
     };

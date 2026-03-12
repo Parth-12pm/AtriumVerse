@@ -15,11 +15,10 @@ import {
   deriveSharedSecret,
   deriveKey,
   encryptBytes,
-  decryptBytes,
   base64urlToBuffer,
   bufferToBase64url,
 } from "@/lib/crypto";
-import { getEncryptedBackup, getPrivateKey } from "@/lib/keyStore";
+import { getEncryptedBackup } from "@/lib/keyStore";
 import { fetchKeyBackup, recoverViaPassphrase } from "@/lib/keyBackup";
 import { toast } from "sonner";
 import { PendingRequest } from "@/hooks/useDevice";
@@ -254,7 +253,7 @@ export function DeviceLinkModal({
 
       toast.success("Device linked successfully");
       onSuccess();
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
       toast.error(err.message || "Approval failed");
     } finally {
@@ -330,7 +329,7 @@ export function DeviceLinkModal({
 
       toast.success("Device linked successfully");
       onSuccess();
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
       toast.error(err.message || "Approval failed");
     } finally {

@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Map,
   MessageSquare,
   Video,
   Settings,
@@ -54,7 +53,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
       !localStorage.getItem("backup_configured_v1")
     ) {
       // Check if we just registered without a backup
-      setShowBackupSetup(true);
+      setTimeout(() => setShowBackupSetup(true), 0);
     }
   }, [deviceState]);
 
@@ -381,7 +380,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
                         await serversAPI.delete(serverId);
                         toast.success("Server deleted successfully");
                         window.location.href = "/dashboard";
-                      } catch (error: any) {
+                      } catch (error) {
                         toast.error(error.message || "Failed to delete server");
                         console.error("Delete server error:", error);
                       }

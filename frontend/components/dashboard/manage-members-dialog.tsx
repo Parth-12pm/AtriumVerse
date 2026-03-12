@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -42,7 +42,7 @@ export function ManageMembersDialog({ serverId }: ManageMembersDialogProps) {
   }, [open]);
 
   useEffect(() => {
-    const handlePublicJoin = async (data: any) => {
+    const handlePublicJoin = async (data: Record<string, unknown>) => {
       // Ensure we only react to public joins for THIS specific server
       if (data.type === "public_member_joined" && data.server_id === serverId) {
         try {
@@ -60,9 +60,10 @@ export function ManageMembersDialog({ serverId }: ManageMembersDialogProps) {
             );
             loadMembers(); // Refresh the dialog list in the background
           }
-        } catch (err) {
+        } catch (error) {
           // If it throws an error (403), this user is just a regular member,
           // NOT the owner. We silently ignore the event so we don't cause a race condition.
+          toast.error(error);
         }
       }
     };
@@ -74,7 +75,7 @@ export function ManageMembersDialog({ serverId }: ManageMembersDialogProps) {
     };
   }, [serverId]);
 
-  const loadMembers = async () => {
+  const loadMembers = useCallback(async () => {
     setLoading(true);
     try {
       const data = await fetchAPI(`/servers/${serverId}/members`);
@@ -86,7 +87,7 @@ export function ManageMembersDialog({ serverId }: ManageMembersDialogProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [serverId]);
 
   const getMyEncryptedChannelIds = async () => {
     const currentUserId = localStorage.getItem("user_id");

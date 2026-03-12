@@ -352,7 +352,7 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
 
           // Step 4: Submit keys
           await directMessagesAPI.submitDeviceKeys(sentMsg.id, ciphertexts);
-        } catch (encryptionError) {
+        } catch {
           // ROLLBACK: Delete the placeholder message if key generation/upload fails
           await directMessagesAPI.delete(sentMsg.id);
           throw new Error("Failed to secure DM. Message creation rolled back.");
@@ -383,7 +383,7 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
       }
 
       setNewMessage("");
-    } catch (error: any) {
+    } catch (error) {
       console.error("Failed to send message:", error);
       toast.error(error?.message || "Failed to send message");
     } finally {
