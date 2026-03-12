@@ -138,7 +138,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
   return (
     <>
       {/* Icon Sidebar - Always Visible */}
-      <div className="fixed left-0 top-0 h-full w-[76px] bg-white border-r-4 border-black z-[100] flex flex-col items-center py-4 gap-4">
+      <div className="fixed left-0 top-0 h-full w-19 bg-white border-r-4 border-black z-100 flex flex-col items-center py-4 gap-4">
         {/* Logo */}
         <div className="w-12 h-12 bg-blue-500 border-3 border-black rounded-lg flex items-center justify-center mb-4">
           <span className="text-white font-black text-xl">AV</span>
@@ -231,7 +231,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
       )}
 
       {currentView === "map" && (
-        <div className="fixed left-[76px] top-0 h-full w-[400px] bg-white border-r-4 border-black z-[90] flex flex-col shadow-[8px_0px_0px_0px_rgba(0,0,0,1)]">
+        <div className="fixed left-19 top-0 h-full w-100 bg-white border-r-4 border-black z-90 flex flex-col shadow-[8px_0px_0px_0px_rgba(0,0,0,1)]">
           {/* Map View Header */}
           <div className="p-4 border-b-4 border-black bg-purple-500 flex items-center justify-between">
             <h2 className="text-xl font-black text-white">Map Overview</h2>
@@ -258,7 +258,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
       )}
 
       {currentView === "media" && (
-        <div className="fixed left-26 top-0 h-full w-[400px] bg-gray-900 border-r-4 border-black z-40 flex flex-col">
+        <div className="fixed left-26 top-0 h-full w-100 bg-gray-900 border-r-4 border-black z-40 flex flex-col">
           <div className="p-4 border-b-4 border-black bg-indigo-600 flex items-center justify-between shrink-0">
             <h2 className="text-xl font-black text-white">Video Room</h2>
             <Button
@@ -288,7 +288,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
       )}
 
       {currentView === "settings" && (
-        <div className="fixed     left-26 top-0 h-full w-[400px] bg-white border-r-4 border-black z-40 flex flex-col">
+        <div className="fixed     left-26 top-0 h-full w-100 bg-white border-r-4 border-black z-40 flex flex-col">
           {/* Settings View Header */}
           <div className="p-4 border-b-4 border-black bg-gray-800 flex items-center justify-between">
             <h2 className="text-xl font-black text-white">Settings</h2>
@@ -416,7 +416,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
 
       {/* 2. Recovery Prompt */}
       {deviceState === "waiting_for_approval" && (
-        <div className="fixed left-16 top-0 bottom-0 w-80 z-[100] bg-zinc-950/95 backdrop-blur-sm flex items-center justify-center p-4 border-r-4 border-black">
+        <div className="fixed left-16 top-0 bottom-0 w-80 z-100 bg-zinc-950/95 backdrop-blur-sm flex items-center justify-center p-4 border-r-4 border-black">
           <div className="w-full rounded-lg border-4 border-black bg-white p-5 text-center space-y-3">
             <h2 className="text-xl font-black">Approve This Browser</h2>
             <p className="text-sm text-muted-foreground">
@@ -439,7 +439,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
       )}
 
       {deviceState === "recovery_prompt" && (
-        <div className="fixed left-16 top-0 bottom-0 w-80 z-[100] bg-zinc-950/95 backdrop-blur-sm flex items-center justify-center p-4 border-r-4 border-black">
+        <div className="fixed left-16 top-0 bottom-0 w-80 z-100 bg-zinc-950/95 backdrop-blur-sm flex items-center justify-center p-4 border-r-4 border-black">
           <div className="w-full">
             <RecoveryFlow
               backupInfo={backupInfo}
@@ -462,7 +462,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
 
       {/* 3. Mandatory Backup Setup (First Time) */}
       {showBackupSetup && (
-        <div className="fixed left-16 top-0 bottom-0 w-80 z-[100] bg-zinc-950/95 backdrop-blur-sm flex items-center justify-center p-4 border-r-4 border-black">
+        <div className="fixed left-16 top-0 bottom-0 w-80 z-100 bg-zinc-950/95 backdrop-blur-sm flex items-center justify-center p-4 border-r-4 border-black">
           <div className="w-full relative">
             <BackupSetup
               onComplete={() => {
