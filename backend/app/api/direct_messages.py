@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, or_, and_, func
 from typing import List
 from uuid import UUID
+import uuid
 from datetime import datetime
 
 from app.core.database import get_db
@@ -491,3 +492,78 @@ async def delete_direct_message(
     await db.commit()
     
     return {"message": "Message deleted successfully"}
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ADD THIS ENDPOINT TO YOUR DIRECT MESSAGES ROUTER
+# (whatever file currently contains your /dm/ routes)
+#
+# Required imports — add to the top of that file if not already present:
+#   from sqlalchemy.future import select
+#   from app.models.dm_device_key import DmDeviceKey
+#   from app.models.direct_message import DirectMessage   (or whatever your DM model is called)
+#   from fastapi import Query
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/messages/{message_id}/my-ciphertext")
+async def get_my_dm_ciphertext(
+    message_id: uuid.UUID,
+    device_id: uuid.UUID = Query(..., description="The requesting device's ID"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Returns the ciphertext slice addressed to a specific device for a single DM.
+
+    Called by ChatFeed.tsx when a real-time WebSocket notification arrives.
+    Avoids a full history refetch — the frontend only needs this one message.
+
+    Security: verifies the requesting user is the sender or receiver of the
+    message before returning any ciphertext.
+    """
+    # Load the message and verify the current user is a participant
+    msg_result = await db.execute(
+        select(DirectMessage).where(DirectMessage.id == message_id)
+    )
+    message = msg_result.scalars().first()
+
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    if message.sender_id != current_user.id and message.receiver_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not your message")
+
+    # Fetch the device-specific ciphertext row
+    key_result = await db.execute(
+        select(DmDeviceKey).where(
+            DmDeviceKey.dm_id == message_id,
+            DmDeviceKey.device_id == device_id,
+        )
+    )
+    device_key = key_result.scalars().first()
+
+    if not device_key:
+        raise HTTPException(
+            status_code=404,
+            detail="No ciphertext found for this device. The message may still be processing.",
+        )
+
+    # Fetch sender's public key so the frontend can run ECDH to derive the DM key
+    sender_result = await db.execute(
+        select(Device).where(
+            Device.id == message.sender_device_id,   # adjust field name to match your DM model
+            Device.deleted_at == None,
+        )
+    )
+    sender_device = sender_result.scalars().first()
+
+    return {
+        "id": str(message.id),
+        "epoch": message.epoch,
+        "encrypted_ciphertext": device_key.encrypted_ciphertext,
+        "sender_public_key": sender_device.public_key if sender_device else None,
+        "sender_id": str(message.sender_id),
+        "created_at": message.created_at.isoformat(),
+        "is_encrypted": message.is_encrypted,
+    }

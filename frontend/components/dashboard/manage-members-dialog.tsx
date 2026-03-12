@@ -65,7 +65,10 @@ export function ManageMembersDialog({ serverId }: ManageMembersDialogProps) {
     ) as Promise<string[]>;
   };
 
-  const rotateEncryptedChannels = async (channelIds: string[], successMessage: string) => {
+  const rotateEncryptedChannels = async (
+    channelIds: string[],
+    successMessage: string,
+  ) => {
     if (channelIds.length === 0) {
       return;
     }
@@ -73,6 +76,20 @@ export function ManageMembersDialog({ serverId }: ManageMembersDialogProps) {
     const devicesRes = await fetchAPI(`/devices/server/${serverId}`);
     const { deviceId, privateKey: myPrivateKey } =
       await resolveTrustedLocalDevice();
+
+    // Guard: ensure our own device is in the list. GET /devices/server/{id} joins
+    // on ServerMember and should include us, but if it ever doesn't (e.g. a race
+    // between member approval and the query) we'd encrypt a new epoch we can't read.
+    const myPublicKey = localStorage.getItem("device_public_key");
+    if (
+      myPublicKey &&
+      !devicesRes.some((d: { device_id: string }) => d.device_id === deviceId)
+    ) {
+      console.warn(
+        "[rotateEncryptedChannels] Own device missing from server device list — adding explicitly.",
+      );
+      devicesRes.push({ device_id: deviceId, public_key: myPublicKey });
+    }
 
     for (const channelId of channelIds) {
       const newKeyBytes = window.crypto.getRandomValues(new Uint8Array(32));
@@ -83,11 +100,7 @@ export function ManageMembersDialog({ serverId }: ManageMembersDialogProps) {
           myPrivateKey,
           device.public_key,
         );
-        const wrapKey = await deriveKey(
-          sharedSecret,
-          channelId,
-          "channel-key",
-        );
+        const wrapKey = await deriveKey(sharedSecret, channelId, "channel-key");
         const encryptedBlob = await encryptBytes(wrapKey, newKeyBytes);
         encryptedKeys.push({
           device_id: device.device_id,
@@ -147,7 +160,7 @@ export function ManageMembersDialog({ serverId }: ManageMembersDialogProps) {
 
       loadMembers();
     } catch (error) {
-      toast.error("Action failed");
+      toast.error(`Action failed because : ${error}`);
     }
   };
 

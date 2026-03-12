@@ -4,6 +4,7 @@ from sqlalchemy.orm import relationship
 import uuid
 from datetime import datetime
 from app.core.database import Base
+from pydantic import BaseModel
 
 
 class DeviceLinkRequest(Base):
@@ -44,7 +45,7 @@ class DeviceLinkRequest(Base):
     # Old device encrypts the private key for this key. Discarded after transfer.
     temp_public_key = Column(String, nullable=False)
 
-    device_label = Column(String(100), nullable=True)
+    new_device_label = Column(String, nullable=True)  # was: device_label
 
     # Null until the old device approves. Filled in as base64(IV + AES-GCM ciphertext).
     encrypted_private_key = Column(String, nullable=True)
@@ -73,3 +74,14 @@ class DeviceLinkRequest(Base):
         foreign_keys=[approved_by_device_id],
         back_populates="approved_requests",
     )
+
+
+
+class DeviceLinkRequestResponse(BaseModel):
+    request_id: str
+    new_device_id: str
+    new_device_label: str | None   # was: device_label
+    temp_public_key: str
+    webauthn_credential_id: str | None
+    expires_at: str
+    class Config: from_attributes = True

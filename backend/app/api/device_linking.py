@@ -66,6 +66,7 @@ class PendingRequestResponse(BaseModel):
     temp_public_key: str
     expires_at: datetime
     webauthn_credential_id: Optional[str]   # needed for allowCredentials in the browser
+    has_passphrase_backup: bool = False      # true when user has passphrase backup but no PRF credential
 
 
 class StatusResponse(BaseModel):
@@ -270,6 +271,18 @@ async def get_pending_requests(
     key_backup = backup_result.scalars().first()
     webauthn_credential_id = key_backup.prf_credential_id if key_backup else None
 
+    # Detect passphrase-backup users so the frontend can offer an alternative
+    # approval path instead of blocking them entirely.
+    has_passphrase_backup = False
+    if not webauthn_credential_id:
+        passphrase_result = await db.execute(
+            select(KeyBackup).where(
+                KeyBackup.user_id == current_user.id,
+                KeyBackup.backup_method == "passphrase",
+            ).limit(1)
+        )
+        has_passphrase_backup = passphrase_result.scalars().first() is not None
+
     result = await db.execute(
         select(DeviceLinkRequest).where(
             DeviceLinkRequest.requesting_user_id == current_user.id,
@@ -287,6 +300,7 @@ async def get_pending_requests(
             temp_public_key=req.temp_public_key,
             expires_at=req.expires_at,
             webauthn_credential_id=webauthn_credential_id,
+            has_passphrase_backup=has_passphrase_backup,
         )
         for req in requests
     ]
@@ -551,3 +565,100 @@ async def reject_link_request(
     await db.commit()
 
     return {"status": "rejected", "security_note": "If you did not initiate this, change your password immediately."}
+
+
+
+class ApproveWithPassphraseBody(BaseModel):
+    approving_device_id: UUID
+    encrypted_private_key: str
+    permanent_public_key: str
+
+
+@router.post("/approve-with-passphrase/{request_id}")
+async def approve_with_passphrase(
+    request_id: UUID,
+    body: ApproveWithPassphraseBody,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Approves a pending device link request using the passphrase backup instead of WebAuthn.
+    The private key is re-derived client-side from the passphrase and sent encrypted
+    for the new device. This endpoint validates the request and commits the result.
+
+    Note: this path has weaker physical-presence proof than the PRF/WebAuthn path
+    because it relies on knowledge (passphrase) not possession (biometric). It is
+    offered only when the user has no PRF credential registered.
+    """
+    result = await db.execute(
+        select(DeviceLinkRequest).where(
+            DeviceLinkRequest.id == request_id,
+            DeviceLinkRequest.requesting_user_id == current_user.id,
+            DeviceLinkRequest.status == "pending",
+        )
+    )
+    link_request = result.scalars().first()
+    if not link_request:
+        raise HTTPException(status_code=404, detail="Pending request not found")
+    if link_request.expires_at < _now_utc():
+        raise HTTPException(status_code=410, detail="REQUEST_EXPIRED: This link request has expired. The new device must start over.")
+
+    approving_result = await db.execute(
+        select(Device).where(
+            Device.id == body.approving_device_id,
+            Device.user_id == current_user.id,
+            Device.is_trusted == True,
+            Device.deleted_at == None,
+        )
+    )
+    approving_device = approving_result.scalars().first()
+    if not approving_device:
+        raise HTTPException(status_code=403, detail="Approving device is not a trusted active device on your account")
+
+    if approving_device.public_key != body.permanent_public_key:
+        raise HTTPException(status_code=400, detail="Permanent public key does not match the approving trusted device")
+
+    link_request.encrypted_private_key = body.encrypted_private_key
+    link_request.status = "approved"
+    link_request.approved_by_device_id = approving_device.id
+
+    # Elevate the new device to trusted and assign its permanent public key
+    new_device_result = await db.execute(
+        select(Device).where(Device.id == link_request.new_device_id)
+    )
+    new_device = new_device_result.scalars().first()
+    if not new_device or new_device.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Linked device not found")
+
+    new_device.is_trusted = True
+    new_device.public_key = body.permanent_public_key
+
+    # Increment DM epochs for all conversations involving this user —
+    # same as the PRF approval path. Forces future DMs to use the new epoch
+    # so the newly linked device receives keys for them.
+    await db.execute(
+        update(DmEpoch)
+        .where(
+            or_(
+                DmEpoch.user_a_id == current_user.id,
+                DmEpoch.user_b_id == current_user.id,
+            )
+        )
+        .values(current_epoch=DmEpoch.current_epoch + 1)
+    )
+
+    await db.commit()
+
+    # Notify the new device if it's online
+    user_id_str = str(current_user.id)
+    for server_id, connections in manager.active_connections.items():
+        if user_id_str in connections:
+            try:
+                await connections[user_id_str].send_json({
+                    "type": "device_link_approved",
+                    "request_id": str(request_id),
+                })
+            except Exception:
+                pass
+
+    return {"status": "approved"}

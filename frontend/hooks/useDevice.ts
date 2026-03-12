@@ -19,7 +19,10 @@ import {
   storeEncryptedBackup,
 } from "@/lib/keyStore";
 import { fetchKeyBackup } from "@/lib/keyBackup";
-import { clearLocalDeviceIdentity, persistDeviceOwner } from "@/lib/deviceIdentity";
+import {
+  clearLocalDeviceIdentity,
+  persistDeviceOwner,
+} from "@/lib/deviceIdentity";
 import EventBus from "@/game/EventBus";
 
 export type DeviceState =
@@ -39,6 +42,7 @@ export interface PendingRequest {
   new_device_label?: string;
   temp_public_key: string;
   webauthn_credential_id: string | null;
+  has_passphrase_backup: boolean;
   expires_at: string;
 }
 
@@ -115,8 +119,12 @@ export function useDevice() {
 
     try {
       const storedDeviceId = localStorage.getItem("device_id");
-      const storedDeviceOwnerUserId = localStorage.getItem("device_owner_user_id");
-      const pendingLinkRequestId = localStorage.getItem("pending_link_request_id");
+      const storedDeviceOwnerUserId = localStorage.getItem(
+        "device_owner_user_id",
+      );
+      const pendingLinkRequestId = localStorage.getItem(
+        "pending_link_request_id",
+      );
       const token = localStorage.getItem("token");
       const currentUserId = localStorage.getItem("user_id");
 
@@ -125,7 +133,11 @@ export function useDevice() {
         return;
       }
 
-      if (storedDeviceId && storedDeviceOwnerUserId && storedDeviceOwnerUserId !== currentUserId) {
+      if (
+        storedDeviceId &&
+        storedDeviceOwnerUserId &&
+        storedDeviceOwnerUserId !== currentUserId
+      ) {
         await clearLocalDeviceIdentity(storedDeviceId);
       }
 
@@ -138,7 +150,9 @@ export function useDevice() {
 
       const verifiedStoredDeviceId = localStorage.getItem("device_id");
       const storedDevice = verifiedStoredDeviceId
-        ? devices.find((device: any) => device.device_id === verifiedStoredDeviceId)
+        ? devices.find(
+            (device: any) => device.device_id === verifiedStoredDeviceId,
+          )
         : null;
 
       // Recover from duplicate bootstrap/link side effects by preferring any trusted
@@ -210,14 +224,14 @@ export function useDevice() {
           await initiateLinkingCeremony();
         }
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
       setDeviceState("error");
       setErrorMsg(err.message);
     } finally {
       bootstrapInFlightRef.current = false;
     }
-  }, []);
+  },[]);
 
   const registerFirstDevice = async () => {
     setDeviceState("registering");
@@ -270,70 +284,32 @@ export function useDevice() {
   ) => {
     setDeviceState("registering");
     try {
-      // 1. We already recovered the public key from the backup blob
-      const pubBase64 = publicKeyBase64;
-
-      // 2. Register with backend (automatically marked trusted by backend if we pass a special recovery flag?
-      // Actually, standard registration creates it as untrusted. But wait, if recovering, the user
-      // has proven their identity via PRF or Passphrase. We need a way to tell the backend to trust it.
-      // Easiest is to add an `is_recovery=True` flag to POST /devices/register, or just do it client-side if allowed.
-      // Let's assume hitting the registration endpoint is fine, but we might need a distinct endpoint for recovery registration if strict.
-      // For now, standard registration:
-      const res = await fetch(`${API_URL}/devices/register`, {
+      const res = await fetch(`${API_URL}/devices/recover`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({
-          public_key: pubBase64,
+          public_key: publicKeyBase64,
           device_label: navigator.userAgent.substring(0, 30) + " (Recovered)",
         }),
       });
-      if (!res.ok) throw new Error("Failed to register recovered device");
+      if (!res.ok)
+        throw new Error((await res.json()).detail || "Recovery failed");
+
       const data = await res.json();
-      const newDeviceId = data.device_id;
-
-      // 3. Store in IDB and localStorage
-      await storePrivateKey(newDeviceId, recoveredPrivateKey);
-      localStorage.setItem("device_id", newDeviceId);
+      await storePrivateKey(data.device_id, recoveredPrivateKey);
+      localStorage.setItem("device_id", data.device_id);
+      localStorage.setItem("device_public_key", publicKeyBase64);
       persistDeviceOwner(localStorage.getItem("user_id") || "");
-      localStorage.setItem("device_public_key", pubBase64);
-      const recoveredRawBytes = await exportKeyAsBytes(recoveredPrivateKey);
-      await storeInterimEncryptedBackup(newDeviceId, recoveredRawBytes);
-      setDeviceId(newDeviceId);
-      setDeviceState("trusted");
 
-      // 4. CRITICAL: PULL-based Channel Key Sync
-      // Since there's no "old device" to push keys to us, we must fetch the encrypted epoch keys
-      // that were encrypted for our previous devices, but wait, those were encrypted for previous devices!
-      // If we recovered the SAME private key, we can decrypt any epoch key that was encrypted for ANY of our public keys
-      // because our private key is the SAME.
-      // (This is why we backed up the PRIVATE key, because it lets us read history).
+      const raw = await exportKeyAsBytes(recoveredPrivateKey);
+      await storeInterimEncryptedBackup(data.device_id, raw);
 
-      const chanRes = await fetch(`${API_URL}/channel-keys/my-channels`, {
-        headers: getAuthHeaders(),
-      });
-      if (chanRes.ok) {
-        const channels = await chanRes.json();
-        for (const c of channels) {
-          const epRes = await fetch(
-            `${API_URL}/channel-keys/${c.channel_id}/entitled-epochs?device_id=${newDeviceId}`,
-            { headers: getAuthHeaders() },
-          );
-          if (epRes.ok) {
-            const epochs = await epRes.json();
-            for (const ep of epochs) {
-              // We would decrypt and load into Memory Map here.
-              // This logic usually lives in ChannelKeys abstraction.
-              // We emit an event to tell the system to re-sync channel keys.
-            }
-          }
-        }
-      }
-
-      EventBus.emit("device:recovery_complete", { deviceId: newDeviceId });
+      setDeviceId(data.device_id);
+      setDeviceState("trusted"); // server already set is_trusted=true
+      EventBus.emit("device:recovery_complete", { deviceId: data.device_id });
     } catch (err: any) {
-      console.error(err);
-      // Clear any partially-set device context to avoid stale state
-      await clearLocalDeviceIdentity(localStorage.getItem("device_id"));
+      const dangling = localStorage.getItem("device_id");
+      if (dangling) await clearLocalDeviceIdentity(dangling);
       setDeviceId(null);
       setDeviceState("error");
       setErrorMsg(err.message);
@@ -444,10 +420,14 @@ export function useDevice() {
 
         if (data.status === "approved") {
           if (!data.approved_by_device_public_key) {
-            throw new Error("Approving device public key missing from approval status");
+            throw new Error(
+              "Approving device public key missing from approval status",
+            );
           }
           if (!data.permanent_public_key) {
-            throw new Error("Permanent public key missing from approval status");
+            throw new Error(
+              "Permanent public key missing from approval status",
+            );
           }
 
           // Handle cryptographic transfer
@@ -498,7 +478,7 @@ export function useDevice() {
       if (interval) clearInterval(interval);
       EventBus.off("ws:message", handleWsMsg);
     };
-  }, [deviceState]);
+  }, [deviceState, checkForPendingApprovals]);
 
   return {
     deviceState,
@@ -513,4 +493,3 @@ export function useDevice() {
     setPendingRequest,
   };
 }
-

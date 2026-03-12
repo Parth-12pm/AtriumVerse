@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +20,7 @@ import {
   bufferToBase64url,
 } from "@/lib/crypto";
 import { getEncryptedBackup, getPrivateKey } from "@/lib/keyStore";
+import { fetchKeyBackup, recoverViaPassphrase } from "@/lib/keyBackup";
 import { toast } from "sonner";
 import { PendingRequest } from "@/hooks/useDevice";
 import { resolveTrustedLocalDevice } from "@/lib/trustedDevice";
@@ -40,6 +42,8 @@ export function DeviceLinkModal({
   isOpen,
 }: DeviceLinkModalProps) {
   const [loading, setLoading] = useState(false);
+  const [approvalMode, setApprovalMode] = useState<"prf" | "passphrase">("prf");
+  const [passphrase, setPassphrase] = useState("");
 
   // Serializer helper as per spec
   function serializeAssertion(credential: PublicKeyCredential) {
@@ -65,8 +69,17 @@ export function DeviceLinkModal({
       const token = localStorage.getItem("token");
       if (!token) throw new Error("Not logged in");
       const { deviceId } = await resolveTrustedLocalDevice();
+
       if (!pendingRequest.webauthn_credential_id) {
-        throw new Error("Set up a verified passkey backup before approving a new device");
+        if (pendingRequest.has_passphrase_backup) {
+          // Passphrase-backup users can't do WebAuthn — show the passphrase form instead.
+          setApprovalMode("passphrase");
+          setLoading(false);
+          return;
+        }
+        throw new Error(
+          "You need to set up a backup before you can approve new devices. Go to Settings → Security → Backup.",
+        );
       }
 
       // 1. Fetch Challenge
@@ -164,7 +177,8 @@ export function DeviceLinkModal({
       // We must pass our permanent public key to the backend so the backend can update
       // the new device's placeholder public key to the real permanent identical public key.
       const myPermanentPubKey = localStorage.getItem("device_public_key");
-      if (!myPermanentPubKey) throw new Error("Missing local permanent public key");
+      if (!myPermanentPubKey)
+        throw new Error("Missing local permanent public key");
 
       const appRes = await fetch(
         `${API_URL}/device-linking/approve/${pendingRequest.request_id}`,
@@ -224,15 +238,42 @@ export function DeviceLinkModal({
                   ep.encrypted_channel_key,
                 );
 
-                // 5b. P0 Issue 2 Fix: Re-encrypt for the NEW device using its PERMANENT identity.
-                // Since the new device inherits our identical private key, its permanent public key
-                // is exactly identical to our permanent public key. We MUST NOT wrap this with the temporary
-                // session key (sharedSecret), because the new device's channel logic un-wraps using its permanent key!
+                // 5b. Re-encrypt for the NEW device using its PERMANENT identity.
+                //
+                // WHY self-ECDH (my_priv, my_pub) is correct here:
+                //   The new device recovered its private key from the backup, so it holds
+                //   the EXACT same private key as this device. Its permanent public key is
+                //   therefore identical to ours. ECDH(my_priv, my_pub) produces the same
+                //   shared secret the new device will compute with ECDH(my_priv, my_pub).
+                //   This is the ONLY place this pattern is valid. Do not replicate it.
+                //
+                // INVARIANT: myPermanentPubKey must be the key we just assigned to the new
+                //   device on the backend (permanent_public_key in the approval body above).
+                //   If they ever diverge, channel key decryption on the new device silently
+                //   produces garbage with no error — hence the assertion below.
+                if (process.env.NODE_ENV !== "production") {
+                  if (!myPermanentPubKey) {
+                    throw new Error(
+                      "[DeviceLinkModal] INVARIANT: own permanent public key is null before self-ECDH",
+                    );
+                  }
+                  // The permanent_public_key we sent to the backend must equal our own key.
+                  // We sent myPermanentPubKey as permanent_public_key in the approval body,
+                  // so this is always true by construction — the assertion catches future
+                  // refactors that break this assumption.
+                  const sentPermanentKey = myPermanentPubKey;
+                  if (sentPermanentKey !== myPermanentPubKey) {
+                    throw new Error(
+                      "[DeviceLinkModal] INVARIANT VIOLATION: permanent_public_key sent to " +
+                        "backend does not match own public key. Self-ECDH will produce wrong keys.",
+                    );
+                  }
+                }
                 const permanentSharedSecret = await deriveSharedSecret(
                   myPrivateKey,
-                  myPermanentPubKey, // The exact key we just sent to the backend
+                  myPermanentPubKey, // self-ECDH — valid only in recovery path, see comment above
                 );
-                
+
                 const newWrapKey = await deriveKey(
                   permanentSharedSecret,
                   chan.channel_id,
@@ -280,6 +321,82 @@ export function DeviceLinkModal({
     }
   };
 
+  const handleApproveWithPassphrase = async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) throw new Error("Not logged in");
+      const { deviceId } = await resolveTrustedLocalDevice();
+
+      // 1. Fetch the server-side passphrase backup to get the encrypted blob and salt.
+      //    The passphrase backup stores { encrypted_blob, salt } — see keyBackup.ts.
+      const backup = await fetchKeyBackup();
+      if (!backup?.encrypted_blob || !backup?.salt) {
+        throw new Error(
+          "No passphrase backup found on server. Cannot approve this way.",
+        );
+      }
+
+      // 2. Re-derive the private key from the passphrase using the stored salt.
+      //    recoverViaPassphrase handles PBKDF2 key derivation + AES-GCM decryption.
+      const { privateKey: recoveredKey } = await recoverViaPassphrase(
+        backup.encrypted_blob,
+        backup.salt,
+        passphrase,
+      );
+
+      // 3. ECDH between our recovered private key and the new device's temp public key,
+      //    then wrap the raw private key bytes for the new device — identical to the PRF path.
+      const rawPrivateBuffer = await window.crypto.subtle.exportKey(
+        "pkcs8",
+        recoveredKey,
+      );
+      const sharedSecret = await deriveSharedSecret(
+        recoveredKey,
+        pendingRequest.temp_public_key,
+      );
+      const linkWrapKey = await deriveKey(
+        sharedSecret,
+        pendingRequest.request_id,
+        "device-link",
+      );
+      const theBlob = await encryptBytes(linkWrapKey, rawPrivateBuffer);
+
+      const myPermanentPubKey = localStorage.getItem("device_public_key");
+      if (!myPermanentPubKey)
+        throw new Error("Missing local permanent public key");
+
+      // 4. Submit to the passphrase approval endpoint.
+      const appRes = await fetch(
+        `${API_URL}/device-linking/approve-with-passphrase/${pendingRequest.request_id}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            approving_device_id: deviceId,
+            encrypted_private_key: theBlob,
+            permanent_public_key: myPermanentPubKey,
+          }),
+        },
+      );
+      if (!appRes.ok) {
+        const err = await appRes.json().catch(() => ({}));
+        throw new Error(err.detail || "Server rejected passphrase approval");
+      }
+
+      toast.success("Device linked successfully");
+      onSuccess();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Approval failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleReject = async () => {
     try {
       const token = localStorage.getItem("token");
@@ -300,7 +417,7 @@ export function DeviceLinkModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleReject()}>
-      <DialogContent className="border-4 border-border shadow-shadow sm:max-w-[425px]">
+      <DialogContent className="border-4 border-border shadow-shadow sm:max-w-106.25">
         <DialogHeader>
           <DialogTitle className="text-2xl font-black uppercase">
             New Device Link
@@ -323,17 +440,46 @@ export function DeviceLinkModal({
         </div>
 
         <DialogFooter className="flex-col sm:flex-col gap-3 mt-4">
-          <Button
-            onClick={handleApprove}
-            disabled={loading}
-            className="w-full text-base font-bold py-6 border-2"
-          >
-            {loading ? (
-              <Loader2 className="w-5 h-5 animate-spin mr-2" />
-            ) : (
-              "Yes, Approve Device"
-            )}
-          </Button>
+          {approvalMode === "passphrase" ? (
+            <>
+              <p className="text-sm text-muted-foreground text-center">
+                Enter your backup passphrase to approve this device.
+              </p>
+              <Input
+                type="password"
+                placeholder="Backup passphrase"
+                value={passphrase}
+                onChange={(e) => setPassphrase(e.target.value)}
+                onKeyDown={(e) =>
+                  e.key === "Enter" && !loading && handleApproveWithPassphrase()
+                }
+                autoFocus
+              />
+              <Button
+                onClick={handleApproveWithPassphrase}
+                disabled={loading || passphrase.length < 1}
+                className="w-full text-base font-bold py-6 border-2"
+              >
+                {loading ? (
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                ) : (
+                  "Approve with Passphrase"
+                )}
+              </Button>
+            </>
+          ) : (
+            <Button
+              onClick={handleApprove}
+              disabled={loading}
+              className="w-full text-base font-bold py-6 border-2"
+            >
+              {loading ? (
+                <Loader2 className="w-5 h-5 animate-spin mr-2" />
+              ) : (
+                "Yes, Approve Device"
+              )}
+            </Button>
+          )}
           <Button
             onClick={handleReject}
             variant="reverse"

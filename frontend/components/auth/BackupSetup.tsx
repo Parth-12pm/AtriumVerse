@@ -10,10 +10,7 @@ import {
   Copy,
   CheckCircle,
 } from "lucide-react";
-import {
-  createBackupViaPRF,
-  createBackupViaPassphrase,
-} from "@/lib/keyBackup";
+import { createBackupViaPRF, createBackupViaPassphrase } from "@/lib/keyBackup";
 import { getPrivateKey } from "@/lib/keyStore";
 
 export function BackupSetup({ onComplete }: { onComplete: () => void }) {
@@ -58,10 +55,12 @@ export function BackupSetup({ onComplete }: { onComplete: () => void }) {
         // PRF success
         onComplete();
       }
-    } catch (err: any) {
+    } catch (err) {
+      // Stay on 'intro' — do NOT call setStep('passphrase') for real errors.
+      // The user can choose passphrase manually via the button that already
+      // exists in the intro step JSX.
       setError(err.message || "Failed to setup Passkey backup.");
-      // Fallback
-      setStep("passphrase");
+      // setStep('passphrase') ← REMOVE THIS LINE
     } finally {
       setIsProcessing(false);
     }
@@ -87,7 +86,7 @@ export function BackupSetup({ onComplete }: { onComplete: () => void }) {
 
       await createBackupViaPassphrase(privateKey, passphrase, publicKey);
       onComplete();
-    } catch (err: any) {
+    } catch (err) {
       setError(err.message || "Failed to setup passphrase backup.");
     } finally {
       setIsProcessing(false);
@@ -143,7 +142,7 @@ export function BackupSetup({ onComplete }: { onComplete: () => void }) {
         <Lock className="w-12 h-12 mx-auto text-zinc-400 mb-2" />
         <h2 className="text-xl font-bold">Create a Passphrase</h2>
         <p className="text-sm text-zinc-400">
-          Your device doesn't support Passkey backups. Create a strong
+          Your device doesn&apos;t support Passkey backups. Create a strong
           passphrase to encrypt your backup on the server.
         </p>
 

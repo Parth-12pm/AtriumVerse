@@ -309,9 +309,9 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
                 <LogOut className="w-5 h-5" />
                 Exit Game
               </h3>
-              <p className="text-sm text-white mb-3">
-                Return to dashboard. You'll remain a member of this server and
-                can rejoin anytime.
+              <p className="text-sm text-black mb-3">
+                Return to dashboard. You&apos;ll remain a member of this server
+                and can rejoin anytime.
               </p>
               <Button
                 onClick={() => {
@@ -420,8 +420,9 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
           <div className="w-full rounded-lg border-4 border-black bg-white p-5 text-center space-y-3">
             <h2 className="text-xl font-black">Approve This Browser</h2>
             <p className="text-sm text-muted-foreground">
-              This browser has been registered as a new device but is not trusted yet.
-              Approve it from an existing trusted browser or recover from your backup.
+              This browser has been registered as a new device but is not
+              trusted yet. Approve it from an existing trusted browser or
+              recover from your backup.
             </p>
             <Button
               variant="neutral"

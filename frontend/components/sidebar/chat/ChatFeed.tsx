@@ -105,6 +105,7 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
               );
             } catch (err) {
               msg.decryptionFailed = true;
+              toast.error(`decryption failed ${err}`);
             }
           }
           return msg;
@@ -140,7 +141,11 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
       if (msg.channel_id !== channelId || msg.user_id === currentUserId) return;
 
       const hydratedMsg = { ...msg } as Message;
-      if (hydratedMsg.is_encrypted && hydratedMsg.content && hydratedMsg.epoch != null) {
+      if (
+        hydratedMsg.is_encrypted &&
+        hydratedMsg.content &&
+        hydratedMsg.epoch != null
+      ) {
         try {
           hydratedMsg.decryptedContent = await decryptForChannel(
             channelId,
@@ -148,7 +153,10 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
             hydratedMsg.content,
           );
         } catch (err) {
-          if (err instanceof Error && err.name === "ChannelKeyUnavailableError") {
+          if (
+            err instanceof Error &&
+            err.name === "ChannelKeyUnavailableError"
+          ) {
             hydratedMsg.device_key_status = "predates_channel_access";
           } else {
             hydratedMsg.decryptionFailed = true;
@@ -162,7 +170,7 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
       });
     };
 
-    const handleDMReceived = (msg: ChatMessage) => {
+    const handleDMReceived = async (msg: ChatMessage) => {
       if (
         "sender_id" in msg &&
         (msg.sender_id === dmUserId || msg.receiver_id === dmUserId)
@@ -170,9 +178,54 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
         // Prevent reacting to our own echo
         if (msg.sender_id === currentUserId) return;
 
-        // E2EE requires us to fetch the ciphertext encrypted specifically for our device
-        // We cannot rely on the WebSocket payload as it doesn't contain our device_id's slice
-        loadDMMessages();
+        // Fetch only this message's device-specific ciphertext slice instead of
+        // refetching the full history. Falls back to loadDMMessages() if the
+        // single-message endpoint is unavailable (404 / network error).
+        try {
+          const { deviceId: myDeviceId } = await resolveTrustedLocalDevice();
+          const token = localStorage.getItem("token");
+
+          const res = await fetch(
+            `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/dm/messages/${msg.id}/my-ciphertext?device_id=${myDeviceId}`,
+            { headers: { Authorization: `Bearer ${token}` } },
+          );
+
+          if (!res.ok) {
+            // Endpoint not yet deployed or message not ready — fall back gracefully
+            await loadDMMessages();
+            return;
+          }
+
+          const slice = await res.json();
+          // slice shape: { encrypted_ciphertext, sender_public_key, epoch, id, created_at, sender_id }
+
+          let decryptedContent: string | undefined;
+          try {
+            decryptedContent = await decryptDM(
+              slice.id,
+              slice.epoch,
+              slice.encrypted_ciphertext,
+              slice.sender_public_key,
+            );
+          } catch {
+            // Decryption failed — still append with failed flag so the UI shows the right status
+          }
+
+          const newMsg: DirectMessage = {
+            ...slice,
+            is_encrypted: true,
+            decryptedContent,
+            decryptionFailed: !decryptedContent,
+          } as DirectMessage;
+
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === newMsg.id)) return prev; // deduplicate
+            return [...prev, newMsg];
+          });
+        } catch {
+          // Any unexpected error — full refetch as last resort
+          await loadDMMessages();
+        }
       }
     };
 
@@ -199,7 +252,15 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
         EventBus.off("dm:deleted", handleDMDeleted);
       };
     }
-  }, [mode, channelId, currentUserId, decryptForChannel, dmUserId, loadDMMessages]);
+  }, [
+    mode,
+    channelId,
+    currentUserId,
+    decryptForChannel,
+    dmUserId,
+    loadDMMessages,
+    decryptDM,
+  ]);
 
   const sendMessage = async () => {
     if (!newMessage.trim()) return;
@@ -217,7 +278,10 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
           epoch = encrypted.epoch;
           isEncrypted = true;
         } catch (err) {
-          if (!(err instanceof Error) || err.name !== "ChannelEncryptionDisabledError") {
+          if (
+            !(err instanceof Error) ||
+            err.name !== "ChannelEncryptionDisabledError"
+          ) {
             throw err;
           }
         }
@@ -365,7 +429,7 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
 
       toast.success("Message deleted");
     } catch (error) {
-      toast.error("Failed to delete message");
+      toast.error("Failed to delete message", error);
     }
   };
 
@@ -423,9 +487,9 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
                 className={`flex gap-3 -mx-2 px-2 py-2 rounded-lg group ${isOwnMessage ? "flex-row-reverse" : "flex-row"}`}
               >
                 {/* Avatar */}
-                <Avatar className="w-10 h-10 flex-shrink-0">
+                <Avatar className="w-10 h-10 shrink-0">
                   <AvatarFallback
-                    className={`text-white font-black ${isOwnMessage ? "bg-gradient-to-br from-blue-500 to-blue-600" : "bg-gradient-to-br from-purple-400 to-pink-400"}`}
+                    className={`text-white font-black ${isOwnMessage ? "bg-linear-to-br from-blue-500 to-blue-600" : "bg-linear-to-br from-purple-400 to-pink-400"}`}
                   >
                     {username.slice(0, 2).toUpperCase()}
                   </AvatarFallback>
@@ -483,9 +547,9 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
                       className={`relative group/msg ${isOwnMessage ? "w-full flex justify-end" : "w-full"}`}
                     >
                       <div
-                        className={`inline-block px-4 py-2 rounded-2xl flex items-center justify-between min-w-[60px] gap-2 ${isOwnMessage ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}
+                        className={`px-4 py-2 rounded-2xl flex items-center justify-between min-w-15 gap-2 ${isOwnMessage ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}
                       >
-                        <p className="text-sm break-words whitespace-pre-wrap">
+                        <p className="text-sm wrap-break-words whitespace-pre-wrap">
                           {msg.is_encrypted
                             ? "decryptedContent" in msg && msg.decryptedContent
                               ? msg.decryptedContent
@@ -534,7 +598,7 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
       </div>
 
       {/* Message Input */}
-      <div className="p-4 border-t border-border bg-muted/40 flex-shrink-0">
+      <div className="p-4 border-t border-border bg-muted/40 shrink-0">
         <div className="flex gap-2">
           <Input
             type="text"
@@ -565,7 +629,3 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
     </div>
   );
 }
-
-
-
-

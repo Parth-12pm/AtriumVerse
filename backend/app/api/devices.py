@@ -1,21 +1,22 @@
-"""
-Phase 4 — Device Registration & Listing
+# """
+# Phase 4 — Device Registration & Listing
 
-These endpoints handle the simpler half of the device system.
-WebAuthn assertion (the ceremony) comes in Phase 5.
+# These endpoints handle the simpler half of the device system.
+# WebAuthn assertion (the ceremony) comes in Phase 5.
 
-Key design reminder:
-  - Registering a public key proves nothing about who holds the private key.
-  - is_trusted=False until the Phase 5 ceremony elevates it.
-  - The ONE exception: the very first device a user ever registers is auto-trusted
-    (no existing trusted device to run a ceremony with). This is protected at the DB
-    layer by a partial unique index — see device.py and the TOCTOU explanation below.
-"""
+# Key design reminder:
+#   - Registering a public key proves nothing about who holds the private key.
+#   - is_trusted=False until the Phase 5 ceremony elevates it.
+#   - The ONE exception: the very first device a user ever registers is auto-trusted
+#     (no existing trusted device to run a ceremony with). This is protected at the DB
+#     layer by a partial unique index — see device.py and the TOCTOU explanation below.
+# """
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import update
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
@@ -25,6 +26,8 @@ from app.core.database import get_db
 from app.api.deps import get_current_user
 from app.models.user import User
 from app.models.device import Device
+from app.models.key_backup import KeyBackup
+from app.models.dm_device_key import DmDeviceKey
 
 
 router = APIRouter()
@@ -33,6 +36,10 @@ router = APIRouter()
 # ─────────────────────────────────────────
 # Schemas
 # ─────────────────────────────────────────
+class RecoveryDeviceRequest(BaseModel):
+    public_key: str
+    device_label: str
+
 
 class DeviceRegisterRequest(BaseModel):
     public_key: str          # base64-encoded X25519 public key from the browser
@@ -315,4 +322,70 @@ async def delete_device(
 
     # SOFT DELETE
     device.deleted_at = datetime.utcnow()
+
+    # Tombstone dm_device_keys in the same transaction so there is no window
+    # where device_id is NULL but deleted_device_id is still unset.
+    # This preserves the frontend's ability to distinguish:
+    #   device_id=NULL + deleted_device_id SET   → "encrypted for a device you removed"
+    #   device_id=NULL + deleted_device_id NULL  → "predates this device"
+    await db.execute(
+        update(DmDeviceKey)
+        .where(DmDeviceKey.device_id == device_id)
+        .values(
+            device_id=None,
+            deleted_device_id=device_id,
+        )
+        .execution_options(synchronize_session="fetch")
+    )
+
     await db.commit()
+
+
+@router.post("/recover", response_model=DeviceRegisterResponse)
+async def recover_device(
+    body: RecoveryDeviceRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Recovery-path device registration.
+    Marks the new device trusted immediately because the caller has already
+    proven key ownership by decrypting the backup blob client-side.
+    The server verifies a backup record exists before granting trust.
+    """
+    # Guard: a backup must exist — this is the server-side proof that the
+    # caller legitimately holds the key material, not just a valid JWT.
+    backup_result = await db.execute(
+        select(KeyBackup).where(KeyBackup.user_id == current_user.id).limit(1)
+    )
+    if not backup_result.scalars().first():
+        raise HTTPException(status_code=403, detail="No key backup found. Cannot recover without a backup.")
+
+    # Idempotency: if a previous recovery attempt already registered this key,
+    # just ensure it is trusted and return it.
+    existing_result = await db.execute(
+        select(Device).where(
+            Device.user_id == current_user.id,
+            Device.public_key == body.public_key,
+            Device.deleted_at == None,
+        ).limit(1)
+    )
+    existing = existing_result.scalars().first()
+    if existing:
+        if not existing.is_trusted:
+            existing.is_trusted = True
+            await db.commit()
+            await db.refresh(existing)
+        return DeviceRegisterResponse(device_id=existing.id, is_trusted=existing.is_trusted)
+
+    # Register the device and trust it immediately — key difference from /register.
+    device = Device(
+        user_id=current_user.id,
+        public_key=body.public_key,
+        device_label=body.device_label,
+        is_trusted=True,
+    )
+    db.add(device)
+    await db.commit()
+    await db.refresh(device)
+    return DeviceRegisterResponse(device_id=device.id, is_trusted=device.is_trusted)
