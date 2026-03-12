@@ -341,16 +341,22 @@ export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
 
         const sentMsg: DirectMessage = step1Response.data;
 
-        // Step 3: Encrypt for all target devices
-        const ciphertexts = await encryptDM(
-          sentMsg.id,
-          sentMsg.epoch!,
-          newMessage.trim(),
-          allTargetDevices,
-        );
+        try {
+          // Step 3: Encrypt for all target devices
+          const ciphertexts = await encryptDM(
+            sentMsg.id,
+            sentMsg.epoch!,
+            newMessage.trim(),
+            allTargetDevices,
+          );
 
-        // Step 4: Submit keys
-        await directMessagesAPI.submitDeviceKeys(sentMsg.id, ciphertexts);
+          // Step 4: Submit keys
+          await directMessagesAPI.submitDeviceKeys(sentMsg.id, ciphertexts);
+        } catch (encryptionError) {
+          // ROLLBACK: Delete the placeholder message if key generation/upload fails
+          await directMessagesAPI.delete(sentMsg.id);
+          throw new Error("Failed to secure DM. Message creation rolled back.");
+        }
 
         // Hydrate sent message locally
         sentMsg.decryptedContent = newMessage.trim();

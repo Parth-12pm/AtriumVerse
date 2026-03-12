@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { deriveSharedSecret, deriveKey, encryptBytes } from "@/lib/crypto";
 import { resolveTrustedLocalDevice } from "@/lib/trustedDevice";
+import EventBus from "@/game/EventBus"; // Add this to your imports at the top
 
 interface Member {
   user_id: string;
@@ -39,6 +40,39 @@ export function ManageMembersDialog({ serverId }: ManageMembersDialogProps) {
       loadMembers();
     }
   }, [open]);
+
+  useEffect(() => {
+    const handlePublicJoin = async (data: any) => {
+      // Ensure we only react to public joins for THIS specific server
+      if (data.type === "public_member_joined" && data.server_id === serverId) {
+        try {
+          // This endpoint is protected: it will THROW a 403 error if the current
+          // user is not the server owner. We use this as a silent check!
+          const encryptedChannelIds = await getMyEncryptedChannelIds();
+
+          if (encryptedChannelIds.length > 0) {
+            toast.info(
+              "New member joined publicly. Auto-rotating E2EE keys...",
+            );
+            await rotateEncryptedChannels(
+              encryptedChannelIds,
+              "Keys auto-rotated for the new public member.",
+            );
+            loadMembers(); // Refresh the dialog list in the background
+          }
+        } catch (err) {
+          // If it throws an error (403), this user is just a regular member,
+          // NOT the owner. We silently ignore the event so we don't cause a race condition.
+        }
+      }
+    };
+
+    // Listen to all raw WS messages
+    EventBus.on("ws:message", handlePublicJoin);
+    return () => {
+      EventBus.off("ws:message", handlePublicJoin);
+    };
+  }, [serverId]);
 
   const loadMembers = async () => {
     setLoading(true);

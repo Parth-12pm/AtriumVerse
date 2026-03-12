@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, useEffect } from "react";
 import {
   decryptBytes,
   deriveKey,
@@ -8,6 +8,7 @@ import {
   encryptBytes,
 } from "@/lib/crypto";
 import { resolveTrustedLocalDevice } from "@/lib/trustedDevice";
+import EventBus from "@/game/EventBus";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -35,10 +36,24 @@ function makeCacheKey(channelId: string, epoch: number) {
   return `${channelId}:${epoch}`;
 }
 
+export const globalChannelKeysCache = new Map<string, ArrayBuffer>();
+
 export function useChannelKeys() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const channelKeysRef = useRef<Map<string, ArrayBuffer>>(new Map());
   const entitledEpochsLoadedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const handleRotation = (data: { channel_id: string }) => {
+      if (data.channel_id) {
+        globalChannelKeysCache.delete(data.channel_id);
+        console.log(`Flushed old epoch key for channel ${data.channel_id}`);
+      }
+    };
+    EventBus.on("channel_epoch_rotated", handleRotation);
+    return () => {
+      EventBus.off("channel_epoch_rotated", handleRotation);
+    };
+  }, []);
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem("token");
@@ -62,7 +77,7 @@ export function useChannelKeys() {
         payload.encrypted_channel_key,
       );
 
-      channelKeysRef.current.set(
+      globalChannelKeysCache.set(
         makeCacheKey(channelId, payload.epoch),
         channelKeyBytes,
       );
@@ -97,14 +112,14 @@ export function useChannelKeys() {
 
         const payload = (await res.json()) as ChannelKeyResponse;
         const cacheKey = makeCacheKey(channelId, payload.epoch);
-        const cached = channelKeysRef.current.get(cacheKey);
+        const cached = globalChannelKeysCache.get(cacheKey);
         if (cached) {
           return { keyBytes: cached, epoch: payload.epoch };
         }
 
         const keyBytes = await decryptChannelKeyBlob(channelId, payload);
         return { keyBytes, epoch: payload.epoch };
-      } catch (err: any) {
+      } catch (err) {
         setErrorMsg(err.message || "Failed to fetch current channel key");
         throw err;
       }
@@ -132,14 +147,14 @@ export function useChannelKeys() {
         const payloads = (await res.json()) as ChannelKeyResponse[];
         for (const payload of payloads) {
           const cacheKey = makeCacheKey(channelId, payload.epoch);
-          if (!channelKeysRef.current.has(cacheKey)) {
+          if (!globalChannelKeysCache.has(cacheKey)) {
             await decryptChannelKeyBlob(channelId, payload);
           }
         }
 
         entitledEpochsLoadedRef.current.add(channelId);
         return true;
-      } catch (err: any) {
+      } catch (err) {
         setErrorMsg(err.message || "Failed to fetch entitled channel epochs");
         return false;
       }
@@ -149,7 +164,7 @@ export function useChannelKeys() {
 
   const getEpochKey = useCallback(
     async (channelId: string, epoch: number): Promise<CryptoKey> => {
-      const cached = channelKeysRef.current.get(makeCacheKey(channelId, epoch));
+      const cached = globalChannelKeysCache.get(makeCacheKey(channelId, epoch));
       if (cached) {
         return deriveKey(cached, channelId, `epoch:${epoch}`);
       }
@@ -158,7 +173,9 @@ export function useChannelKeys() {
         await fetchEntitledChannelKeys(channelId);
       }
 
-      const entitledKey = channelKeysRef.current.get(makeCacheKey(channelId, epoch));
+      const entitledKey = globalChannelKeysCache.get(
+        makeCacheKey(channelId, epoch),
+      );
       if (entitledKey) {
         return deriveKey(entitledKey, channelId, `epoch:${epoch}`);
       }
@@ -197,7 +214,11 @@ export function useChannelKeys() {
   );
 
   const decryptForChannel = useCallback(
-    async (channelId: string, epoch: number, ciphertext: string): Promise<string> => {
+    async (
+      channelId: string,
+      epoch: number,
+      ciphertext: string,
+    ): Promise<string> => {
       try {
         const epochKey = await getEpochKey(channelId, epoch);
         const rawPlaintextBytes = await decryptBytes(epochKey, ciphertext);
@@ -209,8 +230,13 @@ export function useChannelKeys() {
         ) {
           throw err;
         }
-        console.error(`[Decrypt error msg=${ciphertext.substring(0, 10)}...]`, err);
-        throw new Error("Message could not be decrypted (integrity check failed)");
+        console.error(
+          `[Decrypt error msg=${ciphertext.substring(0, 10)}...]`,
+          err,
+        );
+        throw new Error(
+          "Message could not be decrypted (integrity check failed)",
+        );
       }
     },
     [getEpochKey],

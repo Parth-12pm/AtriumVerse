@@ -253,7 +253,6 @@ async def join_server(
         new_status = MemberStatus.ACCEPTED
         msg = "Joined successfully"
     
-
     new_member = ServerMember(
         user_id = current_user.id,
         server_id = server_id,
@@ -263,6 +262,22 @@ async def join_server(
 
     db.add(new_member)
     await db.commit()
+
+    # --- ADD THIS WS BROADCAST ---
+    if new_status == MemberStatus.ACCEPTED: # If it's a public server join
+        from app.core.socket_manager import manager
+        try:
+            await manager.broadcast_to_server(
+                str(server_id),
+                {
+                    "type": "public_member_joined",
+                    "server_id": str(server_id),
+                    "user_id": str(current_user.id)
+                }
+            )
+        except Exception as e:
+            print(f"WS Broadcast failed: {e}")
+    # -----------------------------
 
     return {"message": msg, "status": new_status}
 

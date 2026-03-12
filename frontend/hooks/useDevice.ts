@@ -24,6 +24,7 @@ import {
   persistDeviceOwner,
 } from "@/lib/deviceIdentity";
 import EventBus from "@/game/EventBus";
+import { globalChannelKeysCache } from "./useChannelKeys";
 
 export type DeviceState =
   | "checking"
@@ -231,7 +232,7 @@ export function useDevice() {
     } finally {
       bootstrapInFlightRef.current = false;
     }
-  },[]);
+  }, []);
 
   const registerFirstDevice = async () => {
     setDeviceState("registering");
@@ -306,6 +307,47 @@ export function useDevice() {
 
       setDeviceId(data.device_id);
       setDeviceState("trusted"); // server already set is_trusted=true
+      // PULL-based Channel Key Sync (Decryption)
+      const chanRes = await fetch(`${API_URL}/channel-keys/my-channels`, {
+        headers: getAuthHeaders(),
+      });
+      if (chanRes.ok) {
+        const channels = await chanRes.json();
+        for (const c of channels) {
+          const epRes = await fetch(
+            `${API_URL}/channel-keys/${c.channel_id}/entitled-epochs?device_id=${data.device_id}`,
+            { headers: getAuthHeaders() },
+          );
+          if (epRes.ok) {
+            const epochs = await epRes.json();
+            for (const ep of epochs) {
+              try {
+                const sharedSecret = await deriveSharedSecret(
+                  recoveredPrivateKey,
+                  ep.owner_device_public_key,
+                );
+                const wrapKey = await deriveKey(
+                  sharedSecret,
+                  c.channel_id,
+                  "channel-key",
+                );
+                const channelKeyBytes = await decryptBytes(
+                  wrapKey,
+                  ep.encrypted_channel_key,
+                );
+
+                // Hydrate the memory map!
+                globalChannelKeysCache.set(c.channel_id, channelKeyBytes);
+              } catch (err) {
+                console.error(
+                  `Failed to recover epoch ${ep.epoch} for channel ${c.channel_id}`,
+                  err,
+                );
+              }
+            }
+          }
+        }
+      }
       EventBus.emit("device:recovery_complete", { deviceId: data.device_id });
     } catch (err: any) {
       const dangling = localStorage.getItem("device_id");

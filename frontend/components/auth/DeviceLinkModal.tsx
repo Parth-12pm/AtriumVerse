@@ -200,92 +200,33 @@ export function DeviceLinkModal({
       if (!appRes.ok) throw new Error("Server rejected approval");
 
       // 5. P2P Channel Key Distribution
-      // The new device is now trusted. We must distribute our historical channel keys to it.
+      // Since the new device shares our exact permanent private key, it can mathematically
+      // decrypt the exact same ciphertexts we use. We don't need to do expensive re-encryption!
+      // We just need to duplicate our access rights for the new device on the backend.
       try {
-        const token = localStorage.getItem("token");
         const chanRes = await fetch(`${API_URL}/channel-keys/my-channels`, {
           headers: { Authorization: `Bearer ${token}` },
         });
+
         if (chanRes.ok) {
           const channels = await chanRes.json();
-          const myPrivateKey = await getPrivateKey(deviceId!);
 
-          if (myPrivateKey) {
-            for (const chan of channels) {
-              // Get all epochs we have access to
-              const epRes = await fetch(
-                `${API_URL}/channel-keys/${chan.channel_id}/entitled-epochs?device_id=${deviceId}`,
-                {
-                  headers: { Authorization: `Bearer ${token}` },
-                },
-              );
-              if (!epRes.ok) continue;
-              const epochs = await epRes.json();
+          for (const chan of channels) {
+            if (!chan.is_encrypted) continue;
 
-              for (const ep of epochs) {
-                // 5a. Actively rebuild the reconstruction chain from the permanent private key
-                const epSharedSecret = await deriveSharedSecret(
-                  myPrivateKey,
-                  ep.owner_device_public_key,
-                );
-                const epWrapKey = await deriveKey(
-                  epSharedSecret,
-                  chan.channel_id,
-                  "channel-key",
-                );
-                const rawChannelKeyBytes = await decryptBytes(
-                  epWrapKey,
-                  ep.encrypted_channel_key,
-                );
+            // Get all epochs we have access to
+            const epRes = await fetch(
+              `${API_URL}/channel-keys/${chan.channel_id}/entitled-epochs?device_id=${deviceId}`,
+              { headers: { Authorization: `Bearer ${token}` } },
+            );
 
-                // 5b. Re-encrypt for the NEW device using its PERMANENT identity.
-                //
-                // WHY self-ECDH (my_priv, my_pub) is correct here:
-                //   The new device recovered its private key from the backup, so it holds
-                //   the EXACT same private key as this device. Its permanent public key is
-                //   therefore identical to ours. ECDH(my_priv, my_pub) produces the same
-                //   shared secret the new device will compute with ECDH(my_priv, my_pub).
-                //   This is the ONLY place this pattern is valid. Do not replicate it.
-                //
-                // INVARIANT: myPermanentPubKey must be the key we just assigned to the new
-                //   device on the backend (permanent_public_key in the approval body above).
-                //   If they ever diverge, channel key decryption on the new device silently
-                //   produces garbage with no error — hence the assertion below.
-                if (process.env.NODE_ENV !== "production") {
-                  if (!myPermanentPubKey) {
-                    throw new Error(
-                      "[DeviceLinkModal] INVARIANT: own permanent public key is null before self-ECDH",
-                    );
-                  }
-                  // The permanent_public_key we sent to the backend must equal our own key.
-                  // We sent myPermanentPubKey as permanent_public_key in the approval body,
-                  // so this is always true by construction — the assertion catches future
-                  // refactors that break this assumption.
-                  const sentPermanentKey = myPermanentPubKey;
-                  if (sentPermanentKey !== myPermanentPubKey) {
-                    throw new Error(
-                      "[DeviceLinkModal] INVARIANT VIOLATION: permanent_public_key sent to " +
-                        "backend does not match own public key. Self-ECDH will produce wrong keys.",
-                    );
-                  }
-                }
-                const permanentSharedSecret = await deriveSharedSecret(
-                  myPrivateKey,
-                  myPermanentPubKey, // self-ECDH — valid only in recovery path, see comment above
-                );
+            if (!epRes.ok) continue;
+            const epochs = await epRes.json();
 
-                const newWrapKey = await deriveKey(
-                  permanentSharedSecret,
-                  chan.channel_id,
-                  "channel-key",
-                );
-                const blobForNewDevice = await encryptBytes(
-                  newWrapKey,
-                  rawChannelKeyBytes,
-                );
-
-                // 5c. Submit to backend
-                await fetch(
+            // Fire off the distribution requests in parallel for speed
+            await Promise.all(
+              epochs.map((ep: any) =>
+                fetch(
                   `${API_URL}/channel-keys/${chan.channel_id}/distribute-to-device?device_id=${deviceId}`,
                   {
                     method: "POST",
@@ -296,12 +237,12 @@ export function DeviceLinkModal({
                     body: JSON.stringify({
                       target_device_id: pendingRequest.new_device_id,
                       epoch: ep.epoch,
-                      encrypted_channel_key: blobForNewDevice,
+                      encrypted_channel_key: ep.encrypted_channel_key, // 👈 Just forward the exact same blob!
                     }),
                   },
-                );
-              }
-            }
+                ),
+              ),
+            );
           }
         }
       } catch (syncErr) {

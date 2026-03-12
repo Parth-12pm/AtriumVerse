@@ -14,6 +14,10 @@
  * @param extractable If true, the private key can be exported. Permanent keys
  *                    should be false. Temp ceremony keys MUST be true.
  */
+
+import { fetchAPI } from "@/lib/api";
+import { resolveTrustedLocalDevice } from "@/lib/trustedDevice";
+
 export async function generateKeypair(
   extractable: boolean = false,
 ): Promise<CryptoKeyPair> {
@@ -228,4 +232,74 @@ export function base64urlToBuffer(base64url: string): ArrayBuffer {
     bytes[i] = binary.charCodeAt(i);
   }
   return bytes.buffer;
+}
+
+export async function pushChannelKeysToNewlyLinkedDevice(
+  newDevicePublicKeyBase64: string,
+  newDeviceId: string,
+) {
+  const { deviceId: myDeviceId, privateKey: myPrivateKey } =
+    await resolveTrustedLocalDevice();
+
+  // 1. Fetch all channels I have access to
+  const channels = await fetchAPI("/channel-keys/my-channels");
+  if (!channels || channels.length === 0) return;
+
+  for (const c of channels) {
+    if (!c.is_encrypted) continue;
+
+    try {
+      // 2. Fetch my encrypted copy of the active epoch key
+      const myKeyRes = await fetchAPI(
+        `/channel-keys/${c.channel_id}/my-key?device_id=${myDeviceId}`,
+      );
+
+      // 3. Decrypt it
+      const wrapKey = await deriveKey(
+        await deriveSharedSecret(
+          myPrivateKey,
+          myKeyRes.owner_device_public_key,
+        ),
+        c.channel_id,
+        "channel-key",
+      );
+      const channelKeyBytes = await decryptBytes(
+        wrapKey,
+        myKeyRes.encrypted_channel_key,
+      );
+
+      // 4. Re-encrypt it specifically for the newly linked device
+      const newSharedSecret = await deriveSharedSecret(
+        myPrivateKey,
+        newDevicePublicKeyBase64,
+      );
+      const newWrapKey = await deriveKey(
+        newSharedSecret,
+        c.channel_id,
+        "channel-key",
+      );
+      const newEncryptedBlob = await encryptBytes(newWrapKey, channelKeyBytes);
+
+      // 5. Submit the copy to the server via the P2P distribution endpoint
+      await fetchAPI(
+        `/channel-keys/${c.channel_id}/distribute-to-device?device_id=${myDeviceId}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            target_device_id: newDeviceId,
+            epoch: myKeyRes.epoch,
+            encrypted_channel_key: newEncryptedBlob,
+          }),
+        },
+      );
+      console.log(
+        `Successfully distributed channel ${c.channel_id} to new device ${newDeviceId}`,
+      );
+    } catch (err) {
+      console.error(
+        `Failed to distribute channel ${c.channel_id} to new device`,
+        err,
+      );
+    }
+  }
 }

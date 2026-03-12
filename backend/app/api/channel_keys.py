@@ -5,7 +5,7 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import aliased
 from typing import List, Set
 from pydantic import BaseModel
-
+from app.core.socket_manager import manager
 from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.models.channel import Channel
@@ -388,6 +388,17 @@ async def rotate_channel_key(
             )
 
         await db.commit()
+        try:
+            await manager.broadcast_to_channel(
+                channel_id,
+                {
+                    "type": "channel_epoch_rotated",
+                    "channel_id": channel_id,
+                    "epoch": new_epoch
+                }
+            )
+        except Exception as e:
+            print(f"WS Broadcast failed (non-fatal): {e}")
     except Exception:
         await db.rollback()
         raise
