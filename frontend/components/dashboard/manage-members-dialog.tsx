@@ -14,9 +14,7 @@ import { Check, X, Shield, UserPlus } from "lucide-react";
 import { fetchAPI } from "@/lib/api";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
-import { deriveSharedSecret, deriveKey, encryptBytes } from "@/lib/crypto";
-import { resolveTrustedLocalDevice } from "@/lib/trustedDevice";
-import EventBus from "@/game/EventBus"; // Add this to your imports at the top
+import { rotateEncryptedChannels } from "@/lib/channelSync";
 
 interface Member {
   user_id: string;
@@ -35,46 +33,6 @@ export function ManageMembersDialog({ serverId }: ManageMembersDialogProps) {
   const [loading, setLoading] = useState(false);
   const [rekeying, setRekeying] = useState(false);
 
-  useEffect(() => {
-    if (open) {
-      loadMembers();
-    }
-  }, [open]);
-
-  useEffect(() => {
-    const handlePublicJoin = async (data: Record<string, unknown>) => {
-      // Ensure we only react to public joins for THIS specific server
-      if (data.type === "public_member_joined" && data.server_id === serverId) {
-        try {
-          // This endpoint is protected: it will THROW a 403 error if the current
-          // user is not the server owner. We use this as a silent check!
-          const encryptedChannelIds = await getMyEncryptedChannelIds();
-
-          if (encryptedChannelIds.length > 0) {
-            toast.info(
-              "New member joined publicly. Auto-rotating E2EE keys...",
-            );
-            await rotateEncryptedChannels(
-              encryptedChannelIds,
-              "Keys auto-rotated for the new public member.",
-            );
-            loadMembers(); // Refresh the dialog list in the background
-          }
-        } catch (error) {
-          // If it throws an error (403), this user is just a regular member,
-          // NOT the owner. We silently ignore the event so we don't cause a race condition.
-          toast.error(error);
-        }
-      }
-    };
-
-    // Listen to all raw WS messages
-    EventBus.on("ws:message", handlePublicJoin);
-    return () => {
-      EventBus.off("ws:message", handlePublicJoin);
-    };
-  }, [serverId]);
-
   const loadMembers = useCallback(async () => {
     setLoading(true);
     try {
@@ -89,6 +47,12 @@ export function ManageMembersDialog({ serverId }: ManageMembersDialogProps) {
     }
   }, [serverId]);
 
+  useEffect(() => {
+    if (open) {
+      loadMembers();
+    }
+  }, [open, loadMembers]);
+
   const getMyEncryptedChannelIds = async () => {
     const currentUserId = localStorage.getItem("user_id");
     if (!currentUserId) {
@@ -98,61 +62,6 @@ export function ManageMembersDialog({ serverId }: ManageMembersDialogProps) {
     return fetchAPI(
       `/channel-keys/server/${serverId}/user/${currentUserId}/encrypted-channels`,
     ) as Promise<string[]>;
-  };
-
-  const rotateEncryptedChannels = async (
-    channelIds: string[],
-    successMessage: string,
-  ) => {
-    if (channelIds.length === 0) {
-      return;
-    }
-
-    const devicesRes = await fetchAPI(`/devices/server/${serverId}`);
-    const { deviceId, privateKey: myPrivateKey } =
-      await resolveTrustedLocalDevice();
-
-    // Guard: ensure our own device is in the list. GET /devices/server/{id} joins
-    // on ServerMember and should include us, but if it ever doesn't (e.g. a race
-    // between member approval and the query) we'd encrypt a new epoch we can't read.
-    const myPublicKey = localStorage.getItem("device_public_key");
-    if (
-      myPublicKey &&
-      !devicesRes.some((d: { device_id: string }) => d.device_id === deviceId)
-    ) {
-      console.warn(
-        "[rotateEncryptedChannels] Own device missing from server device list — adding explicitly.",
-      );
-      devicesRes.push({ device_id: deviceId, public_key: myPublicKey });
-    }
-
-    for (const channelId of channelIds) {
-      const newKeyBytes = window.crypto.getRandomValues(new Uint8Array(32));
-      const encryptedKeys = [];
-
-      for (const device of devicesRes) {
-        const sharedSecret = await deriveSharedSecret(
-          myPrivateKey,
-          device.public_key,
-        );
-        const wrapKey = await deriveKey(sharedSecret, channelId, "channel-key");
-        const encryptedBlob = await encryptBytes(wrapKey, newKeyBytes);
-        encryptedKeys.push({
-          device_id: device.device_id,
-          encrypted_channel_key: encryptedBlob,
-        });
-      }
-
-      await fetchAPI(`/channel-keys/${channelId}/rotate`, {
-        method: "POST",
-        body: JSON.stringify({
-          submitting_device_id: deviceId,
-          encrypted_keys: encryptedKeys,
-        }),
-      });
-    }
-
-    toast.success(successMessage);
   };
 
   const handleAction = async (userId: string, action: "approve" | "reject") => {
@@ -339,19 +248,33 @@ export function ManageMembersDialog({ serverId }: ManageMembersDialogProps) {
                         >
                           {member.role}
                         </Badge>
-                        {member.role !== "owner" && (
-                          <Button
-                            size="sm"
-                            variant="noShadow"
-                            className="h-6 w-6 p-0 text-red-600 hover:bg-red-100"
-                            onClick={() =>
-                              handleAction(member.user_id, "reject")
-                            }
-                            title="Kick Member"
-                          >
-                            <X className="h-3 w-3" />
-                          </Button>
-                        )}
+                        {member.status === "accepted" &&
+                          member.role !== "owner" && (
+                            <Button
+                              className="bg-red-600 text-amber-50"
+                              variant="default"
+                              size="sm"
+                              onClick={async () => {
+                                try {
+                                  await fetchAPI(
+                                    `/servers/${serverId}/members/${member.user_id}`,
+                                    {
+                                      method: "DELETE",
+                                    },
+                                  );
+
+                                  toast.success("User kicked successfully");
+
+                                  loadMembers(); // Refresh members list
+                                  // WebSocket will trigger rotateEncryptedChannels automatically
+                                } catch (error) {
+                                  toast.error("Failed to kick user", error);
+                                }
+                              }}
+                            >
+                              <X className="w-4 h-4 mr-1" /> Kick
+                            </Button>
+                          )}
                       </div>
                     ))}
                   </div>

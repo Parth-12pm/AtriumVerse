@@ -33,7 +33,7 @@ from app.models.device import Device
 from app.models.device_link_request import DeviceLinkRequest
 from app.models.dm_epoch import DmEpoch
 from app.models.key_backup import KeyBackup
-from app.core.redis_client import r
+from app.core import redis_client
 from app.core.socket_manager import manager
 
 
@@ -150,7 +150,7 @@ async def get_challenge(
     challenge_ttl = int(min(MAX_CHALLENGE_TTL, seconds_remaining))
 
     nonce = secrets.token_urlsafe(32)
-    await r.setex(_redis_challenge_key(request_id), challenge_ttl, nonce)
+    await redis_client.r.setex(_redis_challenge_key(request_id), challenge_ttl, nonce)
 
     return ChallengeResponse(challenge=nonce)
 
@@ -447,7 +447,7 @@ async def approve_link_request(
 
     # ── Step 3: Fetch the stored challenge from Redis ─────────────────────
     challenge_key = _redis_challenge_key(request_id)
-    stored_challenge = await r.get(challenge_key)
+    stored_challenge = await redis_client.r.get(challenge_key)
 
     if not stored_challenge:
         # Redis key is gone — could be TTL expiry or never fetched
@@ -482,7 +482,7 @@ async def approve_link_request(
     # ── Step 5: Delete the challenge from Redis (single-use enforcement) ──
     # This MUST happen immediately after successful verification.
     # A challenge that stays in Redis can be replayed in a race condition.
-    await r.delete(challenge_key)
+    await redis_client.r.delete(challenge_key)
 
     # ── Step 6: Commit all state changes in one transaction ───────────────
     link_request.encrypted_private_key = body.encrypted_private_key

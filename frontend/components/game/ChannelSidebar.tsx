@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -28,6 +28,11 @@ import { fetchAPI } from "@/lib/api";
 import { toast } from "sonner";
 import { MessageFeed } from "@/components/game/MessageFeed";
 import { cn } from "@/lib/utils";
+import EventBus from "@/game/EventBus";
+import {
+  distributeKeysToNewMember,
+  rotateEncryptedChannels,
+} from "@/lib/channelSync";
 
 interface Channel {
   id: string;
@@ -72,21 +77,65 @@ export function ChannelSidebar({
   const { state } = useSidebar();
   const [localUsername, setLocalUsername] = useState<string | null>(null);
 
+  // --- BACKGROUND E2EE WORKER ---
   useEffect(() => {
-    loadChannels();
-    if (typeof window !== "undefined") {
-      setLocalUsername(localStorage.getItem("username"));
-    }
-  }, [serverId]);
+    if (!isOwner) return; // Only the owner does the background math
 
-  const loadChannels = async () => {
+    const handleMembershipChange = async (data: Record<string, unknown>) => {
+      if (data.server_id !== serverId) return;
+
+      try {
+        const channels = await fetchAPI(`/channels/server/${serverId}`);
+        const encryptedChannelIds = channels
+          .filter((c: any) => c.is_encrypted)
+          .map((c: any) => c.id);
+        if (encryptedChannelIds.length === 0) return;
+
+        if (data.type === "public_member_joined") {
+          toast.info("New member joined. Syncing E2EE keys in background...");
+          await distributeKeysToNewMember(
+            encryptedChannelIds,
+            data.user_id as string,
+          );
+          toast.success("Keys successfully synced to the new member!");
+        }
+
+        if (data.type === "member_left") {
+          toast.info(
+            "Member left. Auto-rotating E2EE keys to secure channels...",
+          );
+          await rotateEncryptedChannels(
+            encryptedChannelIds,
+            "Auto-rotated due to member departure",
+          );
+          toast.success("E2EE channels secured with new keys!");
+        }
+      } catch (err) {
+        console.debug("Background key sync ignored or failed", err);
+      }
+    };
+
+    EventBus.on("ws:message", handleMembershipChange);
+    return () => {
+      EventBus.off("ws:message", handleMembershipChange);
+    };
+  }, [serverId, isOwner]);
+
+  const loadChannels = useCallback(async () => {
     try {
       const data = await fetchAPI(`/channels/${serverId}/channels`);
       setChannels(data);
     } catch (error) {
       console.error("Failed to load channels:", error);
     }
-  };
+  }, [serverId]);
+
+  useEffect(() => {
+    loadChannels();
+    if (typeof window !== "undefined") {
+      setLocalUsername(localStorage.getItem("username"));
+    }
+  }, [serverId, loadChannels]);
 
   const createChannel = async () => {
     if (!newChannelName.trim()) return;

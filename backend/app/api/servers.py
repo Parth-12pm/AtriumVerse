@@ -428,3 +428,109 @@ async def delete_channel(
     await db.commit()
     
     return {"message": "Channel deleted successfully"}
+
+
+@router.delete("/{server_id}/members/{user_id}")
+async def kick_member(
+    server_id: UUID,
+    user_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Ensure current user is the server owner
+    server_result = await db.execute(select(Server).where(Server.id == server_id))
+    server = server_result.scalars().first()
+    
+    if not server or server.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the server owner can kick members")
+        
+    if server.owner_id == user_id:
+        raise HTTPException(status_code=400, detail="Cannot kick the server owner")
+
+    # Find and delete the member
+    member_result = await db.execute(
+        select(ServerMember).where(
+            ServerMember.server_id == server_id,
+            ServerMember.user_id == user_id
+        )
+    )
+    member = member_result.scalars().first()
+    
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found in this server")
+        
+    await db.delete(member)
+    await db.commit()
+
+    # Broadcast departure so online users rotate the E2EE keys
+    from app.core.socket_manager import manager
+    try:
+        await manager.broadcast_to_server(
+            str(server_id),
+            {
+                "type": "member_left",
+                "server_id": str(server_id),
+                "user_id": str(user_id)
+            }
+        )
+    except Exception as e:
+        print(f"WS Broadcast failed: {e}")
+
+    return {"message": "Member successfully kicked"}
+
+
+@router.post("/{server_id}/leave")
+async def leave_server(
+    server_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Allows a user to leave a server they are a member of.
+    Owners cannot leave their own servers.
+    """
+    # 1. Fetch the server to ensure it exists and check ownership
+    server_result = await db.execute(select(Server).where(Server.id == server_id))
+    server = server_result.scalars().first()
+
+    if not server:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    # 2. Prevent the owner from leaving
+    if server.owner_id == current_user.id:
+        raise HTTPException(
+            status_code=400, 
+            detail="Server owners cannot leave their own server. You must delete the server instead."
+        )
+
+    # 3. Find the membership record
+    member_result = await db.execute(
+        select(ServerMember).where(
+            ServerMember.server_id == server_id,
+            ServerMember.user_id == current_user.id
+        )
+    )
+    member = member_result.scalars().first()
+
+    if not member:
+        raise HTTPException(status_code=400, detail="You are not a member of this server")
+
+    # 4. Remove the user from the server
+    await db.delete(member)
+    await db.commit()
+
+    # 5. Broadcast departure for E2EE key rotation (Forward Secrecy)
+    from app.core.socket_manager import manager
+    try:
+        await manager.broadcast_to_server(
+            str(server_id),
+            {
+                "type": "member_left",
+                "server_id": str(server_id),
+                "user_id": str(current_user.id)
+            }
+        )
+    except Exception as e:
+        print(f"WS Broadcast failed (non-fatal): {e}")
+
+    return {"message": "Successfully left the server"}

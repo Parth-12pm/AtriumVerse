@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useParams } from "next/navigation";
 import {
   LiveKitRoom,
@@ -26,7 +26,8 @@ import {
 // ── Decode room name from LiveKit JWT ─────────────────────────────────────────
 function decodeRoomFromToken(token: string): string {
   try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
+    const base64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(base64));
     return payload.video?.room ?? "Video Room";
   } catch {
     return "Video Room";
@@ -181,7 +182,7 @@ function GuestVideoGrid() {
         return (
           <div
             key={participant.identity}
-            className="relative rounded-2xl overflow-hidden bg-gradient-to-br from-gray-800/80 to-gray-900/80 border border-white/10 backdrop-blur-sm aspect-video w-72 shadow-2xl shadow-black/50 group"
+            className="relative rounded-2xl overflow-hidden bg-linear-to-br from-gray-800/80 to-gray-900/80 border border-white/10 backdrop-blur-sm aspect-video w-72 shadow-2xl shadow-black/50 group"
           >
             {cameraTrack && participant.isCameraEnabled ? (
               <VideoTrack
@@ -190,7 +191,7 @@ function GuestVideoGrid() {
               />
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center gap-3">
-                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-indigo-600 to-violet-700 flex items-center justify-center text-white font-bold text-2xl uppercase shadow-xl shadow-indigo-900/50">
+                <div className="w-16 h-16 rounded-full bg-linear-to-br from-indigo-600 to-violet-700 flex items-center justify-center text-white font-bold text-2xl uppercase shadow-xl shadow-indigo-900/50">
                   {participant.name?.charAt(0) ||
                     participant.identity.charAt(0)}
                 </div>
@@ -201,7 +202,7 @@ function GuestVideoGrid() {
             )}
 
             {/* Name bar */}
-            <div className="absolute bottom-0 left-0 right-0 px-3 py-2 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
+            <div className="absolute bottom-0 left-0 right-0 px-3 py-2 bg-linear-to-t from-black/80 via-black/40 to-transparent">
               <div className="flex items-center gap-1.5">
                 {!participant.isMicrophoneEnabled && (
                   <MicOff className="w-3 h-3 text-red-400 shrink-0" />
@@ -232,14 +233,14 @@ function CallLayout({
   return (
     <div className="min-h-screen flex flex-col bg-[#090b14] text-white">
       {/* Background gradient */}
-      <div className="fixed inset-0 bg-gradient-to-br from-indigo-950/30 via-transparent to-violet-950/20 pointer-events-none" />
-      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-indigo-600/5 blur-3xl pointer-events-none rounded-full" />
+      <div className="fixed inset-0 bg-linear-to-br from-indigo-950/30 via-transparent to-violet-950/20 pointer-events-none" />
+      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-150 h-75 bg-indigo-600/5 blur-3xl pointer-events-none rounded-full" />
 
       {/* Header */}
       <header className="relative flex items-center gap-3 px-6 py-3.5 bg-white/3 backdrop-blur-xl border-b border-white/8 shrink-0 z-10">
         {/* Brand */}
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-900/50">
+          <div className="w-7 h-7 rounded-lg bg-linear-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-900/50">
             <Sparkles className="w-3.5 h-3.5 text-white" />
           </div>
           <span className="text-[11px] font-bold text-white/30 tracking-widest uppercase">
@@ -253,7 +254,7 @@ function CallLayout({
         {/* Room name */}
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-green-400 shadow-lg shadow-green-400/50 animate-pulse" />
-          <h1 className="text-sm font-semibold text-white/80 truncate max-w-[240px]">
+          <h1 className="text-sm font-semibold text-white/80 truncate max-w-60">
             {roomName
               .replace(/^video_/, "")
               .replace(/_/g, " ")
@@ -285,15 +286,12 @@ function CallLayout({
 export default function JoinPage() {
   const params = useParams();
   const token = params?.token as string;
-  const [livekitUrl, setLivekitUrl] = useState("");
-  const [roomName, setRoomName] = useState("Video Room");
-  const [disconnected, setDisconnected] = useState(false);
 
-  useEffect(() => {
-    if (!token) return;
-    setLivekitUrl(process.env.NEXT_PUBLIC_LIVEKIT_URL ?? "");
-    setRoomName(decodeRoomFromToken(token));
-  }, [token]);
+  const livekitUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL ?? "";
+
+  const roomName = token ? decodeRoomFromToken(token) : "Video Room";
+
+  const [disconnected, setDisconnected] = useState(false);
 
   // ── Invalid / missing token ──────────────────────────────────────────────
   if (!token || !livekitUrl) {
@@ -318,7 +316,7 @@ export default function JoinPage() {
   if (disconnected) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#090b14] text-white gap-6">
-        <div className="fixed inset-0 bg-gradient-to-br from-indigo-950/20 via-transparent to-violet-950/10 pointer-events-none" />
+        <div className="fixed inset-0 bg-linear-to-br from-indigo-950/20 via-transparent to-violet-950/10 pointer-events-none" />
 
         <div className="relative flex flex-col items-center gap-5">
           <div className="w-24 h-24 rounded-3xl bg-gray-800/60 border border-white/10 flex items-center justify-center shadow-2xl backdrop-blur-sm">

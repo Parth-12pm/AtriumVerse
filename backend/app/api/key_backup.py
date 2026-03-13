@@ -12,7 +12,7 @@ from webauthn import verify_registration_response
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
-from app.core.redis_client import r
+from app.core import redis_client
 from app.models.key_backup import KeyBackup
 from app.models.user import User
 
@@ -58,11 +58,11 @@ class ChallengeResponse(BaseModel):
 
 
 @router.get("/key-backup/challenge", response_model=ChallengeResponse)
-async def get_key_backup_challenge(
+async def get_key_backup_challenge( 
     current_user: User = Depends(get_current_user),
 ):
     challenge = buffer_to_base64url(secrets.token_bytes(32))
-    await r.setex(_redis_challenge_key(current_user.id), BACKUP_CHALLENGE_TTL, challenge)
+    await redis_client.r.setex(_redis_challenge_key(current_user.id), BACKUP_CHALLENGE_TTL, challenge)
     return ChallengeResponse(challenge=challenge)
 
 
@@ -90,7 +90,7 @@ async def upsert_key_backup(
                 detail="PRF backups require a registration credential and challenge",
             )
 
-        stored_challenge = await r.get(_redis_challenge_key(current_user.id))
+        stored_challenge = await redis_client.r.get(_redis_challenge_key(current_user.id))
         if not stored_challenge:
             raise HTTPException(
                 status_code=400,
@@ -120,7 +120,7 @@ async def upsert_key_backup(
                 detail=f"Invalid PRF registration: {exc}",
             ) from exc
 
-        await r.delete(_redis_challenge_key(current_user.id))
+        await redis_client.r.delete(_redis_challenge_key(current_user.id))
 
         prf_credential_id = buffer_to_base64url(verified_registration.credential_id)
         if body.prf_credential_id and body.prf_credential_id != prf_credential_id:
