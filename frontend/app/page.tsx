@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,6 +9,14 @@ import { ModeToggle } from "@/components/mode-toggle";
 import { Video, Users, Zap, ArrowRight, Sparkles } from "lucide-react";
 
 export default function LandingPage() {
+  const router = useRouter();
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && localStorage.getItem("token")) {
+      router.push("/dashboard");
+    }
+  }, [router]);
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header/Navbar */}

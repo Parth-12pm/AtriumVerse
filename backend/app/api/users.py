@@ -8,6 +8,12 @@ from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordRequestForm
 from app.core.security import create_access_token,ACCESS_TOKEN_EXPIRE_WEEK
 from datetime import timedelta
+from pydantic import BaseModel
+
+class ResetPasswordRequest(BaseModel):
+    username: str
+    old_password: str
+    new_password: str
 
 
 
@@ -63,4 +69,21 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends() , db: AsyncSess
         "user_id": user.id,
         "username": user.username
     }
+
+
+@router.post("/reset-password")
+async def reset_password(req: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.username == req.username))
+    user = result.scalars().first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not pwd_context.verify(req.old_password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Incorrect old password")
+
+    user.hashed_password = pwd_context.hash(req.new_password)
+    await db.commit()
+
+    return {"message": "Password reset successfully"}
 

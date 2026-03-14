@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -20,8 +20,14 @@ import { clearLocalDeviceIdentity } from "@/lib/deviceIdentity";
 export function LoginForm() {
   const router = useRouter();
   const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [password, setPassword] = useState("password");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && localStorage.getItem("token")) {
+      router.push("/dashboard");
+    }
+  }, [router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,7 +100,7 @@ export function LoginForm() {
                 Password
               </Label>
               <Link
-                href="#"
+                href={`/forgot-password${username ? `?username=${encodeURIComponent(username)}` : ''}`}
                 className="text-xs text-muted-foreground hover:text-primary hover:underline"
               >
                 Forgot password?

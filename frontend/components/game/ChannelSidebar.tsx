@@ -85,11 +85,14 @@ export function ChannelSidebar({
       if (data.server_id !== serverId) return;
 
       try {
-        const channels = await fetchAPI(`/channels/server/${serverId}`);
-        const encryptedChannelIds = channels
-          .filter((c: any) => c.is_encrypted)
-          .map((c: any) => c.id);
-        if (encryptedChannelIds.length === 0) return;
+        const currentUserId = localStorage.getItem("user_id");
+        if (!currentUserId) return;
+
+        const encryptedChannelIds: string[] = await fetchAPI(
+          `/channel-keys/server/${serverId}/user/${currentUserId}/encrypted-channels`
+        );
+
+        if (!encryptedChannelIds || encryptedChannelIds.length === 0) return;
 
         if (data.type === "public_member_joined") {
           toast.info("New member joined. Syncing E2EE keys in background...");
@@ -106,6 +109,7 @@ export function ChannelSidebar({
           );
           await rotateEncryptedChannels(
             encryptedChannelIds,
+            serverId,
             "Auto-rotated due to member departure",
           );
           toast.success("E2EE channels secured with new keys!");
@@ -224,11 +228,11 @@ export function ChannelSidebar({
             <Button
               variant="noShadow"
               size="icon"
-              onClick={() => {}} // Could trigger expand
+              onClick={() => { }} // Could trigger expand
             >
               <MessageSquare className="h-2 w-2" />
             </Button>
-            <Button variant="noShadow" size="icon" onClick={() => {}}>
+            <Button variant="noShadow" size="icon" onClick={() => { }}>
               <Users className="h-2 w-2" />
             </Button>
           </div>

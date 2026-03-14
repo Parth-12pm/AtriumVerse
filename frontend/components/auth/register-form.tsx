@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -20,9 +20,15 @@ export function RegisterForm() {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [password, setPassword] = useState("password");
+  const [confirmPassword, setConfirmPassword] = useState("password");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && localStorage.getItem("token")) {
+      router.push("/dashboard");
+    }
+  }, [router]);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,8 +58,30 @@ export function RegisterForm() {
         throw new Error(error.detail || "Registration failed");
       }
 
-      toast.success("Account created! Please login.");
-      router.push("/login");
+      // Auto-login after successful registration
+      const formData = new URLSearchParams();
+      formData.append("username", username);
+      formData.append("password", password);
+
+      const login_response = await fetch(`${API_URL}/users/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: formData,
+      });
+
+      if (!login_response.ok) {
+        toast.success("Account created! Please login.");
+        router.push("/login");
+        return;
+      }
+
+      const login_data = await login_response.json();
+      localStorage.setItem("token", login_data.access_token);
+      localStorage.setItem("username", username);
+      localStorage.setItem("user_id", login_data.user_id);
+
+      toast.success("Account created & logged in!");
+      router.push("/dashboard");
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Registration failed",
