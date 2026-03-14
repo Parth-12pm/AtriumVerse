@@ -1,6 +1,6 @@
 """
 Database migration for permanent chat system.
-
+check updates
 Run this to add Channel and Message tables.
 """
 import asyncio
