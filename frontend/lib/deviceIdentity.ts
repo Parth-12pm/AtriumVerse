@@ -12,9 +12,12 @@ const DEVICE_STORAGE_KEYS = [
 
 export async function clearLocalDeviceIdentity(deviceId?: string | null) {
   const targetDeviceId =
-    deviceId || (typeof window !== "undefined" ? localStorage.getItem("device_id") : null);
+    deviceId ||
+    (typeof window !== "undefined" ? localStorage.getItem("device_id") : null);
   const pendingLinkRequestId =
-    typeof window !== "undefined" ? localStorage.getItem("pending_link_request_id") : null;
+    typeof window !== "undefined"
+      ? localStorage.getItem("pending_link_request_id")
+      : null;
 
   if (targetDeviceId) {
     await deletePrivateKey(targetDeviceId);

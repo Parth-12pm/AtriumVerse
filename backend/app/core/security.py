@@ -1,17 +1,17 @@
-from datetime import datetime , timedelta
-from typing import Optional 
-from jose import jwt
-import os 
+import os
+from datetime import datetime, timedelta
+
 from dotenv import load_dotenv
+from jose import jwt
 
 load_dotenv()
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_WEEK = "2"   # 8 hours for long-lived sessions
+ACCESS_TOKEN_EXPIRE_WEEK = "2"  # 8 hours for long-lived sessions
 
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
 
     if expires_delta:

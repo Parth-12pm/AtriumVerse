@@ -1,27 +1,16 @@
-from logging.config import fileConfig
-from sqlalchemy import engine_from_config, pool
-from alembic import context
 import os
+from logging.config import fileConfig
+
 from dotenv import load_dotenv
+from sqlalchemy import engine_from_config, pool
+
+from alembic import context
 
 load_dotenv()
 
 from app.core.database import Base
-from app.models.user import User
-from app.models.server import Server
-from app.models.server_member import ServerMember
-from app.models.channel import Channel
-from app.models.message import Message
-from app.models.direct_message import DirectMessage
-from app.models.zone import Zone
+
 # E2EE models
-from app.models.device import Device
-from app.models.device_link_request import DeviceLinkRequest
-from app.models.channel_encryption import ChannelEncryption
-from app.models.channel_device_key import ChannelDeviceKey
-from app.models.dm_device_key import DmDeviceKey
-from app.models.dm_epoch import DmEpoch
-from app.models.key_backup import KeyBackup
 
 config = context.config
 fileConfig(config.config_file_name)

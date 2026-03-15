@@ -1,5 +1,6 @@
 import asyncio
-from app.core.database import engine, Base
+
+from app.core.database import Base, engine
 
 
 async def init_models():
@@ -12,4 +13,3 @@ async def init_models():
 
 if __name__ == "__main__":
     asyncio.run(init_models())
-

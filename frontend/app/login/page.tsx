@@ -14,7 +14,9 @@ export default function LoginPage() {
             <div className="w-10 h-10 bg-primary rounded-lg border-2 border-border shadow-shadow flex items-center justify-center">
               <Sparkles className="w-6 h-6 text-primary-foreground" />
             </div>
-            <span className="text-xl font-black uppercase tracking-tight">AtriumVerse</span>
+            <span className="text-xl font-black uppercase tracking-tight">
+              AtriumVerse
+            </span>
           </Link>
         </div>
       </header>

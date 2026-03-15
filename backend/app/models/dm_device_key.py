@@ -1,8 +1,10 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Text, Index
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
 import uuid
 from datetime import datetime
+
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Text
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+
 from app.core.database import Base
 
 
@@ -36,6 +38,7 @@ class DmDeviceKey(Base):
       SET device_id = NULL, deleted_device_id = <deleted device's id>
       WHERE device_id = <deleted device's id>
     """
+
     __tablename__ = "dm_device_keys"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

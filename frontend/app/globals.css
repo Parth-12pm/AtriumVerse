@@ -62,11 +62,11 @@
   --game-active-text: oklch(100% 0 0);
 
   /* ── Chart ── */
-  --chart-1: #00C8F0;
-  --chart-2: #FF7A05;
-  --chart-3: #7A83FF;
-  --chart-4: #FF4D50;
-  --chart-5: #FACC00;
+  --chart-1: #00c8f0;
+  --chart-2: #ff7a05;
+  --chart-3: #7a83ff;
+  --chart-4: #ff4d50;
+  --chart-5: #facc00;
   --chart-active-dot: #000;
 
   /* ── Sidebar (nav sidebar component) ── */
@@ -135,11 +135,11 @@
   --game-active-text: oklch(100% 0 0);
 
   /* ── Chart (dark) ── */
-  --chart-1: #009DBD;
-  --chart-2: #EB6D00;
-  --chart-3: #7A83FF;
-  --chart-4: #FF6669;
-  --chart-5: #E0B700;
+  --chart-1: #009dbd;
+  --chart-2: #eb6d00;
+  --chart-3: #7a83ff;
+  --chart-4: #ff6669;
+  --chart-5: #e0b700;
   --chart-active-dot: #fff;
 
   /* ── Sidebar component (dark) ── */
@@ -281,15 +281,27 @@
   }
 
   .bg-gray-800 {
-    background-color: color-mix(in oklch, var(--game-dock-bg) 85%, var(--foreground) 15%) !important;
+    background-color: color-mix(
+      in oklch,
+      var(--game-dock-bg) 85%,
+      var(--foreground) 15%
+    ) !important;
   }
 
   .bg-gray-700 {
-    background-color: color-mix(in oklch, var(--game-dock-bg) 70%, transparent 30%) !important;
+    background-color: color-mix(
+      in oklch,
+      var(--game-dock-bg) 70%,
+      transparent 30%
+    ) !important;
   }
 
   .bg-gray-600 {
-    background-color: color-mix(in oklch, var(--game-dock-bg) 55%, transparent 45%) !important;
+    background-color: color-mix(
+      in oklch,
+      var(--game-dock-bg) 55%,
+      transparent 45%
+    ) !important;
   }
 
   /* Text in game overlays */
@@ -331,7 +343,11 @@
   }
 
   .hover\:bg-gray-600:hover {
-    background-color: color-mix(in oklch, var(--game-dock-bg) 75%, var(--foreground) 25%) !important;
+    background-color: color-mix(
+      in oklch,
+      var(--game-dock-bg) 75%,
+      var(--foreground) 25%
+    ) !important;
   }
 
   /* Misc game bg tones */
@@ -345,34 +361,62 @@
 
   /* Channel / DM list selected states */
   .bg-blue-100 {
-    background-color: color-mix(in oklch, var(--primary) 18%, var(--card) 82%) !important;
+    background-color: color-mix(
+      in oklch,
+      var(--primary) 18%,
+      var(--card) 82%
+    ) !important;
   }
 
   .bg-purple-100 {
-    background-color: color-mix(in oklch, var(--accent) 18%, var(--card) 82%) !important;
+    background-color: color-mix(
+      in oklch,
+      var(--accent) 18%,
+      var(--card) 82%
+    ) !important;
   }
 
   .bg-purple-50 {
-    background-color: color-mix(in oklch, var(--accent) 10%, var(--card) 90%) !important;
+    background-color: color-mix(
+      in oklch,
+      var(--accent) 10%,
+      var(--card) 90%
+    ) !important;
   }
 
   /* ProximityChat panel */
   .bg-green-50 {
-    background-color: color-mix(in oklch, #22c55e 12%, var(--card) 88%) !important;
+    background-color: color-mix(
+      in oklch,
+      #22c55e 12%,
+      var(--card) 88%
+    ) !important;
   }
 
   /* Orange pending states — keep visible in dark */
   .bg-orange-50 {
-    background-color: color-mix(in oklch, #f97316 10%, var(--card) 90%) !important;
+    background-color: color-mix(
+      in oklch,
+      #f97316 10%,
+      var(--card) 90%
+    ) !important;
   }
 
   .bg-orange-950\/20 {
-    background-color: color-mix(in oklch, #f97316 20%, transparent 80%) !important;
+    background-color: color-mix(
+      in oklch,
+      #f97316 20%,
+      transparent 80%
+    ) !important;
   }
 
   /* Red zone */
   .bg-red-50 {
-    background-color: color-mix(in oklch, #ef4444 10%, var(--card) 90%) !important;
+    background-color: color-mix(
+      in oklch,
+      #ef4444 10%,
+      var(--card) 90%
+    ) !important;
   }
 
   /* Force inner borders that are hardcoded to black to use theme border */
@@ -381,11 +425,19 @@
   }
 
   .border-gray-600 {
-    border-color: color-mix(in oklch, var(--border) 50%, transparent 50%) !important;
+    border-color: color-mix(
+      in oklch,
+      var(--border) 50%,
+      transparent 50%
+    ) !important;
   }
 
   .border-gray-700 {
-    border-color: color-mix(in oklch, var(--border) 40%, transparent 60%) !important;
+    border-color: color-mix(
+      in oklch,
+      var(--border) 40%,
+      transparent 60%
+    ) !important;
   }
 
   /* Scrollbar theming */

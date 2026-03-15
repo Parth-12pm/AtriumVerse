@@ -68,7 +68,7 @@ export function useDevice() {
     };
   };
 
-    const registerFirstDevice = useCallback(async () => {
+  const registerFirstDevice = useCallback(async () => {
     setDeviceState("registering");
     try {
       // 1. Generate temp extractable keys
@@ -339,8 +339,6 @@ export function useDevice() {
       bootstrapInFlightRef.current = false;
     }
   }, [checkForPendingApprovals, initiateLinkingCeremony, registerFirstDevice]);
-
-
 
   const recoverDevice = async (
     recoveredPrivateKey: CryptoKey,

@@ -1,7 +1,9 @@
-from sqlalchemy import Column, Boolean, Integer, DateTime, ForeignKey
+from datetime import datetime
+
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from datetime import datetime
+
 from app.core.database import Base
 
 
@@ -19,6 +21,7 @@ class ChannelEncryption(Base):
       no key for the new epoch — they can still decrypt old messages (their epoch
       key still exists) but cannot decrypt new ones.
     """
+
     __tablename__ = "channel_encryption"
 
     # channel_id is both PK and FK — one row per channel, max.

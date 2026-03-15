@@ -43,7 +43,9 @@ export function ChatOverlay() {
           username: data.username || "System",
           scope: data.scope || "global",
           text: data.text,
-          timestamp: formatChatTimestamp(data.timestamp || new Date().toISOString()),
+          timestamp: formatChatTimestamp(
+            data.timestamp || new Date().toISOString(),
+          ),
         },
       ]);
     };

@@ -1,10 +1,12 @@
-from sqlalchemy import Column, String, DateTime, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
 import uuid
 from datetime import datetime
-from app.core.database import Base
+
 from pydantic import BaseModel
+from sqlalchemy import Column, DateTime, ForeignKey, String
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+
+from app.core.database import Base
 
 
 class DeviceLinkRequest(Base):
@@ -25,6 +27,7 @@ class DeviceLinkRequest(Base):
     encrypted_private_key is null until the old device writes it on approval.
     expires_at is enforced at the application layer (non-negotiable hard cutoff).
     """
+
     __tablename__ = "device_link_requests"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -76,12 +79,13 @@ class DeviceLinkRequest(Base):
     )
 
 
-
 class DeviceLinkRequestResponse(BaseModel):
     request_id: str
     new_device_id: str
-    new_device_label: str | None   # was: device_label
+    new_device_label: str | None  # was: device_label
     temp_public_key: str
     webauthn_credential_id: str | None
     expires_at: str
-    class Config: from_attributes = True
+
+    class Config:
+        from_attributes = True

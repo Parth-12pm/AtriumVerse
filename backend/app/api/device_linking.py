@@ -11,31 +11,36 @@ Two paths for the new device:
 From the new device's perspective both paths are identical — it always polls.
 """
 
+import base64
 import os
 import secrets
-import base64
 from datetime import datetime, timedelta, timezone
-from typing import Optional, List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+import webauthn
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import update, or_
 
-import webauthn
-
-from app.core.database import get_db
 from app.api.deps import get_current_user
-from app.models.user import User
+from app.core import redis_client
+from app.core.database import get_db
+from app.core.socket_manager import manager
 from app.models.device import Device
 from app.models.device_link_request import DeviceLinkRequest
 from app.models.dm_epoch import DmEpoch
 from app.models.key_backup import KeyBackup
-from app.core import redis_client
-from app.core.socket_manager import manager
-
+from app.models.user import User
+from app.schemas.device_linking import (
+    ApproveBody,
+    ApproveWithPassphraseBody,
+    ChallengeResponse,
+    LinkRequestBody,
+    LinkRequestResponse,
+    PendingRequestResponse,
+    StatusResponse,
+)
 
 router = APIRouter()
 
@@ -46,48 +51,8 @@ WEBAUTHN_ORIGIN = os.getenv("WEBAUTHN_ORIGIN", "http://localhost:3000")
 MAX_CHALLENGE_TTL = 60  # seconds
 
 
-# ── Schemas ──────────────────────────────────────────────────────────────────
-
-class LinkRequestBody(BaseModel):
-    new_device_id: UUID
-    temp_public_key: str
-    device_label: Optional[str] = None
-
-
-class LinkRequestResponse(BaseModel):
-    request_id: UUID
-    expires_at: datetime
-
-
-class PendingRequestResponse(BaseModel):
-    request_id: UUID
-    new_device_id: UUID
-    new_device_label: Optional[str]
-    temp_public_key: str
-    expires_at: datetime
-    webauthn_credential_id: Optional[str]   # needed for allowCredentials in the browser
-    has_passphrase_backup: bool = False      # true when user has passphrase backup but no PRF credential
-
-
-class StatusResponse(BaseModel):
-    status: str
-    encrypted_private_key: Optional[str] = None
-    approved_by_device_public_key: Optional[str] = None
-    permanent_public_key: Optional[str] = None
-
-
-class ApproveBody(BaseModel):
-    approving_device_id: UUID
-    webauthn_assertion: dict   # raw assertion JSON from navigator.credentials.get()
-    encrypted_private_key: str  # base64(IV + AES-GCM ciphertext of user's private key)
-    permanent_public_key: str  # the approving trusted device's permanent public key to apply to the new device
-
-
-class ChallengeResponse(BaseModel):
-    challenge: str   # base64url nonce
-
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -103,6 +68,7 @@ def _base64url_to_bytes(value: str) -> bytes:
 
 
 # ── GET /device-linking/challenge ────────────────────────────────────────────
+
 
 @router.get("/challenge", response_model=ChallengeResponse)
 async def get_challenge(
@@ -156,6 +122,7 @@ async def get_challenge(
 
 
 # ── POST /device-linking/request ─────────────────────────────────────────────
+
 
 @router.post("/request", response_model=LinkRequestResponse)
 async def create_link_request(
@@ -236,7 +203,8 @@ async def create_link_request(
 
 # ── GET /device-linking/pending ──────────────────────────────────────────────
 
-@router.get("/pending", response_model=List[PendingRequestResponse])
+
+@router.get("/pending", response_model=list[PendingRequestResponse])
 async def get_pending_requests(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -276,10 +244,12 @@ async def get_pending_requests(
     has_passphrase_backup = False
     if not webauthn_credential_id:
         passphrase_result = await db.execute(
-            select(KeyBackup).where(
+            select(KeyBackup)
+            .where(
                 KeyBackup.user_id == current_user.id,
                 KeyBackup.backup_method == "passphrase",
-            ).limit(1)
+            )
+            .limit(1)
         )
         has_passphrase_backup = passphrase_result.scalars().first() is not None
 
@@ -307,6 +277,7 @@ async def get_pending_requests(
 
 
 # ── GET /device-linking/request/{request_id}/status ─────────────────────────
+
 
 @router.get("/request/{request_id}/status", response_model=StatusResponse)
 async def get_request_status(
@@ -357,6 +328,7 @@ async def get_request_status(
 
 # ── POST /device-linking/approve/{request_id} ────────────────────────────────
 
+
 @router.post("/approve/{request_id}")
 async def approve_link_request(
     request_id: UUID,
@@ -396,7 +368,9 @@ async def approve_link_request(
     if link_request.requesting_user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not your request")
     if link_request.status != "pending":
-        raise HTTPException(status_code=409, detail=f"Request is already {link_request.status}")
+        raise HTTPException(
+            status_code=409, detail=f"Request is already {link_request.status}"
+        )
     if link_request.expires_at < _now_utc():
         raise HTTPException(
             status_code=410,
@@ -462,13 +436,19 @@ async def approve_link_request(
     # This is the cryptographic proof of physical presence.
     # If this fails, do not proceed — return 403 immediately.
     try:
-        challenge_value = stored_challenge.decode() if isinstance(stored_challenge, bytes) else stored_challenge
+        challenge_value = (
+            stored_challenge.decode()
+            if isinstance(stored_challenge, bytes)
+            else stored_challenge
+        )
         verified_authentication = webauthn.verify_authentication_response(
             credential=body.webauthn_assertion,
             expected_challenge=_base64url_to_bytes(challenge_value),
             expected_rp_id=WEBAUTHN_RP_ID,
             expected_origin=WEBAUTHN_ORIGIN,
-            credential_public_key=_base64url_to_bytes(key_backup.prf_credential_public_key),
+            credential_public_key=_base64url_to_bytes(
+                key_backup.prf_credential_public_key
+            ),
             credential_current_sign_count=key_backup.prf_sign_count,
             require_user_verification=True,
         )
@@ -508,7 +488,7 @@ async def approve_link_request(
         .where(
             or_(
                 DmEpoch.user_a_id == current_user.id,
-                DmEpoch.user_b_id == current_user.id
+                DmEpoch.user_b_id == current_user.id,
             )
         )
         .values(current_epoch=DmEpoch.current_epoch + 1)
@@ -522,10 +502,12 @@ async def approve_link_request(
     for server_id, connections in manager.active_connections.items():
         if user_id_str in connections:
             try:
-                await connections[user_id_str].send_json({
-                    "type": "device_link_approved",
-                    "request_id": str(request_id),
-                })
+                await connections[user_id_str].send_json(
+                    {
+                        "type": "device_link_approved",
+                        "request_id": str(request_id),
+                    }
+                )
             except Exception:
                 pass
 
@@ -533,6 +515,7 @@ async def approve_link_request(
 
 
 # ── POST /device-linking/reject/{request_id} ────────────────────────────────
+
 
 @router.post("/reject/{request_id}")
 async def reject_link_request(
@@ -559,19 +542,17 @@ async def reject_link_request(
     if link_request.requesting_user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not your request")
     if link_request.status != "pending":
-        raise HTTPException(status_code=409, detail=f"Request is already {link_request.status}")
+        raise HTTPException(
+            status_code=409, detail=f"Request is already {link_request.status}"
+        )
 
     link_request.status = "rejected"
     await db.commit()
 
-    return {"status": "rejected", "security_note": "If you did not initiate this, change your password immediately."}
-
-
-
-class ApproveWithPassphraseBody(BaseModel):
-    approving_device_id: UUID
-    encrypted_private_key: str
-    permanent_public_key: str
+    return {
+        "status": "rejected",
+        "security_note": "If you did not initiate this, change your password immediately.",
+    }
 
 
 @router.post("/approve-with-passphrase/{request_id}")
@@ -601,7 +582,10 @@ async def approve_with_passphrase(
     if not link_request:
         raise HTTPException(status_code=404, detail="Pending request not found")
     if link_request.expires_at < _now_utc():
-        raise HTTPException(status_code=410, detail="REQUEST_EXPIRED: This link request has expired. The new device must start over.")
+        raise HTTPException(
+            status_code=410,
+            detail="REQUEST_EXPIRED: This link request has expired. The new device must start over.",
+        )
 
     approving_result = await db.execute(
         select(Device).where(
@@ -613,10 +597,16 @@ async def approve_with_passphrase(
     )
     approving_device = approving_result.scalars().first()
     if not approving_device:
-        raise HTTPException(status_code=403, detail="Approving device is not a trusted active device on your account")
+        raise HTTPException(
+            status_code=403,
+            detail="Approving device is not a trusted active device on your account",
+        )
 
     if approving_device.public_key != body.permanent_public_key:
-        raise HTTPException(status_code=400, detail="Permanent public key does not match the approving trusted device")
+        raise HTTPException(
+            status_code=400,
+            detail="Permanent public key does not match the approving trusted device",
+        )
 
     link_request.encrypted_private_key = body.encrypted_private_key
     link_request.status = "approved"
@@ -654,10 +644,12 @@ async def approve_with_passphrase(
     for server_id, connections in manager.active_connections.items():
         if user_id_str in connections:
             try:
-                await connections[user_id_str].send_json({
-                    "type": "device_link_approved",
-                    "request_id": str(request_id),
-                })
+                await connections[user_id_str].send_json(
+                    {
+                        "type": "device_link_approved",
+                        "request_id": str(request_id),
+                    }
+                )
             except Exception:
                 pass
 

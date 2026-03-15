@@ -1,20 +1,18 @@
-﻿import base64
+import base64
 import os
 import secrets
-from datetime import datetime
-from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from webauthn import verify_registration_response
 
 from app.api.deps import get_current_user
-from app.core.database import get_db
 from app.core import redis_client
+from app.core.database import get_db
 from app.models.key_backup import KeyBackup
 from app.models.user import User
+from app.schemas.key_backup import ChallengeResponse, KeyBackupCreate, KeyBackupResponse
 
 router = APIRouter()
 
@@ -36,33 +34,14 @@ def _redis_challenge_key(user_id) -> str:
     return f"key_backup_challenge:{user_id}"
 
 
-class KeyBackupCreate(BaseModel):
-    encrypted_blob: str
-    backup_method: str
-    prf_credential_id: Optional[str] = None
-    prf_registration_credential: Optional[dict[str, Any]] = None
-    prf_registration_challenge: Optional[str] = None
-    salt: Optional[str] = None
-
-
-class KeyBackupResponse(BaseModel):
-    encrypted_blob: str
-    backup_method: str
-    prf_credential_id: Optional[str]
-    salt: Optional[str]
-    updated_at: datetime
-
-
-class ChallengeResponse(BaseModel):
-    challenge: str
-
-
 @router.get("/key-backup/challenge", response_model=ChallengeResponse)
-async def get_key_backup_challenge( 
+async def get_key_backup_challenge(
     current_user: User = Depends(get_current_user),
 ):
     challenge = buffer_to_base64url(secrets.token_bytes(32))
-    await redis_client.r.setex(_redis_challenge_key(current_user.id), BACKUP_CHALLENGE_TTL, challenge)
+    await redis_client.r.setex(
+        _redis_challenge_key(current_user.id), BACKUP_CHALLENGE_TTL, challenge
+    )
     return ChallengeResponse(challenge=challenge)
 
 
@@ -90,7 +69,9 @@ async def upsert_key_backup(
                 detail="PRF backups require a registration credential and challenge",
             )
 
-        stored_challenge = await redis_client.r.get(_redis_challenge_key(current_user.id))
+        stored_challenge = await redis_client.r.get(
+            _redis_challenge_key(current_user.id)
+        )
         if not stored_challenge:
             raise HTTPException(
                 status_code=400,
@@ -98,7 +79,9 @@ async def upsert_key_backup(
             )
 
         stored_challenge_value = (
-            stored_challenge.decode() if isinstance(stored_challenge, bytes) else stored_challenge
+            stored_challenge.decode()
+            if isinstance(stored_challenge, bytes)
+            else stored_challenge
         )
         if body.prf_registration_challenge != stored_challenge_value:
             raise HTTPException(
@@ -134,9 +117,13 @@ async def upsert_key_backup(
         )
         prf_sign_count = verified_registration.sign_count
     elif not body.salt:
-        raise HTTPException(status_code=400, detail="salt is required for passphrase backups")
+        raise HTTPException(
+            status_code=400, detail="salt is required for passphrase backups"
+        )
 
-    result = await db.execute(select(KeyBackup).where(KeyBackup.user_id == current_user.id))
+    result = await db.execute(
+        select(KeyBackup).where(KeyBackup.user_id == current_user.id)
+    )
     backup = result.scalars().first()
 
     if backup:
@@ -172,7 +159,9 @@ async def get_key_backup(
     """
     Returns the encrypted blob and metadata so the browser can attempt recovery.
     """
-    result = await db.execute(select(KeyBackup).where(KeyBackup.user_id == current_user.id))
+    result = await db.execute(
+        select(KeyBackup).where(KeyBackup.user_id == current_user.id)
+    )
     backup = result.scalars().first()
 
     if not backup:
@@ -195,7 +184,9 @@ async def delete_key_backup(
     """
     Deletes the backup. The frontend must heavily warn before calling this.
     """
-    result = await db.execute(select(KeyBackup).where(KeyBackup.user_id == current_user.id))
+    result = await db.execute(
+        select(KeyBackup).where(KeyBackup.user_id == current_user.id)
+    )
     backup = result.scalars().first()
 
     if not backup:

@@ -1,8 +1,10 @@
-from sqlalchemy import Column, Integer, DateTime, ForeignKey, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
 import uuid
 from datetime import datetime
+
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+
 from app.core.database import Base
 
 
@@ -22,6 +24,7 @@ class ChannelDeviceKey(Base):
     The epoch column is part of the unique constraint because a device legitimately holds
     keys for multiple epochs simultaneously (epoch 1 for old messages, epoch 2 for new).
     """
+
     __tablename__ = "channel_device_keys"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -59,5 +62,7 @@ class ChannelDeviceKey(Base):
 
     __table_args__ = (
         # A device should receive the channel key for a given epoch exactly once.
-        UniqueConstraint("channel_id", "device_id", "epoch", name="uq_channel_device_epoch"),
+        UniqueConstraint(
+            "channel_id", "device_id", "epoch", name="uq_channel_device_epoch"
+        ),
     )

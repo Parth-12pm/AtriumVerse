@@ -1,16 +1,16 @@
-"use client"
+"use client";
 
-import { usePathname } from "next/navigation"
-import Link from "next/link"
-import { 
-  Calendar, 
-  Home, 
-  Settings, 
+import { usePathname } from "next/navigation";
+import Link from "next/link";
+import {
+  Calendar,
+  Home,
+  Settings,
   Sparkles,
   Users,
   MessageSquare,
-  HelpCircle
-} from "lucide-react"
+  HelpCircle,
+} from "lucide-react";
 
 import {
   Sidebar,
@@ -23,7 +23,7 @@ import {
   SidebarMenuItem,
   SidebarHeader,
   SidebarFooter,
-} from "@/components/ui/sidebar"
+} from "@/components/ui/sidebar";
 
 // Main navigation items
 const mainItems = [
@@ -40,7 +40,7 @@ const mainItems = [
     description: "Coming soon",
     disabled: true,
   },
-]
+];
 
 // Secondary navigation items
 const secondaryItems = [
@@ -58,7 +58,7 @@ const secondaryItems = [
     description: "Coming soon",
     disabled: true,
   },
-]
+];
 
 // Footer items
 const footerItems = [
@@ -72,10 +72,10 @@ const footerItems = [
     url: "#",
     icon: HelpCircle,
   },
-]
+];
 
 export function AppSidebar() {
-  const pathname = usePathname()
+  const pathname = usePathname();
 
   return (
     <Sidebar className="border-r-4 border-border">
@@ -86,8 +86,12 @@ export function AppSidebar() {
             <Sparkles className="w-6 h-6 text-primary-foreground" />
           </div>
           <div>
-            <span className="text-xl font-black uppercase tracking-tight">AtriumVerse</span>
-            <p className="text-xs text-muted-foreground font-bold">Virtual Workspace</p>
+            <span className="text-xl font-black uppercase tracking-tight">
+              AtriumVerse
+            </span>
+            <p className="text-xs text-muted-foreground font-bold">
+              Virtual Workspace
+            </p>
           </div>
         </Link>
       </SidebarHeader>
@@ -101,23 +105,26 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {mainItems.map((item) => {
-                const isActive = pathname === item.url
+                const isActive = pathname === item.url;
                 return (
                   <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton 
-                      asChild 
+                    <SidebarMenuButton
+                      asChild
                       className={`
                         rounded-lg border-2 mb-1 transition-all h-10
-                        ${isActive 
-                          ? 'bg-primary text-primary-foreground border-border shadow-shadow' 
-                          : 'border-transparent hover:border-border hover:bg-primary/10'
+                        ${
+                          isActive
+                            ? "bg-primary text-primary-foreground border-border shadow-shadow"
+                            : "border-transparent hover:border-border hover:bg-primary/10"
                         }
-                        ${item.disabled ? 'opacity-50 cursor-not-allowed' : ''}
+                        ${item.disabled ? "opacity-50 cursor-not-allowed" : ""}
                       `}
                     >
-                      <Link 
+                      <Link
                         href={item.disabled ? "#" : item.url}
-                        onClick={item.disabled ? (e) => e.preventDefault() : undefined}
+                        onClick={
+                          item.disabled ? (e) => e.preventDefault() : undefined
+                        }
                         className="flex items-center gap-2 w-full"
                       >
                         <item.icon className="h-5 w-5 shrink-0" />
@@ -125,7 +132,7 @@ export function AppSidebar() {
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                )
+                );
               })}
             </SidebarMenu>
           </SidebarGroupContent>
@@ -141,23 +148,26 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {secondaryItems.map((item) => {
-                const isActive = pathname === item.url
+                const isActive = pathname === item.url;
                 return (
                   <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton 
-                      asChild 
+                    <SidebarMenuButton
+                      asChild
                       className={`
                         rounded-lg border-2 mb-1 transition-all h-10
-                        ${isActive 
-                          ? 'bg-primary text-primary-foreground border-border shadow-shadow' 
-                          : 'border-transparent hover:border-border hover:bg-primary/10'
+                        ${
+                          isActive
+                            ? "bg-primary text-primary-foreground border-border shadow-shadow"
+                            : "border-transparent hover:border-border hover:bg-primary/10"
                         }
-                        ${item.disabled ? 'opacity-50 cursor-not-allowed' : ''}
+                        ${item.disabled ? "opacity-50 cursor-not-allowed" : ""}
                       `}
                     >
-                      <Link 
+                      <Link
                         href={item.disabled ? "#" : item.url}
-                        onClick={item.disabled ? (e) => e.preventDefault() : undefined}
+                        onClick={
+                          item.disabled ? (e) => e.preventDefault() : undefined
+                        }
                         className="flex items-center gap-2 w-full"
                       >
                         <item.icon className="h-5 w-5 shrink-0" />
@@ -165,7 +175,7 @@ export function AppSidebar() {
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                )
+                );
               })}
             </SidebarMenu>
           </SidebarGroupContent>
@@ -177,11 +187,14 @@ export function AppSidebar() {
         <SidebarMenu>
           {footerItems.map((item) => (
             <SidebarMenuItem key={item.title}>
-              <SidebarMenuButton 
-                asChild 
+              <SidebarMenuButton
+                asChild
                 className="rounded-lg border-2 border-transparent hover:border-border hover:bg-primary/10 transition-all h-10"
               >
-                <Link href={item.url} className="flex items-center gap-2 w-full">
+                <Link
+                  href={item.url}
+                  className="flex items-center gap-2 w-full"
+                >
                   <item.icon className="h-5 w-5 shrink-0" />
                   <span className="font-bold">{item.title}</span>
                 </Link>
@@ -191,5 +204,5 @@ export function AppSidebar() {
         </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
-  )
+  );
 }

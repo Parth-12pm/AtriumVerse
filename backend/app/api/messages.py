@@ -1,70 +1,66 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
-from typing import List
-from uuid import UUID
 from datetime import datetime
-from sqlalchemy import or_, and_
+from uuid import UUID
 
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import and_, desc, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_current_user
 from app.core.database import get_db
-from app.models.message import Message
 from app.models.channel import Channel
-from app.models.server_member import ServerMember, MemberStatus
 from app.models.channel_encryption import ChannelEncryption
+from app.models.message import Message
+from app.models.server_member import MemberStatus, ServerMember
 from app.models.user import User
 from app.schemas.message import MessageCreate, MessageResponse, MessageUpdate
-from app.api.deps import get_current_user
 
 router = APIRouter()
 
 
-@router.get("/channels/{channel_id}/messages", response_model=List[MessageResponse])
+@router.get("/channels/{channel_id}/messages", response_model=list[MessageResponse])
 async def list_messages(
     channel_id: UUID,
     limit: int = Query(50, le=100),
     before: UUID = Query(None),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Get messages from a channel (paginated).
     Returns most recent messages first.
     """
     # Get channel and verify access
-    channel_result = await db.execute(
-        select(Channel).where(Channel.id == channel_id)
-    )
+    channel_result = await db.execute(select(Channel).where(Channel.id == channel_id))
     channel = channel_result.scalars().first()
-    
+
     if not channel:
         raise HTTPException(404, detail="Channel not found")
-    
+
     # Verify membership
     member_check = await db.execute(
         select(ServerMember).where(
             ServerMember.server_id == channel.server_id,
             ServerMember.user_id == current_user.id,
-            ServerMember.status == MemberStatus.ACCEPTED
+            ServerMember.status == MemberStatus.ACCEPTED,
         )
     )
     if not member_check.scalars().first():
         raise HTTPException(403, detail="Not a member of this server")
-    
+
     # Build query
     query = (
         select(Message, User.username)
         .join(User, Message.user_id == User.id)
-        .where(
-            Message.channel_id == channel_id,
-            ~Message.is_deleted 
-        )
+        .where(Message.channel_id == channel_id, ~Message.is_deleted)
         .order_by(desc(Message.created_at))
         .limit(limit)
     )
-    
+
     # Pagination
     if before:
-        before_msg_result = await db.execute(select(Message).where(Message.id == before))
+        before_msg_result = await db.execute(
+            select(Message).where(Message.id == before)
+        )
         before_msg = before_msg_result.scalars().first()
 
         if before_msg:
@@ -73,14 +69,14 @@ async def list_messages(
                     Message.created_at < before_msg.created_at,
                     and_(
                         Message.created_at == before_msg.created_at,
-                        Message.id < before_msg.id
-                    )
+                        Message.id < before_msg.id,
+                    ),
                 )
             )
-    
+
     result = await db.execute(query)
     rows = result.all()
-    
+
     # Build response
     messages = []
     for msg, username in rows:
@@ -98,7 +94,7 @@ async def list_messages(
             "epoch": getattr(msg, "epoch", None),
         }
         messages.append(MessageResponse(**msg_dict))
-    
+
     return messages
 
 
@@ -107,31 +103,29 @@ async def create_message(
     channel_id: UUID,
     message_in: MessageCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Send a message to a channel.
     """
     # Get channel and verify access
-    channel_result = await db.execute(
-        select(Channel).where(Channel.id == channel_id)
-    )
+    channel_result = await db.execute(select(Channel).where(Channel.id == channel_id))
     channel = channel_result.scalars().first()
-    
+
     if not channel:
         raise HTTPException(404, detail="Channel not found")
-    
+
     # Verify membership
     member_check = await db.execute(
         select(ServerMember).where(
             ServerMember.server_id == channel.server_id,
             ServerMember.user_id == current_user.id,
-            ServerMember.status == MemberStatus.ACCEPTED
+            ServerMember.status == MemberStatus.ACCEPTED,
         )
     )
     if not member_check.scalars().first():
         raise HTTPException(403, detail="Not a member of this server")
-    
+
     # Validate content
     if not message_in.content or len(message_in.content) > 2000:
         raise HTTPException(400, detail="Message must be 1-2000 characters")
@@ -160,7 +154,7 @@ async def create_message(
             400,
             detail="Channel encryption is not enabled for this channel",
         )
-    
+
     # Create message
     new_message = Message(
         channel_id=channel_id,
@@ -170,11 +164,11 @@ async def create_message(
         is_encrypted=message_in.is_encrypted,
         epoch=message_in.epoch,
     )
-    
+
     db.add(new_message)
     await db.commit()
     await db.refresh(new_message)
-    
+
     # Build response with username
     response = MessageResponse(
         id=new_message.id,
@@ -189,7 +183,7 @@ async def create_message(
         is_encrypted=new_message.is_encrypted or False,
         epoch=new_message.epoch,
     )
-    
+
     return response
 
 
@@ -198,36 +192,34 @@ async def update_message(
     message_id: UUID,
     message_update: MessageUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Edit a message.
     Only the author can edit their messages.
     """
-    result = await db.execute(
-        select(Message).where(Message.id == message_id)
-    )
+    result = await db.execute(select(Message).where(Message.id == message_id))
     message = result.scalars().first()
-    
+
     if not message:
         raise HTTPException(404, detail="Message not found")
-    
+
     if message.user_id != current_user.id:
         raise HTTPException(403, detail="Can only edit your own messages")
-    
+
     if message.is_deleted:
         raise HTTPException(400, detail="Cannot edit deleted messages")
-    
+
     # Validate content
     if not message_update.content or len(message_update.content) > 2000:
         raise HTTPException(400, detail="Message must be 1-2000 characters")
-    
+
     message.content = message_update.content
     message.edited_at = datetime.utcnow()
-    
+
     await db.commit()
     await db.refresh(message)
-    
+
     # Build response
     response = MessageResponse(
         id=message.id,
@@ -238,9 +230,9 @@ async def update_message(
         edited_at=message.edited_at,
         is_deleted=message.is_deleted,
         created_at=message.created_at,
-        username=current_user.username
+        username=current_user.username,
     )
-    
+
     return response
 
 
@@ -248,43 +240,42 @@ async def update_message(
 async def delete_message(
     message_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Delete a message (soft delete).
     Author or server owner can delete.
     """
-    result = await db.execute(
-        select(Message).where(Message.id == message_id)
-    )
+    result = await db.execute(select(Message).where(Message.id == message_id))
     message = result.scalars().first()
-    
+
     if not message:
         raise HTTPException(404, detail="Message not found")
-    
+
     # Get channel to check server ownership
     channel_result = await db.execute(
         select(Channel).where(Channel.id == message.channel_id)
     )
     channel = channel_result.scalars().first()
-    
+
     # Check if user is author or server owner
     from app.models.server import Server
+
     server_result = await db.execute(
         select(Server).where(Server.id == channel.server_id)
     )
     server = server_result.scalars().first()
-    
+
     is_author = message.user_id == current_user.id
     is_owner = server.owner_id == current_user.id
-    
+
     if not (is_author or is_owner):
         raise HTTPException(403, detail="Can only delete your own messages")
-    
+
     # Soft delete
     message.is_deleted = True
     message.content = "[deleted]"
-    
+
     await db.commit()
-    
+
     return {"message": "Message deleted successfully"}

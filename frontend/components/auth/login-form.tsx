@@ -42,8 +42,13 @@ export function LoginForm() {
       if (!response.ok) throw new Error("Login failed");
 
       const data = await response.json();
-      const previousDeviceOwnerUserId = localStorage.getItem("device_owner_user_id");
-      if (previousDeviceOwnerUserId && previousDeviceOwnerUserId !== data.user_id) {
+      const previousDeviceOwnerUserId = localStorage.getItem(
+        "device_owner_user_id",
+      );
+      if (
+        previousDeviceOwnerUserId &&
+        previousDeviceOwnerUserId !== data.user_id
+      ) {
         await clearLocalDeviceIdentity();
       }
 

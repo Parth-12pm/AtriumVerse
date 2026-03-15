@@ -14,4 +14,3 @@ export function formatChatTimestamp(timestamp: string): string {
     return "";
   }
 }
-

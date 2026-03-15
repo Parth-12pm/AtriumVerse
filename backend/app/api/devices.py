@@ -12,60 +12,34 @@
 #     layer by a partial unique index — see device.py and the TOCTOU explanation below.
 # """
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy import update
-from pydantic import BaseModel
-from typing import Optional, List
-from datetime import datetime
 import uuid
 
-from app.core.database import get_db
-from app.api.deps import get_current_user
-from app.models.user import User
-from app.models.device import Device
-from app.models.key_backup import KeyBackup
-from app.models.dm_device_key import DmDeviceKey
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
+from app.api.deps import get_current_user
+from app.core.database import get_db
+from app.models.device import Device
+from app.models.dm_device_key import DmDeviceKey
+from app.models.key_backup import KeyBackup
+from app.models.user import User
+from app.schemas.device import (
+    DeviceRegisterRequest,
+    DeviceRegisterResponse,
+    MyDeviceResponse,
+    PublicDeviceResponse,
+    RecoveryDeviceRequest,
+)
 
 router = APIRouter()
-
-
-# ─────────────────────────────────────────
-# Schemas
-# ─────────────────────────────────────────
-class RecoveryDeviceRequest(BaseModel):
-    public_key: str
-    device_label: str
-
-
-class DeviceRegisterRequest(BaseModel):
-    public_key: str          # base64-encoded X25519 public key from the browser
-    device_label: Optional[str] = None
-
-
-class DeviceRegisterResponse(BaseModel):
-    device_id: uuid.UUID
-    is_trusted: bool
-
-
-class MyDeviceResponse(BaseModel):
-    device_id: uuid.UUID
-    device_label: Optional[str]
-    is_trusted: bool
-    created_at: Optional[datetime]
-
-
-class PublicDeviceResponse(BaseModel):
-    device_id: uuid.UUID
-    public_key: str
-
 
 # ─────────────────────────────────────────
 # POST /devices/register
 # ─────────────────────────────────────────
+
 
 @router.post("/register", response_model=DeviceRegisterResponse)
 async def register_device(
@@ -99,11 +73,13 @@ async def register_device(
     """
     # Check if this user already has at least one trusted device.
     result = await db.execute(
-        select(Device).where(
+        select(Device)
+        .where(
             Device.user_id == current_user.id,
             Device.is_trusted == True,
             Device.deleted_at == None,
-        ).limit(1)
+        )
+        .limit(1)
     )
     has_trusted_device = result.scalars().first() is not None
 
@@ -117,12 +93,14 @@ async def register_device(
     else:
         # Check if they are recovering an existing trusted public key
         trusted_key_res = await db.execute(
-            select(Device).where(
+            select(Device)
+            .where(
                 Device.user_id == current_user.id,
                 Device.is_trusted == True,
                 Device.deleted_at == None,
-                Device.public_key == body.public_key
-            ).limit(1)
+                Device.public_key == body.public_key,
+            )
+            .limit(1)
         )
         if trusted_key_res.scalar_one_or_none():
             is_trusted = True
@@ -161,7 +139,8 @@ async def register_device(
 # GET /devices/my-devices
 # ─────────────────────────────────────────
 
-@router.get("/my-devices", response_model=List[MyDeviceResponse])
+
+@router.get("/my-devices", response_model=list[MyDeviceResponse])
 async def get_my_devices(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -196,7 +175,8 @@ async def get_my_devices(
 # GET /devices/user/{user_id}
 # ─────────────────────────────────────────
 
-@router.get("/user/{user_id}", response_model=List[PublicDeviceResponse])
+
+@router.get("/user/{user_id}", response_model=list[PublicDeviceResponse])
 async def get_user_trusted_devices(
     user_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
@@ -227,8 +207,7 @@ async def get_user_trusted_devices(
     devices = result.scalars().all()
 
     return [
-        PublicDeviceResponse(device_id=d.id, public_key=d.public_key)
-        for d in devices
+        PublicDeviceResponse(device_id=d.id, public_key=d.public_key) for d in devices
     ]
 
 
@@ -236,7 +215,8 @@ async def get_user_trusted_devices(
 # GET /devices/server/{server_id}
 # ─────────────────────────────────────────
 
-@router.get("/server/{server_id}", response_model=List[PublicDeviceResponse])
+
+@router.get("/server/{server_id}", response_model=list[PublicDeviceResponse])
 async def get_server_trusted_devices(
     server_id: str,
     current_user: User = Depends(get_current_user),
@@ -244,15 +224,14 @@ async def get_server_trusted_devices(
 ):
     """
     Returns all trusted device public keys for every member of a server.
-    Used by the frontend when enabling channel encryption to encrypt the 
+    Used by the frontend when enabling channel encryption to encrypt the
     initial Epoch 1 key for all current members.
     """
     from app.models.server_member import ServerMember
-    
+
     # Verify current user is in the server
     member_query = select(ServerMember).where(
-        ServerMember.server_id == server_id,
-        ServerMember.user_id == current_user.id
+        ServerMember.server_id == server_id, ServerMember.user_id == current_user.id
     )
     member_res = await db.execute(member_query)
     if not member_res.scalar_one_or_none():
@@ -266,19 +245,20 @@ async def get_server_trusted_devices(
             ServerMember.server_id == server_id,
             ServerMember.status == "accepted",
             Device.is_trusted == True,
-            Device.deleted_at == None
+            Device.deleted_at == None,
         )
     )
     devices = result.scalars().all()
 
     return [
-        PublicDeviceResponse(device_id=d.id, public_key=d.public_key)
-        for d in devices
+        PublicDeviceResponse(device_id=d.id, public_key=d.public_key) for d in devices
     ]
+
 
 # ─────────────────────────────────────────
 # DELETE /devices/{device_id}
 # ─────────────────────────────────────────
+
 
 @router.delete("/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_device(
@@ -306,9 +286,7 @@ async def delete_device(
     device_link_requests and channel_device_keys cleanup automatically.
     dm_device_keys.device_id becomes NULL via the SET NULL FK.
     """
-    result = await db.execute(
-        select(Device).where(Device.id == device_id)
-    )
+    result = await db.execute(select(Device).where(Device.id == device_id))
     device = result.scalars().first()
 
     if device is None:
@@ -359,16 +337,21 @@ async def recover_device(
         select(KeyBackup).where(KeyBackup.user_id == current_user.id).limit(1)
     )
     if not backup_result.scalars().first():
-        raise HTTPException(status_code=403, detail="No key backup found. Cannot recover without a backup.")
+        raise HTTPException(
+            status_code=403,
+            detail="No key backup found. Cannot recover without a backup.",
+        )
 
     # Idempotency: if a previous recovery attempt already registered this key,
     # just ensure it is trusted and return it.
     existing_result = await db.execute(
-        select(Device).where(
+        select(Device)
+        .where(
             Device.user_id == current_user.id,
             Device.public_key == body.public_key,
             Device.deleted_at == None,
-        ).limit(1)
+        )
+        .limit(1)
     )
     existing = existing_result.scalars().first()
     if existing:
@@ -376,7 +359,9 @@ async def recover_device(
             existing.is_trusted = True
             await db.commit()
             await db.refresh(existing)
-        return DeviceRegisterResponse(device_id=existing.id, is_trusted=existing.is_trusted)
+        return DeviceRegisterResponse(
+            device_id=existing.id, is_trusted=existing.is_trusted
+        )
 
     # Register the device and trust it immediately — key difference from /register.
     device = Device(

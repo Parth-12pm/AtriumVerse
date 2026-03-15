@@ -1,6 +1,9 @@
 "use client";
 
-import { clearLocalDeviceIdentity, persistDeviceOwner } from "@/lib/deviceIdentity";
+import {
+  clearLocalDeviceIdentity,
+  persistDeviceOwner,
+} from "@/lib/deviceIdentity";
 import { getPrivateKey } from "@/lib/keyStore";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -52,7 +55,9 @@ async function syncStoredPublicKey(userId: string, deviceId: string) {
   const publicDevices = await fetchJson<PublicDeviceResponse[]>(
     `/devices/user/${userId}`,
   );
-  const matchedDevice = publicDevices.find((device) => device.device_id === deviceId);
+  const matchedDevice = publicDevices.find(
+    (device) => device.device_id === deviceId,
+  );
   if (matchedDevice) {
     localStorage.setItem("device_public_key", matchedDevice.public_key);
   }
@@ -127,9 +132,9 @@ async function resolveTrustedLocalDeviceUncached(): Promise<TrustedLocalDevice> 
   throw new Error("No trusted local device is available in this browser");
 }
 
-export async function resolveTrustedLocalDevice(
-  options?: { forceRefresh?: boolean },
-): Promise<TrustedLocalDevice> {
+export async function resolveTrustedLocalDevice(options?: {
+  forceRefresh?: boolean;
+}): Promise<TrustedLocalDevice> {
   const currentUserId =
     typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
   const storedDeviceId =

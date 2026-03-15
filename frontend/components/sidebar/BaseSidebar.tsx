@@ -23,7 +23,6 @@ import { BackupSetup } from "@/components/auth/BackupSetup";
 import { RecoveryFlow } from "@/components/auth/RecoveryFlow";
 import { clearLocalDeviceIdentity } from "@/lib/deviceIdentity";
 
-
 interface BaseSidebarProps {
   serverId: string;
 }
@@ -109,8 +108,6 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
       EventBus.off(GameEvents.ROOM_ENTER, handleZoneEnter);
     };
   }, []);
-
-
 
   // Emit ui:focus/ui:blur events for game input control
   useEffect(() => {

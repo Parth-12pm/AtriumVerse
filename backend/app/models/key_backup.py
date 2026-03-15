@@ -1,6 +1,8 @@
-from sqlalchemy import Column, String, ForeignKey, DateTime, Integer
-from sqlalchemy.dialects.postgresql import UUID
 from datetime import datetime
+
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy.dialects.postgresql import UUID
+
 from app.core.database import Base
 
 
@@ -13,6 +15,7 @@ class KeyBackup(Base):
     1. A WebAuthn PRF output (from their Face ID / passkey)
     2. A PBKDF2 derived key (from a passphrase)
     """
+
     __tablename__ = "key_backups"
 
     user_id = Column(

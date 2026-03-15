@@ -1,8 +1,10 @@
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Index
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
 import uuid
 from datetime import datetime
+
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, String
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+
 from app.core.database import Base
 
 
@@ -18,6 +20,7 @@ class Device(Base):
     approved by an existing trusted device via the device linking ceremony.
     Keys are only distributed to trusted devices.
     """
+
     __tablename__ = "devices"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -63,5 +66,9 @@ class Device(Base):
         # NOTE: multiple trusted devices per user ARE allowed (one per browser/device).
         # This index is not a uniqueness constraint on trusted count, just a targeted index
         # on the (user_id, is_trusted=True) subset for efficient queries.
-        Index("ix_devices_trusted_per_user", "user_id", postgresql_where="is_trusted = true"),
+        Index(
+            "ix_devices_trusted_per_user",
+            "user_id",
+            postgresql_where="is_trusted = true",
+        ),
     )

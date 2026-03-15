@@ -102,7 +102,10 @@ export default function EditChannelDialog({
         // 4. Submit to atomic API
         await fetchAPI(`/channel-keys/${channelId}/enable`, {
           method: "POST",
-          body: JSON.stringify({ submitting_device_id: deviceId, encrypted_keys: encryptedKeys }),
+          body: JSON.stringify({
+            submitting_device_id: deviceId,
+            encrypted_keys: encryptedKeys,
+          }),
         });
 
         toast.success("E2E Encryption enabled!");

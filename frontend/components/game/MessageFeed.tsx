@@ -69,7 +69,10 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
             newMsg.content,
           );
         } catch (err) {
-          if (err instanceof Error && err.name === "ChannelKeyUnavailableError") {
+          if (
+            err instanceof Error &&
+            err.name === "ChannelKeyUnavailableError"
+          ) {
             newMsg.device_key_status = "predates_channel_access";
           } else {
             newMsg.decryptionFailed = true;
@@ -107,7 +110,10 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
                 msg.content,
               );
             } catch (err) {
-              if (err instanceof Error && err.name === "ChannelKeyUnavailableError") {
+              if (
+                err instanceof Error &&
+                err.name === "ChannelKeyUnavailableError"
+              ) {
                 msg.device_key_status = "predates_channel_access";
               } else {
                 msg.decryptionFailed = true;
@@ -142,15 +148,21 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
           epoch,
         };
       } catch (err) {
-        if (!(err instanceof Error) || err.name !== "ChannelEncryptionDisabledError") {
+        if (
+          !(err instanceof Error) ||
+          err.name !== "ChannelEncryptionDisabledError"
+        ) {
           throw err;
         }
       }
 
-      const message = await fetchAPI(`/messages/channels/${channelId}/messages`, {
-        method: "POST",
-        body: JSON.stringify(reqBody),
-      });
+      const message = await fetchAPI(
+        `/messages/channels/${channelId}/messages`,
+        {
+          method: "POST",
+          body: JSON.stringify(reqBody),
+        },
+      );
 
       if (message.is_encrypted) {
         message.decryptedContent = finalContent;
@@ -179,7 +191,9 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
         body: JSON.stringify({ content: editContent.trim() }),
       });
 
-      setMessages((prev) => prev.map((msg) => (msg.id === messageId ? updated : msg)));
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === messageId ? updated : msg)),
+      );
       setEditingId(null);
       toast.success("Message updated");
     } catch (error) {
@@ -274,7 +288,11 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
                       }}
                       className="h-8"
                     />
-                    <Button size="sm" onClick={() => saveEdit(msg.id)} className="h-8">
+                    <Button
+                      size="sm"
+                      onClick={() => saveEdit(msg.id)}
+                      className="h-8"
+                    >
                       Save
                     </Button>
                     <Button
@@ -295,7 +313,8 @@ export function MessageFeed({ channelId, channelName }: MessageFeedProps) {
                         <span className="text-destructive font-mono text-xs">
                           [Message could not be decrypted]
                         </span>
-                      ) : msg.device_key_status === "predates_channel_access" ? (
+                      ) : msg.device_key_status ===
+                        "predates_channel_access" ? (
                         <span className="text-muted-foreground italic">
                           [Sent before you had access to this channel]
                         </span>

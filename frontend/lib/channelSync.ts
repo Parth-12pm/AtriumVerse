@@ -58,12 +58,20 @@ export async function distributeKeysToNewMember(
       const currentKeyBytes = globalChannelKeysCache.get(cid);
       if (!currentKeyBytes) continue;
 
-      // Fetch the new user's trusted devices
-      const devicesRes = await fetchAPI("/devices"); // Or your specific endpoint for user devices
+      // Fetch ALL devices for the members in this specific channel
+      const devicesRes = await fetchAPI(`/channels/${cid}/devices`);
+
+      // Filter it down to just the newly joined user's trusted devices
       const newUserDevices = devicesRes.filter(
         (d: any) => d.user_id === newUserId && d.is_trusted,
       );
-      if (newUserDevices.length === 0) continue;
+
+      if (newUserDevices.length === 0) {
+        console.warn(
+          `No trusted devices found for new user ${newUserId} in channel ${cid}`,
+        );
+        continue;
+      }
 
       const myKeyRes = await fetchAPI(
         `/channel-keys/${cid}/my-key?device_id=${myDeviceId}`,

@@ -1,10 +1,11 @@
 import asyncio
-from fastapi import WebSocket
-from typing import Dict
 
-class ConnectionManger: 
+from fastapi import WebSocket
+
+
+class ConnectionManger:
     def __init__(self):
-        self.active_connections: Dict[str, Dict[str, WebSocket]] = {}
+        self.active_connections: dict[str, dict[str, WebSocket]] = {}
 
     async def connect(self, websocket: WebSocket, server_id: str, user_id: str):
         await websocket.accept()
@@ -16,18 +17,20 @@ class ConnectionManger:
         if server_id in self.active_connections:
             if user_id in self.active_connections[server_id]:
                 del self.active_connections[server_id][user_id]
-            
+
             if len(self.active_connections[server_id]) == 0:
                 del self.active_connections[server_id]
 
-    async def send_personal_message(self, message: dict, server_id: str, target_user_id: str):
+    async def send_personal_message(
+        self, message: dict, server_id: str, target_user_id: str
+    ):
         if server_id in self.active_connections:
             target_ws = self.active_connections[server_id].get(target_user_id)
             if target_ws:
                 try:
                     await target_ws.send_json(message)
                 except Exception:
-                     pass
+                    pass
 
     async def broadcast(self, message: dict, server_id: str, sender: WebSocket):
         if server_id not in self.active_connections:
@@ -44,5 +47,6 @@ class ConnectionManger:
         for target_ws in self.active_connections[server_id].values():
             if target_ws != sender:
                 asyncio.create_task(safe_send(target_ws))
+
 
 manager = ConnectionManger()

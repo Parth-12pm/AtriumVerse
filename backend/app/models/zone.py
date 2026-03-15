@@ -1,8 +1,10 @@
-from app.core.database import Base
-from sqlalchemy import Column , String , ForeignKey
-from sqlalchemy.dialects.postgresql import JSONB , UUID
 import uuid
+
+from sqlalchemy import Column, ForeignKey, String
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
+
+from app.core.database import Base
 
 
 class Zone(Base):
@@ -14,5 +16,4 @@ class Zone(Base):
     type = Column(String, nullable=False, default="PUBLIC")
     bounds = Column(JSONB)
 
-    server = relationship("Server",back_populates="zones")
-
+    server = relationship("Server", back_populates="zones")

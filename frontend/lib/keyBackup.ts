@@ -17,7 +17,10 @@ function bytesToBase64url(buffer: ArrayBuffer): string {
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
 function base64urlToBytes(base64url: string): ArrayBuffer {
@@ -57,7 +60,9 @@ export async function fetchKeyBackup() {
 }
 
 async function fetchKeyBackupChallenge(): Promise<string> {
-  const res = await fetchAPI("/account/key-backup/challenge", { method: "GET" });
+  const res = await fetchAPI("/account/key-backup/challenge", {
+    method: "GET",
+  });
   return res.challenge as string;
 }
 
@@ -114,7 +119,8 @@ export async function createBackupViaPRF(
     },
   })) as PublicKeyCredential;
 
-  const prfSupported = (credential.getClientExtensionResults() as any)?.prf?.enabled;
+  const prfSupported = (credential.getClientExtensionResults() as any)?.prf
+    ?.enabled;
   if (!prfSupported) {
     return { supported: false };
   }
@@ -136,7 +142,8 @@ export async function createBackupViaPRF(
     },
   })) as PublicKeyCredential;
 
-  const prfOutput = (assertion.getClientExtensionResults() as any)?.prf?.results?.first;
+  const prfOutput = (assertion.getClientExtensionResults() as any)?.prf?.results
+    ?.first;
   if (!prfOutput) {
     return { supported: false };
   }
@@ -190,7 +197,8 @@ export async function recoverViaWebAuthn(
     },
   })) as PublicKeyCredential;
 
-  const prfOutput = (assertion.getClientExtensionResults() as any)?.prf?.results?.first;
+  const prfOutput = (assertion.getClientExtensionResults() as any)?.prf?.results
+    ?.first;
   if (!prfOutput) {
     throw new Error("PRF not supported on this device/authenticator");
   }
@@ -348,4 +356,3 @@ export async function deriveKeyFromRecoveryCode(code: string, userId: string) {
     ["encrypt", "decrypt"],
   );
 }
-
