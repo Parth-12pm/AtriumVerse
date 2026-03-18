@@ -1,6 +1,6 @@
 import asyncio
 from app.core.database import engine, Base
-
+#initialization of db
 # Import all models to register them with Base.metadata
 from app.models.user import User
 from app.models.server import Server
