@@ -602,11 +602,7 @@ Please keep E2EE-related PRs security-focused — the threat model is intentiona
 
 ---
 
-## ✦ License
-
-MIT License — see [LICENSE](LICENSE) for details.
-
----
+The Project is Not a Open Source Project 
 
 <div align="center">
 
