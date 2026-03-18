@@ -47,7 +47,8 @@ async def list_messages(
             ServerMember.status == MemberStatus.ACCEPTED
         )
     )
-    if not member_check.scalars().first():
+    member = member_check.scalars().first()
+    if not member:
         raise HTTPException(403, detail="Not a member of this server")
     
     # Build query
@@ -56,7 +57,8 @@ async def list_messages(
         .join(User, Message.user_id == User.id)
         .where(
             Message.channel_id == channel_id,
-            ~Message.is_deleted 
+            ~Message.is_deleted,
+            Message.created_at >= member.joined_at
         )
         .order_by(desc(Message.created_at))
         .limit(limit)
