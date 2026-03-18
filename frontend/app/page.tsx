@@ -42,24 +42,24 @@ export default function LandingPage() {
         <div className="max-w-4xl mx-auto text-center">
           <div className="inline-block mb-6 px-4 py-2 bg-primary/20 border-2 border-border rounded-lg">
             <span className="text-sm font-bold uppercase tracking-wider">
-              Virtual Collaboration
+              Virtual Learning Environment
             </span>
           </div>
 
           <h1 className="text-5xl md:text-7xl font-black uppercase tracking-tight mb-6 leading-tight">
-            Virtual Spaces for
-            <span className="text-primary">Real Teams</span>
+            Virtual Classrooms for
+            <span className="text-primary">Real Learning </span>
           </h1>
 
           <p className="text-xl md:text-2xl text-muted-foreground mb-10 max-w-2xl mx-auto">
-            Walk around, meet your teammates, and collaborate naturally — just
-            like in a real office, but from anywhere.
+            Walk into virtual classrooms, interact with peers, and learn
+            naturally — just like a real campus, from anywhere.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link href="/register">
               <Button size="lg" className="text-lg font-bold px-8 py-6">
-                Get Started Free <ArrowRight className="ml-2 h-5 w-5" />
+                Enter Classroom <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </Link>
             <Link href="#features">
@@ -68,7 +68,7 @@ export default function LandingPage() {
                 variant="neutral"
                 className="text-lg font-bold px-8 py-6"
               >
-                Learn More
+                Explore Features
               </Button>
             </Link>
           </div>
