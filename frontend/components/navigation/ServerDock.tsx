@@ -38,7 +38,7 @@ export default function ServerDock() {
   };
 
   return (
-    <div className="fixed left-0 top-0 h-full w-16 bg-gray-900 border-r-4 border-black z-40 flex flex-col items-center py-4 gap-3">
+    <div className="fixed left-0 top-0 h-full w-16 bg-gray-900 border-r-4 border-black z-10 flex flex-col items-center py-4 gap-3">
       {/* Home Button */}
       <Button
         onClick={navigateHome}

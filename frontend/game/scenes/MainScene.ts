@@ -6,7 +6,7 @@ import {
   getCharacterById,
   CharacterAnimationSet,
 } from "@/types/advance_char_config";
-import { SPEAKER_TILE_X, SPEAKER_TILE_Y } from "@/lib/game-constants";
+import { SPEAKER_TILE_X, SPEAKER_TILE_Y, MAX_HEAR_RADIUS } from "@/lib/game-constants";
 import { wsService } from "@/lib/services/websocket.service";
 import { getMapByPath, DEFAULT_MAP } from "@/lib/map-config";
 
@@ -931,7 +931,22 @@ export class MainScene extends Scene {
       case "reaction": {
         const player = this.otherPlayers.get(data.user_id);
         if (player?.sprite) {
-          this.spawnFloatingEmoji(player.sprite, data.emoji);
+          // Only show the reaction if the sender is within earshot of the local hero
+          let inRange = false;
+          if (
+            this.gridEngine.hasCharacter(data.user_id) &&
+            this.gridEngine.hasCharacter("hero")
+          ) {
+            const remotePos = this.gridEngine.getPosition(data.user_id);
+            const heroPos = this.gridEngine.getPosition("hero");
+            const dx = remotePos.x - heroPos.x;
+            const dy = remotePos.y - heroPos.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            inRange = dist <= MAX_HEAR_RADIUS;
+          }
+          if (inRange) {
+            this.spawnFloatingEmoji(player.sprite, data.emoji);
+          }
         }
         break;
       }

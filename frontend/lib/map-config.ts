@@ -29,19 +29,19 @@ export interface MapConfig {
 export const ALL_MAPS: MapConfig[] = [
   {
     id: "final_map",
-    name: "Office Space",
-    description: "Classic co-working office with meeting rooms & lounge.",
+    name: "Classroom space",
+    description: "A small classroom",
     mapPath: "phaser_assets/maps/final_map.json",
     phaserUrl: "/phaser_assets/maps/final_map.json",
     thumbnail: "/phaser_assets/map_thumbnails/final_map.png",
   },
   {
     id: "map1",
-    name: "Modern Workspace",
-    description: "Open-plan workspace with brainstorm & chill zones.",
+    name: "Campus Space",
+    description: "A campus like space with multiple rooms",
     mapPath: "phaser_assets/maps/map1.json",
     phaserUrl: "/phaser_assets/maps/map1.json",
-    thumbnail: "/phaser_assets/map_thumbnails/map1.png",
+    thumbnail: "/phaser_assets/map_thumbnails/10001.png",
   },
 ];
 
