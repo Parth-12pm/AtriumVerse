@@ -1,6 +1,7 @@
 "use client";
 
-import { LogOut, Settings, Sun, Moon } from "lucide-react";
+import { Sun, Moon, Settings } from "lucide-react";
+import { LogoutIcon } from "@/components/ui/logout";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -121,7 +122,7 @@ export default function DashboardLayout({
               <DropdownMenuSeparator className="border-b-2 border-border/20 my-1" />
 
               <DropdownMenuItem className="cursor-pointer gap-2 font-bold px-3 py-2.5 focus:bg-primary/20 rounded-md transition-colors">
-                <Settings className="h-4 w-4 text-foreground" />
+                <Settings size={16} />
                 Settings
               </DropdownMenuItem>
 
@@ -131,7 +132,7 @@ export default function DashboardLayout({
                 className="cursor-pointer font-bold gap-2 px-3 py-2.5 text-red-600 focus:bg-red-100 focus:text-red-700 rounded-md transition-colors"
                 onClick={handleLogout}
               >
-                <LogOut className="h-4 w-4" />
+                <LogoutIcon size={16} />
                 Logout
               </DropdownMenuItem>
             </DropdownMenuContent>

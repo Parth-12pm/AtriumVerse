@@ -30,6 +30,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { motion } from "motion/react";
 
 interface ServerData {
   id: string;
@@ -234,17 +235,27 @@ export default function DashboardPage() {
               }
             />
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            <motion.div
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5"
+              initial="hidden"
+              animate="visible"
+              variants={{ visible: { transition: { staggerChildren: 0.07 } } }}
+            >
               {allServers.map((server) => (
-                <ServerCard
+                <motion.div
                   key={server.id}
-                  server={server}
-                  isOwner={server.owner_id === userId}
-                  isPending={pendingJoins.has(server.id)}
-                  onJoin={() => handleJoin(server)}
-                />
+                  variants={{ hidden: { opacity: 0, y: 24 }, visible: { opacity: 1, y: 0 } }}
+                >
+                  <ServerCard
+                    key={server.id}
+                    server={server}
+                    isOwner={server.owner_id === userId}
+                    isPending={pendingJoins.has(server.id)}
+                    onJoin={() => handleJoin(server)}
+                  />
+                </motion.div>
               ))}
-            </div>
+            </motion.div>
           )}
         </div>
       )}

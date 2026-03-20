@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { Home, Plus } from "lucide-react";
+import { Plus, Home } from "lucide-react";
+import { motion } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { serversAPI } from "@/lib/services/api.service";
 import type { Server } from "@/types/api.types";
@@ -40,15 +41,15 @@ export default function ServerDock() {
   return (
     <div className="fixed left-0 top-0 h-full w-16 bg-gray-900 border-r-4 border-black z-[1] flex flex-col items-center py-4 gap-3">
       {/* Home Button */}
-      <Button
+      <motion.button
         onClick={navigateHome}
-        variant="neutral"
-        size="icon"
-        className="w-12 h-12 rounded-xl bg-white hover:bg-gray-100 border-3 border-black"
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        className="w-12 h-12 rounded-none bg-background border-4 border-border shadow-shadow flex items-center justify-center"
         title="Home"
       >
-        <Home className="w-6 h-6" />
-      </Button>
+        <Home size={22} />
+      </motion.button>
 
       <div className="w-10 h-1 bg-white/20 rounded" />
 
@@ -58,18 +59,20 @@ export default function ServerDock() {
           <div className="w-12 h-12 rounded-xl bg-white/10 animate-pulse" />
         ) : (
           servers.map((server) => (
-            <button
+            <motion.button
               key={server.id}
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.94 }}
               onClick={() => navigateToServer(server.id)}
-              className={`w-12 h-12 rounded-xl border-3 flex items-center justify-center font-black text-xl transition-all hover:rounded-lg ${
+              className={`w-12 h-12 border-4 flex items-center justify-center font-black text-xl transition-all ${
                 server.id === currentServerId
-                  ? "bg-blue-500 border-white text-white shadow-[4px_4px_0px_0px_rgba(255,255,255,0.5)]"
-                  : "bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600"
+                  ? "bg-primary border-border text-primary-foreground shadow-[4px_4px_0px_0px_white]"
+                  : "bg-card border-border text-foreground hover:bg-primary/20"
               }`}
               title={server.name}
             >
               {server.name.charAt(0).toUpperCase()}
-            </button>
+            </motion.button>
           ))
         )}
       </div>

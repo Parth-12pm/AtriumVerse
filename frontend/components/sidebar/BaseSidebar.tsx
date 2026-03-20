@@ -3,13 +3,13 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  MessageSquare,
   Video,
-  Settings,
-  Users,
   LogOut,
   Trash2,
+  MessageSquare,
+  Settings
 } from "lucide-react";
+import { UsersIcon } from "@/components/ui/users";
 import { Button } from "@/components/ui/button";
 import ChatExpandedView from "@/components/sidebar/chat/ChatExpandedView";
 import PeopleExpandedView from "@/components/sidebar/people/PeopleExpandedView";
@@ -163,7 +163,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
           }`}
           title="Chat"
         >
-          <MessageSquare className="w-6 h-6" />
+          <MessageSquare size={24} />
         </Button>
 
         {/* People Button */}
@@ -178,7 +178,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
           }`}
           title="People"
         >
-          <Users className="w-6 h-6" />
+          <UsersIcon size={24} />
         </Button>
 
         {/* Spacer */}
@@ -196,7 +196,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
           }`}
           title="Settings"
         >
-          <Settings className="w-6 h-6" />
+          <Settings size={24} />
           {pendingCount > 0 && (
             <Badge className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center bg-red-500 text-white text-xs border-2 border-black">
               {pendingCount}
