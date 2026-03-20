@@ -106,6 +106,7 @@ export function ChannelSidebar({
           );
           await rotateEncryptedChannels(
             encryptedChannelIds,
+            serverId,
             "Auto-rotated due to member departure",
           );
           toast.success("E2EE channels secured with new keys!");

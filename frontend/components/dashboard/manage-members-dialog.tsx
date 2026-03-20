@@ -79,6 +79,7 @@ export function ManageMembersDialog({ serverId }: ManageMembersDialogProps) {
           const encryptedChannelIds = await getMyEncryptedChannelIds();
           await rotateEncryptedChannels(
             encryptedChannelIds,
+            serverId,
             "Channel keys rotated for the new member.",
           );
         }
@@ -90,6 +91,7 @@ export function ManageMembersDialog({ serverId }: ManageMembersDialogProps) {
           );
           await rotateEncryptedChannels(
             affectedChannelIds,
+            serverId,
             "Channel keys successfully rotated.",
           );
         }
@@ -120,6 +122,7 @@ export function ManageMembersDialog({ serverId }: ManageMembersDialogProps) {
       toast.info("Rekeying encrypted channels for all current members...");
       await rotateEncryptedChannels(
         encryptedChannelIds,
+        serverId,
         "Encrypted channels rekeyed for all current members.",
       );
     } catch (error) {

@@ -338,7 +338,7 @@ export default function GameWrapper({
 
       {/* ── Media Control Dock ──────────────────────────────────────────── */}
       {isGameReady && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-auto">
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
           <MediaControls
             onAudioToggle={(enabled) => {
               getProximityAudio().setMicEnabled(enabled);

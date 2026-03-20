@@ -41,7 +41,7 @@ export const ALL_MAPS: MapConfig[] = [
     description: "A campus like space with multiple rooms",
     mapPath: "phaser_assets/maps/map1.json",
     phaserUrl: "/phaser_assets/maps/map1.json",
-    thumbnail: "/phaser_assets/map_thumbnails/10001.png",
+    thumbnail: "/phaser_assets/map_thumbnails/map1.png",
   },
 ];
 

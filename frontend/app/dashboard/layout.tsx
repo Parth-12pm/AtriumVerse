@@ -91,36 +91,44 @@ export default function DashboardLayout({
             </DropdownMenuTrigger>
 
             <DropdownMenuContent
-              className="w-52 border-2 border-border"
+              className="w-56 border-4 border-border bg-card shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] p-2 rounded-xl"
               align="end"
               sideOffset={8}
             >
               {/* User info header */}
-              <div className="flex items-center gap-3 px-3 py-3">
-                <Avatar className="h-9 w-9">
+              <div className="flex items-center gap-3 px-2 py-3 mb-2 bg-primary/10 rounded-lg border-2 border-transparent">
+                <Avatar className="h-10 w-10 border-2 border-border shadow-sm">
                   <AvatarFallback className="bg-primary text-primary-foreground font-black text-sm">
                     {initials}
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex flex-col leading-tight">
-                  <p className="text-sm font-bold truncate max-w-[130px]">
+                  <p className="text-base font-black truncate max-w-[130px] text-foreground">
                     {mounted ? username : "User"}
                   </p>
-                  <p className="text-xs text-muted-foreground">● Online</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="relative flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500 border border-border"></span>
+                    </span>
+                    <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                      Online
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              <DropdownMenuSeparator />
+              <DropdownMenuSeparator className="border-b-2 border-border/20 my-1" />
 
-              <DropdownMenuItem className="cursor-pointer gap-2">
-                <Settings className="h-4 w-4" />
+              <DropdownMenuItem className="cursor-pointer gap-2 font-bold px-3 py-2.5 focus:bg-primary/20 rounded-md transition-colors">
+                <Settings className="h-4 w-4 text-foreground" />
                 Settings
               </DropdownMenuItem>
 
-              <DropdownMenuSeparator />
+              <DropdownMenuSeparator className="border-b-2 border-border/20 my-1" />
 
               <DropdownMenuItem
-                className="cursor-pointer text-destructive focus:text-destructive gap-2"
+                className="cursor-pointer font-bold gap-2 px-3 py-2.5 text-red-600 focus:bg-red-100 focus:text-red-700 rounded-md transition-colors"
                 onClick={handleLogout}
               >
                 <LogOut className="h-4 w-4" />

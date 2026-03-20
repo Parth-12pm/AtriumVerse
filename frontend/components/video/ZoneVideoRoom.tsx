@@ -271,7 +271,7 @@ function VideoGrid({
   // ── EXPANDED: fixed inset-0 z-[45]
   if (expanded) {
     return (
-      <div className="fixed inset-0 z-[45] bg-[#09090b] flex flex-col overflow-hidden pl-18 pointer-events-auto">
+      <div className="fixed inset-0 z-[25] bg-[#09090b] flex flex-col overflow-hidden pl-18 pointer-events-auto">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-3 border-b border-white/10 bg-black/40 shrink-0">
           <div className="flex items-center gap-3">
@@ -361,7 +361,7 @@ function VideoGrid({
 
   // ── COMPACT strip — fixed, top-center ──────────────────────────────────────
   return (
-    <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 flex gap-2 bg-black/75 backdrop-blur-sm rounded-2xl px-3 py-2.5 pointer-events-auto max-w-[calc(100vw-200px)] overflow-x-auto scrollbar-none">
+    <div className="fixed top-3 left-1/2 -translate-x-1/2 z-30 flex gap-2 bg-black/75 backdrop-blur-sm rounded-2xl px-3 py-2.5 pointer-events-auto max-w-[calc(100vw-200px)] overflow-x-auto scrollbar-none">
       {participants.length === 0 ? (
         <div className="w-[148px] h-[116px] rounded-xl bg-gray-900 border border-white/10 flex flex-col items-center justify-center gap-2 shrink-0">
           <Users className="w-6 h-6 text-white/30" />
@@ -439,7 +439,7 @@ export default function ZoneVideoRoom({ serverId }: ZoneVideoRoomProps) {
 
   if (connecting) {
     return (
-      <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 bg-black/70 backdrop-blur-sm text-white/60 text-[11px] font-mono px-4 py-2 rounded-xl flex items-center gap-2">
+      <div className="fixed top-3 left-1/2 -translate-x-1/2 z-30 bg-black/70 backdrop-blur-sm text-white/60 text-[11px] font-mono px-4 py-2 rounded-xl flex items-center gap-2">
         <div className="w-2 h-2 rounded-full bg-green-400 animate-ping" />
         Joining conference…
       </div>
