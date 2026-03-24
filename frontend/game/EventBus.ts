@@ -25,6 +25,8 @@ export enum GameEvents {
   // LiveKit Audio Events
   PROXIMITY_AUDIO_CONNECTED = "proximity:audio:connected",
   PROXIMITY_AUDIO_DISCONNECTED = "proximity:audio:disconnected",
+  VOICE_CHANNEL_CONNECTED = "voice:channel:connected",
+  VOICE_CHANNEL_DISCONNECTED = "voice:channel:disconnected",
 
   // LiveKit Video Events
   VIDEO_ROOM_JOINED = "video:room:joined",

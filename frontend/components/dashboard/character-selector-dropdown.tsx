@@ -51,6 +51,7 @@ export function CharacterSelectorDropdown({
 
   useEffect(() => {
     const saved = localStorage.getItem("selectedCharacter") || "bob";
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedId(saved);
   }, []);
 

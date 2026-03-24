@@ -33,10 +33,7 @@ export default function ServerPage({ params }: ServerPageProps) {
   const [username, setUsername] = useState("Player");
   const [token, setToken] = useState("");
   const [mounted, setMounted] = useState(false);
-  const [selectedCharacter, setSelectedCharacter] = useState<string | null>(
-    null,
-  );
-  const [showCharacterSelect, setShowCharacterSelect] = useState(false);
+  const [selectedCharacter, setSelectedCharacter] = useState<string>("bob");
   // The backend map_path for this server (e.g. "phaser_assets/maps/map1.json")
   const [mapPath, setMapPath] = useState<string | undefined>(undefined);
   // Don't render the game until we know which map to load
@@ -50,17 +47,13 @@ export default function ServerPage({ params }: ServerPageProps) {
         localStorage.getItem("username") ||
         "Player" + Math.floor(Math.random() * 1000);
       const storedToken = localStorage.getItem("token") || "";
-      const storedCharacter = localStorage.getItem("selectedCharacter");
+      
+      const storedCharacter = localStorage.getItem("selectedCharacter") || "bob";
 
       setUserId(storedUserId);
       setUsername(storedUsername);
       setToken(storedToken);
-
-      if (storedCharacter) {
-        setSelectedCharacter(storedCharacter);
-      } else {
-        setSelectedCharacter(null);
-      }
+      setSelectedCharacter(storedCharacter);
 
       if (!storedToken) {
         console.warn("No token found. WebSocket may fail.");
@@ -88,7 +81,7 @@ export default function ServerPage({ params }: ServerPageProps) {
     }
   }, [serverId]);
 
-  const trackServerVisit = (serverIdToTrack: string) => {
+  function trackServerVisit(serverIdToTrack: string) {
     try {
       const stored = localStorage.getItem("recentServers");
       let recent: Array<{ id: string; name: string; lastVisited: number }> =
@@ -108,13 +101,7 @@ export default function ServerPage({ params }: ServerPageProps) {
     } catch (error) {
       console.error("Failed to track server visit:", error);
     }
-  };
-
-  const handleCharacterSelect = (characterId: string) => {
-    setSelectedCharacter(characterId);
-    localStorage.setItem("selectedCharacter", characterId);
-    setShowCharacterSelect(false);
-  };
+  }
 
   if (!mounted) {
     return (
@@ -122,38 +109,6 @@ export default function ServerPage({ params }: ServerPageProps) {
         <div className="text-center">
           <div className="w-16 h-16 bg-primary rounded-lg border-4 border-border shadow-shadow animate-pulse mx-auto mb-4" />
           <p className="font-bold uppercase">Initializing...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Show character selection if no character selected or user wants to change
-  if (!selectedCharacter || showCharacterSelect) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-        <div className="max-w-4xl w-full mx-auto p-6">
-          <div className="mb-6 text-center">
-            <h1 className="text-3xl font-bold text-white mb-2">
-              Welcome to the Space!
-            </h1>
-            <p className="text-gray-400">
-              Choose your character to get started
-            </p>
-          </div>
-          <CharacterSelector
-            onSelect={handleCharacterSelect}
-            currentCharacter={selectedCharacter || "bob"}
-          />
-          {selectedCharacter && (
-            <div className="mt-4 text-center">
-              <Button
-                variant="neutral"
-                onClick={() => setShowCharacterSelect(false)}
-              >
-                Cancel
-              </Button>
-            </div>
-          )}
         </div>
       </div>
     );

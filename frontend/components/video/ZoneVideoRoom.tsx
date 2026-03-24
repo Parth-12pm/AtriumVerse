@@ -22,6 +22,30 @@ import {
 } from "@/lib/livekit";
 import { toast } from "sonner";
 
+// ── Broadcast camera tracks to AvatarBubbles overlay ─────────────────────────
+// Runs inside <LiveKitRoom> so it has access to the room context.
+function CamTrackBroadcaster() {
+  const camTracks = useTracks([Track.Source.Camera], { onlySubscribed: false });
+
+  useEffect(() => {
+    // Build identity → TrackPublication map and emit so AvatarBubbles can render bubbles
+    const map = new Map<string, any>();
+    camTracks.forEach((t) => {
+      if (t.participant.isCameraEnabled && t.publication) {
+        map.set(t.participant.identity, t.publication);
+      }
+    });
+    EventBus.emit("livekit:cam_tracks", map);
+
+    return () => {
+      // Clear bubbles when we disconnect from the room
+      EventBus.emit("livekit:cam_tracks", new Map());
+    };
+  }, [camTracks]);
+
+  return null;
+}
+
 interface ZoneVideoRoomProps {
   serverId: string;
 }
@@ -461,6 +485,7 @@ export default function ZoneVideoRoom({ serverId }: ZoneVideoRoomProps) {
     >
       <RoomAudioRenderer />
       <DockEventListener />
+      <CamTrackBroadcaster />
       <VideoGrid
         roomName={`video_${zoneId}`}
         roomLabel={roomLabel}

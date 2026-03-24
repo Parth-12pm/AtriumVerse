@@ -28,11 +28,12 @@ import { fetchAPI } from "@/lib/api";
 import { toast } from "sonner";
 import { MessageFeed } from "@/components/game/MessageFeed";
 import { cn } from "@/lib/utils";
-import EventBus from "@/game/EventBus";
+import EventBus, { GameEvents } from "@/game/EventBus";
 import {
   distributeKeysToNewMember,
   rotateEncryptedChannels,
 } from "@/lib/channelSync";
+import { getVoiceChannelAudio, getProximityAudio } from "@/lib/livekit-audio";
 
 interface Channel {
   id: string;
@@ -65,7 +66,9 @@ export function ChannelSidebar({
   const [activeTab, setActiveTab] = useState<"channels" | "people">("channels");
   const [channels, setChannels] = useState<Channel[]>([]);
   const [showCreateChannel, setShowCreateChannel] = useState(false);
+  const [showCreateVoiceChannel, setShowCreateVoiceChannel] = useState(false);
   const [newChannelName, setNewChannelName] = useState("");
+  const [newVoiceChannelName, setNewVoiceChannelName] = useState("");
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -76,6 +79,57 @@ export function ChannelSidebar({
 
   const { state } = useSidebar();
   const [localUsername, setLocalUsername] = useState<string | null>(null);
+
+  // Active voice channel tracking
+  const [activeVoiceChannelId, setActiveVoiceChannelId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleVoiceJoined = (data: { channelId: string }) => {
+      setActiveVoiceChannelId(data.channelId);
+    };
+    const handleVoiceLeft = () => {
+      setActiveVoiceChannelId(null);
+    };
+    
+    // Initialize state
+    if (getVoiceChannelAudio().isConnected()) {
+      setActiveVoiceChannelId(getVoiceChannelAudio().currentChannelId);
+    }
+
+    EventBus.on(GameEvents.VOICE_CHANNEL_CONNECTED, handleVoiceJoined);
+    EventBus.on(GameEvents.VOICE_CHANNEL_DISCONNECTED, handleVoiceLeft);
+
+    return () => {
+      EventBus.off(GameEvents.VOICE_CHANNEL_CONNECTED, handleVoiceJoined);
+      EventBus.off(GameEvents.VOICE_CHANNEL_DISCONNECTED, handleVoiceLeft);
+    };
+  }, []);
+
+  const handleJoinVoice = async (channelId: string) => {
+    if (activeVoiceChannelId === channelId) return;
+    
+    // Remember what the user's mic state was before joining
+    const wasMicEnabled = getProximityAudio().isMicEnabled();
+
+    // Priority: mute proximity audio to prevent echoing/dual-casting
+    await getProximityAudio().setMicEnabled(false);
+    
+    // Connect to the actual voice room
+    const voiceAudio = getVoiceChannelAudio();
+    await voiceAudio.connect(channelId);
+    
+    // Inherit the previous mic state so we don't hot-mic the user
+    await voiceAudio.setMicEnabled(wasMicEnabled);
+    
+    // Ensure the dock UI accurately reflects the active mic state
+    EventBus.emit("action:toggle_mic", wasMicEnabled); 
+  };
+
+  const handleLeaveVoice = async () => {
+    await getVoiceChannelAudio().disconnect();
+    // Restore UI dock state to match proximity audio's underlying state
+    EventBus.emit("action:toggle_mic", getProximityAudio().isMicEnabled());
+  };
 
   // --- BACKGROUND E2EE WORKER ---
   useEffect(() => {
@@ -138,24 +192,30 @@ export function ChannelSidebar({
     }
   }, [serverId, loadChannels]);
 
-  const createChannel = async () => {
-    if (!newChannelName.trim()) return;
+  const createChannel = async (type: "text" | "voice") => {
+    const rawName = type === "text" ? newChannelName : newVoiceChannelName;
+    if (!rawName.trim()) return;
 
     setLoading(true);
     try {
       const channel = await fetchAPI(`/channels/${serverId}/channels`, {
         method: "POST",
         body: JSON.stringify({
-          name: newChannelName.trim(),
-          type: "text",
+          name: rawName.trim(),
+          type: type,
           position: channels.length,
         }),
       });
 
       setChannels([...channels, channel]);
-      setNewChannelName("");
-      setShowCreateChannel(false);
-      toast.success(`Channel #${channel.name} created!`);
+      if (type === "text") {
+        setNewChannelName("");
+        setShowCreateChannel(false);
+      } else {
+        setNewVoiceChannelName("");
+        setShowCreateVoiceChannel(false);
+      }
+      toast.success(`${type === "voice" ? "Voice" : "Text"} Channel #${channel.name} created!`);
     } catch (error) {
       toast.error(`Failed to create channel : ${error}`);
     } finally {
@@ -358,7 +418,7 @@ export function ChannelSidebar({
                                 setNewChannelName(e.target.value)
                               }
                               onKeyDown={(e) =>
-                                e.key === "Enter" && createChannel()
+                                e.key === "Enter" && createChannel("text")
                               }
                               className="h-7 text-xs"
                               disabled={loading}
@@ -366,7 +426,7 @@ export function ChannelSidebar({
                             <Button
                               size="icon"
                               className="h-7 w-7 shrink-0"
-                              onClick={createChannel}
+                              onClick={() => createChannel("text")}
                               disabled={loading}
                             >
                               <Plus className="h-3 w-3" />
@@ -375,7 +435,7 @@ export function ChannelSidebar({
                         </div>
                       )}
 
-                      {channels.map((channel) => (
+                      {channels.filter(c => c.type === "text" || c.type === "announcements").map((channel) => (
                         <button
                           key={channel.id}
                           onClick={() => setSelectedChannelId(channel.id)}
@@ -388,6 +448,82 @@ export function ChannelSidebar({
                           )}
                         </button>
                       ))}
+
+                      <div className="flex items-center justify-between px-2 py-1 mt-4 mb-1 border-t-2 border-border/40 pt-4">
+                        <span className="text-xs font-bold uppercase text-muted-foreground">
+                          Voice Channels
+                        </span>
+                        {isOwner && (
+                          <Button
+                            variant="noShadow"
+                            size="icon"
+                            className="h-5 w-5"
+                            onClick={() =>
+                              setShowCreateVoiceChannel(!showCreateVoiceChannel)
+                            }
+                          >
+                            <Plus className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+
+                      {showCreateVoiceChannel && (
+                        <div className="mb-2 px-2">
+                          <div className="flex gap-1">
+                            <Input
+                              placeholder="voice-channel"
+                              value={newVoiceChannelName}
+                              onChange={(e) =>
+                                setNewVoiceChannelName(e.target.value)
+                              }
+                              onKeyDown={(e) =>
+                                e.key === "Enter" && createChannel("voice")
+                              }
+                              className="h-7 text-xs"
+                              disabled={loading}
+                            />
+                            <Button
+                              size="icon"
+                              className="h-7 w-7 shrink-0"
+                              onClick={() => createChannel("voice")}
+                              disabled={loading}
+                            >
+                              <Plus className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {channels.filter(c => c.type === "voice").map((channel) => {
+                        const isActive = activeVoiceChannelId === channel.id;
+                        return (
+                          <div key={channel.id} className="flex flex-col gap-1 mb-2">
+                            <button
+                              onClick={() => isActive ? handleLeaveVoice() : handleJoinVoice(channel.id)}
+                              className={cn(
+                                "w-full flex items-center gap-2 px-2 py-1.5 rounded-lg border-2 transition-all text-sm font-bold",
+                                isActive 
+                                  ? "border-green-500/50 bg-green-500/10 text-green-400 hover:bg-green-500/20 hover:border-green-500" 
+                                  : "border-transparent hover:border-border hover:bg-primary/10"
+                              )}
+                            >
+                              {getChannelIcon(channel.type)}
+                              <span className="truncate flex-1 text-left">{channel.name}</span>
+                              
+                              {isActive && (
+                                <span className="text-[10px] uppercase font-black px-1.5 py-0.5 rounded bg-green-500/20">
+                                  Connected
+                                </span>
+                              )}
+                              {!channel.is_public && (
+                                <Lock className="h-3 w-3 ml-1 shrink-0 opacity-50" />
+                              )}
+                            </button>
+                            
+                            {/* Connected voice participants would go here if we tracked them */}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

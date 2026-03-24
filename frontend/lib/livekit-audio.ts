@@ -4,6 +4,7 @@ import {
   RemoteParticipant,
   Track,
   type RemoteAudioTrack,
+  type RemoteTrackPublication,
 } from "livekit-client";
 import EventBus, { GameEvents } from "@/game/EventBus";
 import { fetchLiveKitToken, getLiveKitUrl } from "@/lib/livekit";
@@ -32,6 +33,9 @@ export class ProximityAudioManager {
    * We manage these elements explicitly.
    */
   private audioElements = new Map<string, HTMLAudioElement>();
+  /** Maps participant identity → their active camera TrackPublication
+   *  Used to emit livekit:cam_tracks for AvatarBubbles overlay */
+  private camPubs = new Map<string, RemoteTrackPublication>();
   private connected = false;
   private isConnecting = false;
   private micEnabled = false; // starts muted; user enables via dock
@@ -59,20 +63,29 @@ export class ProximityAudioManager {
 
       // v2: attach audio element manually on subscription
       this.room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
-        if (pub.kind !== Track.Kind.Audio) return;
-        this.attachAudio(participant, track as RemoteAudioTrack);
-        this.applyProximity(participant);
+        if (pub.kind === Track.Kind.Audio) {
+          this.attachAudio(participant, track as RemoteAudioTrack);
+          this.applyProximity(participant);
+        } else if (pub.kind === Track.Kind.Video && pub.source === Track.Source.Camera) {
+          // Camera track — store publication and broadcast updated track map
+          this.camPubs.set(participant.identity, pub);
+          this.emitCamTracks();
+        }
       });
 
       // Clean up audio element when track goes away
       this.room.on(RoomEvent.TrackUnsubscribed, (_track, pub, participant) => {
-        if (pub.kind !== Track.Kind.Audio) return;
-        const el = this.audioElements.get(participant.identity);
-        if (el) {
-          el.pause();
-          el.remove();
+        if (pub.kind === Track.Kind.Audio) {
+          const el = this.audioElements.get(participant.identity);
+          if (el) {
+            el.pause();
+            el.remove();
+          }
+          this.audioElements.delete(participant.identity);
+        } else if (pub.kind === Track.Kind.Video && pub.source === Track.Source.Camera) {
+          this.camPubs.delete(participant.identity);
+          this.emitCamTracks();
         }
-        this.audioElements.delete(participant.identity);
       });
 
       // Resume AudioContext on first user gesture (Chrome autoplay policy)
@@ -177,6 +190,12 @@ export class ProximityAudioManager {
     }
   }
 
+  // ── Camera track broadcasting ────────────────────────────────────────────
+  /** Emit the current camPubs map so AvatarBubbles can render video bubbles. */
+  private emitCamTracks() {
+    EventBus.emit("livekit:cam_tracks", new Map(this.camPubs));
+  }
+
   // ── Public controls ──────────────────────────────────────────────────────
 
   async setMicEnabled(enabled: boolean): Promise<void> {
@@ -229,8 +248,125 @@ export class ProximityAudioManager {
 
 // ── Singleton ────────────────────────────────────────────────────────────────
 let _instance: ProximityAudioManager | null = null;
+let _voiceInstance: VoiceChannelManager | null = null;
 
 export function getProximityAudio(): ProximityAudioManager {
   if (!_instance) _instance = new ProximityAudioManager();
   return _instance;
+}
+
+export function getVoiceChannelAudio(): VoiceChannelManager {
+  if (!_voiceInstance) _voiceInstance = new VoiceChannelManager();
+  return _voiceInstance;
+}
+
+// ── Voice Channel Manager (No Proximity) ──────────────────────────────────────
+export class VoiceChannelManager {
+  private room: Room | null = null;
+  private audioElements = new Map<string, HTMLAudioElement>();
+  private connected = false;
+  private isConnecting = false;
+  private micEnabled = false; // starts muted
+  public currentChannelId: string | null = null;
+
+  async connect(channelId: string): Promise<void> {
+    if (this.connected && this.currentChannelId === channelId) return;
+    if (this.isConnecting) return;
+
+    // Disconnect from current if switching
+    if (this.connected) await this.disconnect();
+
+    this.isConnecting = true;
+
+    try {
+      const roomName = `voice_${channelId}`;
+      const token = await fetchLiveKitToken(roomName);
+
+      this.room = new Room({
+        adaptiveStream: true,
+        disconnectOnPageLeave: true,
+      });
+
+      this.room.on(RoomEvent.Connected, async () => {
+        await this.room?.localParticipant.setMicrophoneEnabled(this.micEnabled);
+        this.connected = true;
+        this.isConnecting = false;
+        this.currentChannelId = channelId;
+        EventBus.emit(GameEvents.VOICE_CHANNEL_CONNECTED, { channelId });
+        console.log("🔊 Voice channel connected to:", roomName);
+      });
+
+      this.room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
+        if (pub.kind === Track.Kind.Audio) {
+          const el = track.attach() as HTMLAudioElement;
+          el.volume = 1.0; // Full volume, no proximity
+          el.autoplay = true;
+          el.style.display = "none";
+          document.body.appendChild(el);
+          this.audioElements.set(participant.identity, el);
+          el.play().catch(() => {});
+        }
+      });
+
+      this.room.on(RoomEvent.TrackUnsubscribed, (_track, pub, participant) => {
+        if (pub.kind === Track.Kind.Audio) {
+          const el = this.audioElements.get(participant.identity);
+          if (el) {
+            el.pause();
+            el.remove();
+          }
+          this.audioElements.delete(participant.identity);
+        }
+      });
+
+      // Resume AudioContext on first user gesture
+      const resumeAudio = () => {
+        this.room?.startAudio();
+        document.removeEventListener("click", resumeAudio);
+      };
+      document.addEventListener("click", resumeAudio);
+
+      await this.room.connect(getLiveKitUrl(), token);
+    } catch (err) {
+      console.error("❌ Voice channel failed to connect:", err);
+      this.isConnecting = false;
+    }
+  }
+
+  async setMicEnabled(enabled: boolean): Promise<void> {
+    this.micEnabled = enabled;
+    if (!this.connected) return;
+    try {
+      await this.room?.localParticipant.setMicrophoneEnabled(enabled);
+    } catch (err) {
+      console.error("❌ Voice mic toggle failed:", err);
+    }
+  }
+
+  isMicEnabled(): boolean {
+    return this.micEnabled;
+  }
+  isConnected(): boolean {
+    return this.connected;
+  }
+
+  async disconnect(): Promise<void> {
+    if (!this.room) return;
+    
+    this.audioElements.forEach((el) => {
+      el.pause();
+      el.remove();
+    });
+    this.audioElements.clear();
+    
+    await this.room.disconnect();
+    this.room = null;
+    this.connected = false;
+    this.isConnecting = false;
+    const pastChannel = this.currentChannelId;
+    this.currentChannelId = null;
+    
+    EventBus.emit(GameEvents.VOICE_CHANNEL_DISCONNECTED, { channelId: pastChannel });
+    console.log("🔇 Voice channel disconnected");
+  }
 }

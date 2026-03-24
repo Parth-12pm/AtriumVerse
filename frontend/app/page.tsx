@@ -57,7 +57,9 @@ export default function LandingPage() {
     const token = localStorage.getItem("token");
     const storedUsername = localStorage.getItem("username");
     if (token) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsLoggedIn(true);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setUsername(storedUsername);
     }
   }, []);
@@ -175,7 +177,7 @@ export default function LandingPage() {
               A tile-based virtual office where your{" "}
               <strong className="text-foreground">
                 position drives everything
-              </strong>{" "}
+              </strong>
               — proximity audio, zone video, end-to-end encrypted messaging —
               all in one open space.
             </motion.p>

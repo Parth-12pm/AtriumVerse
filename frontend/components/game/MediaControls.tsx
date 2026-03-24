@@ -101,17 +101,20 @@ export function MediaControls({
     };
     const handleVideoExpanded = (expanded: boolean) =>
       setVideoExpanded(expanded);
+    const handleMicSync = (enabled: boolean) => setAudioEnabled(enabled);
 
     EventBus.on("ui:chat_toggled", handleChatToggle);
     EventBus.on("ui:video_room_joined", handleVideoJoined);
     EventBus.on("ui:video_room_left", handleVideoLeft);
     EventBus.on("ui:video_expanded", handleVideoExpanded);
+    EventBus.on("action:toggle_mic", handleMicSync);
 
     return () => {
       EventBus.off("ui:chat_toggled", handleChatToggle);
       EventBus.off("ui:video_room_joined", handleVideoJoined);
       EventBus.off("ui:video_room_left", handleVideoLeft);
       EventBus.off("ui:video_expanded", handleVideoExpanded);
+      EventBus.off("action:toggle_mic", handleMicSync);
     };
   }, []);
 

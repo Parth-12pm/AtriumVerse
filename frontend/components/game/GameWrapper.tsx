@@ -8,8 +8,9 @@ import {
 } from "@/game/managers/CommunicationManager";
 import { MediaControls } from "@/components/game/MediaControls";
 import { Minimap } from "@/components/game/Minimap";
+import AvatarBubbles from "@/components/game/AvatarBubbles";
 import ZoneVideoRoom from "@/components/video/ZoneVideoRoom";
-import { getProximityAudio, MAX_HEAR_RADIUS } from "@/lib/livekit-audio";
+import { getProximityAudio, getVoiceChannelAudio, MAX_HEAR_RADIUS } from "@/lib/livekit-audio";
 import EventBus, { GameEvents } from "@/game/EventBus";
 import { TILE_PX, SPEAKER_TILE_X, SPEAKER_TILE_Y } from "@/lib/game-constants";
 
@@ -330,6 +331,9 @@ export default function GameWrapper({
         </svg>
       )}
 
+      {/* ── Avatar video bubbles — follows each player's world position ──── */}
+      {isGameReady && <AvatarBubbles userId={userId} username={username} />}
+
       {/* ── Minimap — always-on, bottom-left ────────────────────────────── */}
       {isGameReady && <Minimap />}
 
@@ -341,7 +345,11 @@ export default function GameWrapper({
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
           <MediaControls
             onAudioToggle={(enabled) => {
-              getProximityAudio().setMicEnabled(enabled);
+              if (getVoiceChannelAudio().isConnected()) {
+                getVoiceChannelAudio().setMicEnabled(enabled);
+              } else {
+                getProximityAudio().setMicEnabled(enabled);
+              }
             }}
             onVideoToggle={(enabled) => {
               getProximityAudio().setCameraEnabled(enabled);
