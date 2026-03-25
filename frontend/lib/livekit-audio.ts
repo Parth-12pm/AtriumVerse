@@ -67,7 +67,10 @@ export class ProximityAudioManager {
         if (pub.kind === Track.Kind.Audio) {
           this.attachAudio(participant, track as RemoteAudioTrack);
           this.applyProximity(participant);
-        } else if (pub.kind === Track.Kind.Video && pub.source === Track.Source.Camera) {
+        } else if (
+          pub.kind === Track.Kind.Video &&
+          pub.source === Track.Source.Camera
+        ) {
           // Camera track — store publication and broadcast updated track map
           this.camPubs.set(participant.identity, pub);
           this.emitCamTracks();
@@ -83,7 +86,10 @@ export class ProximityAudioManager {
             el.remove();
           }
           this.audioElements.delete(participant.identity);
-        } else if (pub.kind === Track.Kind.Video && pub.source === Track.Source.Camera) {
+        } else if (
+          pub.kind === Track.Kind.Video &&
+          pub.source === Track.Source.Camera
+        ) {
           this.camPubs.delete(participant.identity);
           this.emitCamTracks();
         }
@@ -91,13 +97,19 @@ export class ProximityAudioManager {
 
       // Track local camera
       this.room.on(RoomEvent.LocalTrackPublished, (pub, participant) => {
-        if (pub.kind === Track.Kind.Video && pub.source === Track.Source.Camera) {
+        if (
+          pub.kind === Track.Kind.Video &&
+          pub.source === Track.Source.Camera
+        ) {
           this.camPubs.set(participant.identity, pub);
           this.emitCamTracks();
         }
       });
       this.room.on(RoomEvent.LocalTrackUnpublished, (pub, participant) => {
-        if (pub.kind === Track.Kind.Video && pub.source === Track.Source.Camera) {
+        if (
+          pub.kind === Track.Kind.Video &&
+          pub.source === Track.Source.Camera
+        ) {
           this.camPubs.delete(participant.identity);
           this.emitCamTracks();
         }
@@ -105,7 +117,10 @@ export class ProximityAudioManager {
 
       // Also track mute events so Phaser UI can hide/show name tags instantly
       const handleMuteStateChange = (pub: TrackPublication) => {
-        if (pub.kind === Track.Kind.Video && pub.source === Track.Source.Camera) {
+        if (
+          pub.kind === Track.Kind.Video &&
+          pub.source === Track.Source.Camera
+        ) {
           this.emitCamTracks();
         }
       };
@@ -376,21 +391,23 @@ export class VoiceChannelManager {
 
   async disconnect(): Promise<void> {
     if (!this.room) return;
-    
+
     this.audioElements.forEach((el) => {
       el.pause();
       el.remove();
     });
     this.audioElements.clear();
-    
+
     await this.room.disconnect();
     this.room = null;
     this.connected = false;
     this.isConnecting = false;
     const pastChannel = this.currentChannelId;
     this.currentChannelId = null;
-    
-    EventBus.emit(GameEvents.VOICE_CHANNEL_DISCONNECTED, { channelId: pastChannel });
+
+    EventBus.emit(GameEvents.VOICE_CHANNEL_DISCONNECTED, {
+      channelId: pastChannel,
+    });
     console.log("🔇 Voice channel disconnected");
   }
 }
