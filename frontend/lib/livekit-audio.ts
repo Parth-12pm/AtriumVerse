@@ -111,8 +111,6 @@ export class ProximityAudioManager {
       };
       this.room.on(RoomEvent.TrackMuted, handleMuteStateChange);
       this.room.on(RoomEvent.TrackUnmuted, handleMuteStateChange);
-      this.room.on(RoomEvent.LocalTrackMuted, handleMuteStateChange);
-      this.room.on(RoomEvent.LocalTrackUnmuted, handleMuteStateChange);
 
       // Resume AudioContext on first user gesture (Chrome autoplay policy)
       const resumeAudio = () => {
