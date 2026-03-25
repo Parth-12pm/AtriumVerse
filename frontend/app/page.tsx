@@ -5,42 +5,35 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { ModeToggle } from "@/components/mode-toggle";
 import { MarqueeFooter } from "@/components/ui/marquee-footer";
-import { ArrowRight, MessageSquare } from "lucide-react";
-import { LockIcon } from "@/components/ui/lock";
-import { ZapIcon } from "@/components/ui/zap";
-import { UsersIcon } from "@/components/ui/users";
+import { ArrowRight, Check, X, ExternalLink } from "lucide-react";
 import { motion, useInView } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-// ── Animation Variants ───────────────────────────────────────────────
-const fadeUp = {
-  hidden: { opacity: 0, y: 32 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.5, ease: "easeOut" as const },
-  },
-};
+import { InfiniteMarquee } from "@/components/ui/infinite-marquee";
+import { GithubIcon } from "@/components/ui/github";
+import { ArrowRightIcon } from "@/components/ui/arrow-right";
+import { MicIcon } from "@/components/ui/mic";
+import { LockKeyholeOpenIcon } from "@/components/ui/lock-keyhole-open";
 
-const stagger = {
-  visible: { transition: { staggerChildren: 0.1 } },
-};
+// ── Animation helpers ──────────────────────────────────────────────────────────
+const EASE = [0.22, 1, 0.36, 1] as const;
 
-function AnimatedSection({
+function FadeUp({
   children,
+  delay = 0,
   className = "",
 }: {
   children: React.ReactNode;
+  delay?: number;
   className?: string;
 }) {
   const ref = useRef(null);
-  const isInView = useInView(ref, { once: true, margin: "-80px" });
+  const inView = useInView(ref, { once: true, margin: "-60px" });
   return (
     <motion.div
       ref={ref}
-      initial="hidden"
-      animate={isInView ? "visible" : "hidden"}
-      variants={stagger}
+      initial={{ opacity: 0, y: 40 }}
+      animate={inView ? { opacity: 1, y: 0 } : {}}
+      transition={{ duration: 0.65, delay, ease: EASE }}
       className={className}
     >
       {children}
@@ -48,82 +41,395 @@ function AnimatedSection({
   );
 }
 
+// ── SVG feature icons ──────────────────────────────────────────────────────────
+const IconMap = () => (
+  <svg viewBox="0 0 48 48" fill="none" className="w-full h-full">
+    <rect
+      x="4"
+      y="4"
+      width="10"
+      height="10"
+      className="fill-current opacity-40"
+    />
+    <rect
+      x="19"
+      y="4"
+      width="10"
+      height="10"
+      className="fill-current opacity-70"
+    />
+    <rect
+      x="34"
+      y="4"
+      width="10"
+      height="10"
+      className="fill-current opacity-40"
+    />
+    <rect
+      x="4"
+      y="19"
+      width="10"
+      height="10"
+      className="fill-current opacity-70"
+    />
+    <rect x="19" y="19" width="10" height="10" className="fill-current" />
+    <rect
+      x="34"
+      y="19"
+      width="10"
+      height="10"
+      className="fill-current opacity-70"
+    />
+    <rect
+      x="4"
+      y="34"
+      width="10"
+      height="10"
+      className="fill-current opacity-40"
+    />
+    <rect
+      x="19"
+      y="34"
+      width="10"
+      height="10"
+      className="fill-current opacity-70"
+    />
+    <rect
+      x="34"
+      y="34"
+      width="10"
+      height="10"
+      className="fill-current opacity-40"
+    />
+    <circle
+      cx="24"
+      cy="24"
+      r="5"
+      className="fill-background stroke-current"
+      strokeWidth="2"
+    />
+  </svg>
+);
+
+const IconShield = () => (
+  <svg viewBox="0 0 48 48" fill="none" className="w-full h-full">
+    <path
+      d="M24 4L6 12v14c0 9 8 16 18 20 10-4 18-11 18-20V12L24 4z"
+      className="stroke-current fill-current opacity-20"
+      strokeWidth="2"
+    />
+    <path
+      d="M17 24l5 5 9-10"
+      className="stroke-current"
+      strokeWidth="3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const IconCamera = () => (
+  <svg viewBox="0 0 48 48" fill="none" className="w-full h-full">
+    <rect
+      x="4"
+      y="14"
+      width="28"
+      height="20"
+      rx="3"
+      className="stroke-current fill-current opacity-20"
+      strokeWidth="2"
+    />
+    <path
+      d="M32 20l12-6v20l-12-6V20z"
+      className="stroke-current fill-current opacity-40"
+      strokeWidth="2"
+    />
+    <circle cx="18" cy="24" r="5" className="stroke-current" strokeWidth="2" />
+  </svg>
+);
+
+const IconChat = () => (
+  <svg viewBox="0 0 48 48" fill="none" className="w-full h-full">
+    <rect
+      x="4"
+      y="6"
+      width="30"
+      height="22"
+      rx="3"
+      className="stroke-current fill-current opacity-20"
+      strokeWidth="2"
+    />
+    <path
+      d="M8 32l4-4"
+      className="stroke-current"
+      strokeWidth="2"
+      strokeLinecap="round"
+    />
+    <rect
+      x="14"
+      y="20"
+      width="30"
+      height="22"
+      rx="3"
+      className="stroke-current fill-current opacity-40"
+      strokeWidth="2"
+    />
+    <line
+      x1="20"
+      y1="28"
+      x2="38"
+      y2="28"
+      className="stroke-current opacity-60"
+      strokeWidth="2"
+      strokeLinecap="round"
+    />
+    <line
+      x1="20"
+      y1="33"
+      x2="32"
+      y2="33"
+      className="stroke-current opacity-40"
+      strokeWidth="2"
+      strokeLinecap="round"
+    />
+  </svg>
+);
+
+// ── Comparison table data ──────────────────────────────────────────────────────
+const COMPARISON = [
+  {
+    feature: "Spatial 2D Presence",
+    av: true,
+    gather: true,
+    discord: false,
+    zoom: false,
+  },
+  {
+    feature: "Proximity Audio",
+    av: true,
+    gather: true,
+    discord: false,
+    zoom: false,
+  },
+  {
+    feature: "Zone-Triggered Video",
+    av: true,
+    gather: false,
+    discord: false,
+    zoom: false,
+  },
+  {
+    feature: "E2EE Text Messages",
+    av: true,
+    gather: false,
+    discord: false,
+    zoom: false,
+  },
+  {
+    feature: "E2EE Audio / Video",
+    av: true,
+    gather: false,
+    discord: true,
+    zoom: true,
+  },
+  {
+    feature: "Zero-Knowledge Server",
+    av: true,
+    gather: false,
+    discord: false,
+    zoom: false,
+  },
+  {
+    feature: "No Plugin Required",
+    av: true,
+    gather: true,
+    discord: false,
+    zoom: false,
+  },
+];
+
+const TECH_STACK = [
+  { label: "Next.js 16", bg: "bg-foreground", text: "text-background" },
+  { label: "React 19", bg: "bg-primary", text: "text-primary-foreground" },
+  { label: "Phaser 3", bg: "bg-destructive", text: "text-white" },
+  { label: "FastAPI", bg: "bg-primary", text: "text-primary-foreground" },
+  { label: "LiveKit SFU", bg: "bg-foreground", text: "text-background" },
+  { label: "PostgreSQL", bg: "bg-primary", text: "text-primary-foreground" },
+  { label: "Redis", bg: "bg-destructive", text: "text-white" },
+  { label: "TypeScript", bg: "bg-foreground", text: "text-background" },
+  { label: "X25519 ECDH", bg: "bg-primary", text: "text-primary-foreground" },
+  { label: "AES-256-GCM", bg: "bg-foreground", text: "text-background" },
+  { label: "WebAuthn PRF", bg: "bg-primary", text: "text-primary-foreground" },
+  { label: "Grid Engine", bg: "bg-destructive", text: "text-white" },
+];
+
+const FEATURES = [
+  {
+    Icon: IconMap,
+    tag: "SPATIAL",
+    title: "The World Drives Everything",
+    body: "Walk up to a colleague and their voice fades in automatically. Step into a Room zone and a video conference opens — no buttons, no scheduling. Your tile position is the interface.",
+    bullets: [
+      "4-directional movement on Tiled maps",
+      "Earshot radius ring overlay",
+      "20Hz real-time position sync",
+      "3D HRTF spatial audio via Web Audio API",
+    ],
+  },
+  {
+    Icon: IconShield,
+    tag: "PRIVACY",
+    title: "Zero-Knowledge Encryption",
+    body: "Every message is encrypted before it leaves your browser. The server stores opaque ciphertexts it can never read. Private keys never leave your device — not even for backup.",
+    bullets: [
+      "X25519 ECDH + HKDF + AES-256-GCM",
+      "WebAuthn PRF biometric key backup",
+      "Epoch-based forward secrecy",
+      "Web Crypto API — no third-party libs",
+    ],
+  },
+  {
+    Icon: IconCamera,
+    tag: "VIDEO",
+    title: "Zone-Triggered Conferences",
+    body: "Walk into any Room zone and a LiveKit WebRTC video session opens automatically. Walk out and it closes. The map topology defines who can meet — naturally.",
+    bullets: [
+      "LiveKit SFU WebRTC streams",
+      "Expandable strip → full conference",
+      "Screen sharing inside zones",
+      "Guest invite links via JWT",
+    ],
+  },
+  {
+    Icon: IconChat,
+    tag: "MESSAGING",
+    title: "Persistent Encrypted Channels",
+    body: "Discord-style text channels and 1-on-1 DMs, all zero-knowledge encrypted. Per-device ciphertext slices mean every trusted device can read its own messages independently.",
+    bullets: [
+      "Channel E2EE with epoch rotation",
+      "Per-device DM ciphertexts",
+      "Real-time delivery via WebSocket",
+      "Full message edit & soft-delete",
+    ],
+  },
+];
+
+const STEPS = [
+  {
+    n: "01",
+    title: "Create a Space",
+    body: "Launch a server, pick a tile map (classroom or campus layout), and set it public or private. The backend parses spawn points and zones automatically.",
+  },
+  {
+    n: "02",
+    title: "Walk In",
+    body: "Pick your avatar — Bob, Alex, Adam, or Amelia. Your character spawns at your last saved position and other players appear in real time.",
+  },
+  {
+    n: "03",
+    title: "Collaborate Naturally",
+    body: "Walk up to someone to talk, enter a Room to video call, or type in an encrypted channel. Your position is the only control you need.",
+  },
+];
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 export default function LandingPage() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
-  const router = useRouter();
 
   useEffect(() => {
     const token = localStorage.getItem("token");
-    const storedUsername = localStorage.getItem("username");
+    const stored = localStorage.getItem("username");
     if (token) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsLoggedIn(true);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setUsername(storedUsername);
+      setUsername(stored);
     }
   }, []);
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* ── NAVBAR ─────────────────────────────────────────────────── */}
+    <div className="min-h-screen bg-background text-foreground">
+      {/* ── NAVBAR ──────────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-50 border-b-4 border-border bg-background/95 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto flex h-16 items-center justify-between px-6">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-3 group">
             <motion.div
-              className="w-10 h-10 bg-primary border-2 border-border shadow-shadow flex items-center justify-center"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
+              whileHover={{ rotate: 6, scale: 1.05 }}
+              transition={{ type: "spring", stiffness: 400 }}
+              className="relative w-10 h-10 bg-primary border-2 border-border shadow-shadow flex items-center justify-center overflow-hidden"
+              style={{ imageRendering: "pixelated" }}
             >
-              <span className="text-primary-foreground font-black text-sm">
+              {/* pixel AV */}
+              <span className="text-primary-foreground font-black text-sm select-none">
                 AV
               </span>
+              {/* scanline overlay */}
+              <div
+                className="absolute inset-0 pointer-events-none opacity-20"
+                style={{
+                  background:
+                    "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.3) 2px, rgba(0,0,0,0.3) 4px)",
+                }}
+              />
             </motion.div>
-            <span className="text-xl font-black uppercase tracking-tight">
+            <span className="text-xl font-black uppercase tracking-tight hidden sm:block">
               AtriumVerse
             </span>
           </Link>
 
-          {/* Nav right */}
-          <nav className="flex items-center gap-3">
+          {/* Center nav */}
+          <nav className="hidden md:flex items-center gap-6 text-sm font-bold uppercase tracking-wide">
+            {["#features", "#how-it-works", "#tech"].map((href) => (
+              <Link
+                key={href}
+                href={href}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {href.slice(1).replace(/-/g, " ")}
+              </Link>
+            ))}
+          </nav>
+
+          {/* Right */}
+          <div className="flex items-center gap-2">
             <ModeToggle />
             {isLoggedIn ? (
-              <div className="flex items-center gap-3">
-                <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 border-2 border-border bg-card shadow-shadow">
-                  <span className="text-sm font-black truncate max-w-24">
-                    {username}
-                  </span>
-                </div>
+              <>
+                <span className="hidden sm:block text-sm font-bold truncate max-w-[6rem] border-2 border-border px-3 py-1.5">
+                  {username}
+                </span>
                 <Link href="/dashboard">
                   <Button className="font-black gap-2">
-                    Dashboard <ArrowRight size={16} />
+                    Dashboard <ArrowRight size={14} />
                   </Button>
                 </Link>
-              </div>
+              </>
             ) : (
               <>
                 <Link href="/login">
-                  <Button variant="neutral" className="font-black">
+                  <Button
+                    variant="neutral"
+                    className="font-black hidden sm:inline-flex"
+                  >
                     Login
                   </Button>
                 </Link>
                 <Link href="/register">
                   <Button className="font-black gap-2">
-                    Sign Up <ArrowRight size={16} />
+                    Get Started <ArrowRight size={14} />
                   </Button>
                 </Link>
               </>
             )}
-          </nav>
+          </div>
         </div>
       </header>
 
-      {/* ── HERO ───────────────────────────────────────────────────── */}
+      {/* ── HERO ──────────────────────────────────────────────────────────────── */}
       <section className="relative border-b-4 border-border overflow-hidden">
-        {/* Background grid pattern */}
+        {/* grid bg */}
         <div
-          className="absolute inset-0 opacity-[0.04]"
+          className="absolute inset-0 opacity-[0.035] pointer-events-none"
           style={{
             backgroundImage:
               "linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)",
@@ -131,310 +437,639 @@ export default function LandingPage() {
           }}
         />
 
-        {/* Decorative blocks */}
+        {/* decorative blocks */}
         <motion.div
-          className="absolute top-12 right-8 w-32 h-32 bg-primary border-4 border-border hidden lg:block"
-          animate={{ rotate: [6, 8, 6] }}
-          transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-        />
-        <motion.div
-          className="absolute bottom-16 left-8 w-20 h-20 bg-foreground border-4 border-border hidden lg:block"
-          animate={{ rotate: [-3, -6, -3] }}
+          className="absolute top-10 right-6 w-24 h-24 bg-primary border-4 border-border hidden lg:block"
+          animate={{ rotate: [6, 9, 6] }}
           transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
         />
+        <motion.div
+          className="absolute bottom-12 left-6 w-16 h-16 bg-foreground border-4 border-border hidden lg:block"
+          animate={{ rotate: [-3, -7, -3] }}
+          transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+        />
+        <motion.div
+          className="absolute top-1/2 -translate-y-1/2 left-1/3 w-6 h-6 bg-primary/40 border-2 border-border hidden xl:block"
+          animate={{ y: [-8, 8, -8] }}
+          transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+        />
 
-        <div className="max-w-7xl mx-auto px-6 py-24 md:py-36 relative grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-          <AnimatedSection>
-            {/* Tag */}
-            <motion.div variants={fadeUp} className="inline-block mb-6">
-              <span className="inline-flex items-center gap-2 border-4 border-border bg-primary px-4 py-2 shadow-shadow font-black text-sm uppercase tracking-wider text-primary-foreground">
-                <span className="w-2 h-2 bg-primary-foreground rounded-full animate-pulse" />
-                Virtual Collaboration Platform
+        <div className="max-w-7xl mx-auto px-6 py-20 md:py-32 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center relative">
+          {/* Left: copy */}
+          <div>
+            {/* tag */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: EASE }}
+              className="inline-flex items-center gap-2 border-4 border-border bg-primary px-4 py-2 shadow-shadow mb-8"
+            >
+              <span className="w-2 h-2 bg-primary-foreground rounded-full animate-pulse" />
+              <span className="font-black text-xs uppercase tracking-widest text-primary-foreground">
+                Virtual Collaboration
               </span>
             </motion.div>
 
-            {/* Headline */}
-            <motion.h1
-              variants={fadeUp}
-              className="text-5xl md:text-8xl font-black uppercase tracking-tight leading-[0.9] mb-8"
-            >
-              Walk in,
-              <br />
-              <span
-                className="text-primary"
-                style={{ WebkitTextStroke: "2px currentColor" }}
+            {/* headline */}
+            {["Walk in,", "Talk live,", "Work together."].map((line, i) => (
+              <motion.h1
+                key={line}
+                initial={{ opacity: 0, x: -40 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{
+                  duration: 0.6,
+                  delay: 0.1 + i * 0.12,
+                  ease: EASE,
+                }}
+                className={`font-black uppercase tracking-tight leading-[0.88] text-5xl md:text-7xl xl:text-8xl block ${
+                  i === 1 ? "text-primary" : ""
+                }`}
               >
-                Talk live,
-              </span>
-              <br />
-              Work together.
-            </motion.h1>
+                {line}
+              </motion.h1>
+            ))}
 
-            <motion.p
-              variants={fadeUp}
-              className="text-xl md:text-2xl max-w-2xl mb-10 font-medium text-muted-foreground"
+            {/* <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.6, delay: 0.5, ease: EASE }}
+              className="mt-8 text-lg md:text-xl text-muted-foreground font-medium max-w-lg leading-relaxed"
             >
               A tile-based virtual office where your{" "}
               <strong className="text-foreground">
                 position drives everything
-              </strong>
-              — proximity audio, zone video, end-to-end encrypted messaging —
-              all in one open space.
-            </motion.p>
+              </strong>{" "}
+              — proximity audio, zone video, and end-to-end encrypted messaging.
+              All in one browser tab.
+            </motion.p> */}
 
-            <motion.div variants={fadeUp} className="flex flex-wrap gap-4">
+            {/* feature pills */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.65 }}
+              className="flex flex-wrap gap-2 mt-6"
+            >
+              {[
+                "No Plugin",
+                "E2EE",
+                "Zero-Knowledge",
+                "WebRTC",
+                "Spatial Audio",
+              ].map((tag) => (
+                <span
+                  key={tag}
+                  className="border-2 border-border px-3 py-1 text-xs font-black uppercase tracking-wider bg-card shadow-shadow"
+                >
+                  {tag}
+                </span>
+              ))}
+            </motion.div>
+
+            {/* CTAs */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.75, ease: EASE }}
+              className="flex flex-wrap gap-3 mt-8"
+            >
               <Link href={isLoggedIn ? "/dashboard" : "/register"}>
                 <Button
                   size="lg"
-                  className="text-lg font-black px-8 py-6 gap-3"
+                  className="text-base font-black px-8 py-6 gap-2 shadow-shadow"
                 >
-                  {isLoggedIn ? "Open Dashboard" : "Get Started Free"}
-                  <ArrowRight size={20} />
+                  {isLoggedIn ? "Open Dashboard" : "Start Free"}{" "}
+                  <ArrowRightIcon size={16} />
                 </Button>
               </Link>
-              <Link href="#features">
+              <Link
+                href="https://github.com/Parth12pm/AtriumVerse"
+                target="_blank"
+                rel="noopener"
+              >
                 <Button
                   size="lg"
                   variant="neutral"
-                  className="text-lg font-black px-8 py-6"
+                  className="text-base font-black px-8 py-6 gap-2"
                 >
-                  See Features
+                  <GithubIcon size={16} /> GitHub
                 </Button>
               </Link>
             </motion.div>
-          </AnimatedSection>
+          </div>
 
-          {/* Hero image — actual screenshot mockup from picsum */}
+          {/* Right: game screenshot */}
           <motion.div
-            className="border-4 border-border shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] overflow-hidden"
-            initial={{ opacity: 0, y: 60 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4, duration: 0.7, ease: "easeOut" }}
+            initial={{ opacity: 0, y: 60, rotate: -1 }}
+            animate={{ opacity: 1, y: 0, rotate: -1 }}
+            transition={{ duration: 0.8, delay: 0.3, ease: EASE }}
+            className="relative"
           >
-            <Image
-              src="/phaser_assets/map_thumbnails/image.png"
-              alt="AtriumVerse virtual workspace"
-              width={1200}
-              height={1200}
-              className="w-full object-cover"
-              priority
-            />
+            {/* glow behind */}
+            <div className="absolute -inset-4 bg-primary/20 blur-3xl rounded-full pointer-events-none" />
+
+            <div className="relative border-4 border-border shadow-[8px_8px_0px_0px_var(--border)] overflow-hidden">
+              <Image
+                src="/phaser_assets/map_thumbnails/image.png"
+                alt="AtriumVerse game world — office map with player avatars"
+                width={900}
+                height={600}
+                className="w-full object-cover"
+                style={{ imageRendering: "pixelated" }}
+                priority
+              />
+              {/* scanline overlay */}
+              <div
+                className="absolute inset-0 pointer-events-none opacity-10"
+                style={{
+                  background:
+                    "repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.4) 3px, rgba(0,0,0,0.4) 4px)",
+                }}
+              />
+              {/* live badge */}
+              <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-background/90 border-2 border-border px-3 py-1.5">
+                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                <span className="text-xs font-black uppercase tracking-wider">
+                  Live World
+                </span>
+              </div>
+            </div>
+
+            {/* floating stat cards */}
+            <motion.div
+              animate={{ y: [-4, 4, -4] }}
+              transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+              className="absolute -bottom-5 -left-6 border-4 border-border bg-card shadow-shadow px-4 py-3 hidden sm:block"
+            >
+              <p className="text-xs font-black uppercase text-muted-foreground">
+                Proximity Audio
+              </p>
+              <div className="flex items-center gap-1.5 mt-1">
+                {/* lucide-animated Mic */}
+                <MicIcon size={18} />
+                <span className="text-sm font-black">LiveKit SFU + HRTF</span>
+              </div>
+            </motion.div>
+
+            <motion.div
+              animate={{ y: [4, -4, 4] }}
+              transition={{
+                duration: 3.5,
+                repeat: Infinity,
+                ease: "easeInOut",
+                delay: 0.5,
+              }}
+              className="absolute -top-5 -right-6 border-4 border-border bg-primary shadow-shadow px-4 py-3 hidden sm:block"
+            >
+              <p className="text-xs font-black uppercase text-primary-foreground/70">
+                Encryption
+              </p>
+              <div className="flex items-center gap-1.5 mt-1">
+                {/* lucide-animated Lock */}
+                <LockKeyholeOpenIcon size={18} />
+                <span className="text-sm font-black text-primary-foreground">
+                  X25519 + AES-256
+                </span>
+              </div>
+            </motion.div>
           </motion.div>
         </div>
       </section>
 
-      {/* ── STAT STRIP ─────────────────────────────────────────────── */}
-      <section className="border-b-4 border-border bg-foreground text-background">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 divide-x-4 divide-border/20">
-            {[
-              { value: "100%", label: "Client-side Encryption" },
-              { value: "0", label: "Plugins Required" },
-              { value: "3-in-1", label: "Audio · Video · Chat" },
-              { value: "E2EE", label: "Zero-Knowledge Protocol" },
-            ].map((stat) => (
-              <div key={stat.label} className="px-8 py-8 text-center">
-                <div className="text-4xl md:text-5xl font-black text-primary mb-1">
-                  {stat.value}
-                </div>
-                <div className="text-xs font-bold text-background/50 uppercase tracking-widest">
-                  {stat.label}
-                </div>
-              </div>
+      {/* ── MARQUEE STRIP ───────────────────────────────────────────────────── */}
+      <section className="border-b-4 border-border bg-foreground text-background py-4 overflow-hidden">
+        <InfiniteMarquee
+          items={[
+            "Spatial Presence",
+            "Proximity Audio",
+            "Zone-Triggered Video",
+            "Zero-Knowledge E2EE",
+            "WebRTC + LiveKit",
+            "X25519 ECDH",
+            "AES-256-GCM",
+            "WebAuthn PRF",
+            "Phaser 3",
+            "Forward Secrecy",
+            "No Plugin",
+            "FastAPI Backend",
+          ]}
+          speed={40}
+          itemClassName="text-background/80 font-black text-sm"
+        />
+      </section>
+
+      {/* ── FEATURES ────────────────────────────────────────────────────────── */}
+      <section id="features" className="border-b-4 border-border">
+        <div className="max-w-7xl mx-auto px-6 py-24">
+          <FadeUp>
+            <div className="mb-16">
+              <span className="inline-block border-4 border-border bg-card px-3 py-1 shadow-shadow font-black text-xs uppercase tracking-widest mb-4">
+                Features
+              </span>
+              <h2 className="text-4xl md:text-6xl font-black uppercase tracking-tight">
+                Everything in one world
+              </h2>
+              <p className="text-muted-foreground mt-3 font-medium max-w-xl">
+                No more switching between Gather for presence, Discord for chat,
+                and Zoom for calls.
+              </p>
+            </div>
+          </FadeUp>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {FEATURES.map((feat, i) => (
+              <FadeUp key={feat.title} delay={i * 0.08}>
+                <motion.div
+                  whileHover={{ y: -4 }}
+                  className="border-4 border-border bg-card shadow-shadow h-full flex flex-col"
+                >
+                  {/* header bar */}
+                  <div className="border-b-4 border-border px-6 py-4 flex items-center gap-4 bg-primary/5">
+                    <div className="w-14 h-14 border-2 border-border bg-primary/10 flex items-center justify-center p-3 text-foreground flex-shrink-0">
+                      <feat.Icon />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block">
+                        {feat.tag}
+                      </span>
+                      <h3 className="text-xl font-black uppercase leading-tight">
+                        {feat.title}
+                      </h3>
+                    </div>
+                  </div>
+
+                  {/* body */}
+                  <div className="px-6 py-5 flex flex-col gap-4 flex-1">
+                    <p className="text-muted-foreground font-medium leading-relaxed">
+                      {feat.body}
+                    </p>
+                    <ul className="mt-auto space-y-2">
+                      {feat.bullets.map((b) => (
+                        <li
+                          key={b}
+                          className="flex items-center gap-2 text-sm font-bold"
+                        >
+                          <Check
+                            size={14}
+                            className="text-primary flex-shrink-0"
+                          />
+                          {b}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </motion.div>
+              </FadeUp>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── FEATURES ───────────────────────────────────────────────── */}
-      <section id="features" className="border-b-4 border-border">
-        <div className="max-w-7xl mx-auto px-6 py-24">
-          <AnimatedSection>
-            <motion.div variants={fadeUp} className="mb-16">
-              <span className="inline-block border-4 border-border bg-card px-3 py-1 shadow-shadow font-black text-xs uppercase tracking-widest mb-4">
-                Features
+      {/* ── COMPARISON ──────────────────────────────────────────────────────── */}
+      <section className="border-b-4 border-border bg-card">
+        <div className="max-w-5xl mx-auto px-6 py-24">
+          <FadeUp>
+            <div className="mb-12">
+              <span className="inline-block border-4 border-border bg-background px-3 py-1 shadow-shadow font-black text-xs uppercase tracking-widest mb-4">
+                Comparison
               </span>
-              <h2 className="text-4xl md:text-6xl font-black uppercase tracking-tight">
-                Why AtriumVerse?
+              <h2 className="text-3xl md:text-5xl font-black uppercase tracking-tight">
+                Why not just use Discord?
               </h2>
-            </motion.div>
+              <p className="text-muted-foreground mt-3 font-medium">
+                Discord added audio/video E2EE in 2024 — but explicitly excludes
+                all text messages. Gather.town has spatial presence but stores
+                messages as plaintext. AtriumVerse is the only platform that
+                closes all three gaps.
+              </p>
+            </div>
+          </FadeUp>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {[
-                {
-                  Icon: UsersIcon,
-                  title: "Spatial Presence",
-                  desc: "Walk up to colleagues and their voice fades in automatically. No meetings to schedule — just walk up and start talking.",
-                  img: "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=600&q=80",
-                  accent: "bg-primary",
-                },
-                {
-                  Icon: LockIcon,
-                  title: "Zero-Knowledge E2EE",
-                  desc: "Messages are encrypted before they leave your device. X25519 + AES-256-GCM. The server stores ciphertext it cannot read.",
-                  img: "https://images.unsplash.com/photo-1555949963-aa79dcee981c?w=600&q=80",
-                  accent: "bg-foreground",
-                },
-                {
-                  Icon: ZapIcon,
-                  title: "Zone-Triggered Video",
-                  desc: "Walk into a room zone — a video conference opens automatically. Walk out — it closes. No button to click, ever.",
-                  img: "https://images.unsplash.com/photo-1588196749597-9ff075ee6b5b?w=600&q=80",
-                  accent: "bg-primary",
-                },
-                {
-                  Icon: MessageSquare,
-                  title: "Persistent Channels",
-                  desc: "Full channel system with DMs, message history, and E2EE. Everything Discord and Slack have, plus spatial presence.",
-                  img: "https://images.unsplash.com/photo-1611532736597-de2d4265fba3?w=600&q=80",
-                  accent: "bg-foreground",
-                },
-              ].map((feat, i) => (
-                <motion.div
-                  key={feat.title}
-                  variants={fadeUp}
-                  whileHover={{ y: -4 }}
-                  className="border-4 border-border bg-card shadow-shadow overflow-hidden group"
+          <FadeUp delay={0.1}>
+            <div className="border-4 border-border overflow-hidden shadow-shadow">
+              {/* table header */}
+              <div className="grid grid-cols-5 border-b-4 border-border bg-foreground text-background">
+                <div className="col-span-1 px-4 py-3 font-black text-xs uppercase tracking-wider">
+                  Feature
+                </div>
+                {["AtriumVerse", "Gather.town", "Discord", "Zoom"].map((p) => (
+                  <div
+                    key={p}
+                    className={`px-4 py-3 font-black text-xs uppercase tracking-wider text-center ${p === "AtriumVerse" ? "bg-primary text-primary-foreground" : ""}`}
+                  >
+                    {p}
+                  </div>
+                ))}
+              </div>
+
+              {COMPARISON.map((row, i) => (
+                <div
+                  key={row.feature}
+                  className={`grid grid-cols-5 border-b-2 border-border last:border-0 ${i % 2 === 0 ? "bg-card" : "bg-background"}`}
                 >
-                  {/* Image header */}
-                  <div className="relative h-48 overflow-hidden border-b-4 border-border">
-                    <Image
-                      src={feat.img}
-                      alt={feat.title}
-                      fill
-                      className="object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
-                    <div className="absolute inset-0 bg-foreground/40" />
+                  {/* FIX: Removed col-span-5 and added flex & items-center */}
+                  <div className="flex items-center px-4 py-3 font-bold text-sm">
+                    {row.feature}
+                  </div>
+
+                  {[row.av, row.gather, row.discord, row.zoom].map((has, j) => (
                     <div
-                      className={`absolute top-4 left-4 p-3 ${feat.accent} border-2 border-background`}
+                      key={j}
+                      className={`px-4 py-3 flex items-center justify-center ${j === 0 ? "bg-primary/10" : ""}`}
                     >
-                      <feat.Icon
-                        size={24}
-                        className={
-                          feat.accent === "bg-foreground"
-                            ? "text-background"
-                            : "text-primary-foreground"
-                        }
-                      />
+                      {has ? (
+                        <Check
+                          size={16}
+                          className={
+                            j === 0 ? "text-primary" : "text-muted-foreground"
+                          }
+                          strokeWidth={4}
+                        />
+                      ) : (
+                        <X
+                          size={16}
+                          className="text-destructive/50"
+                          strokeWidth={4}
+                        />
+                      )}
                     </div>
-                  </div>
-                  <div className="p-6">
-                    <h3 className="text-2xl font-black uppercase mb-2">
-                      {feat.title}
-                    </h3>
-                    <p className="text-muted-foreground font-medium">
-                      {feat.desc}
-                    </p>
-                  </div>
-                </motion.div>
+                  ))}
+                </div>
               ))}
             </div>
-          </AnimatedSection>
+            <p className="text-xs text-muted-foreground mt-3 font-medium">
+              * Discord added audio/video E2EE via DAVE protocol (Sept 2024) but
+              explicitly excludes text. Gather.town free tier capped at 10 users
+              (2025).
+            </p>
+          </FadeUp>
         </div>
       </section>
 
-      {/* ── HOW IT WORKS ───────────────────────────────────────────── */}
-      <section className="border-b-4 border-border bg-foreground text-background">
+      {/* ── HOW IT WORKS ────────────────────────────────────────────────────── */}
+      <section
+        id="how-it-works"
+        className="border-b-4 border-border bg-foreground text-background"
+      >
         <div className="max-w-7xl mx-auto px-6 py-24">
-          <AnimatedSection>
-            <motion.div variants={fadeUp} className="mb-16">
+          <FadeUp>
+            <div className="mb-16">
               <span className="inline-block border-4 border-background/20 bg-background/10 px-3 py-1 font-black text-xs uppercase tracking-widest mb-4 text-background">
                 How It Works
               </span>
               <h2 className="text-4xl md:text-6xl font-black uppercase tracking-tight text-background">
-                Up & Running
+                Three steps to
                 <br />
-                in 3 Steps
+                your virtual office
               </h2>
-            </motion.div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-0 border-4 border-background/20">
-              {[
-                {
-                  step: "01",
-                  title: "Create a Space",
-                  desc: "Set up your virtual office. Pick a tile map, configure zones and rooms.",
-                  img: "https://images.unsplash.com/photo-1497366811353-6870744d04b2?w=400&q=80",
-                },
-                {
-                  step: "02",
-                  title: "Invite Your Team",
-                  desc: "Share a link. Everyone gets an avatar and walks freely around the map.",
-                  img: "https://images.unsplash.com/photo-1552664730-d307ca884978?w=400&q=80",
-                },
-                {
-                  step: "03",
-                  title: "Start Collaborating",
-                  desc: "Walk up to talk, enter rooms for video, chat in encrypted channels.",
-                  img: "https://images.unsplash.com/photo-1600880292203-757bb62b4baf?w=400&q=80",
-                },
-              ].map((item, i) => (
-                <motion.div
-                  key={item.step}
-                  variants={fadeUp}
-                  className={`p-8 ${i < 2 ? "border-r-4 border-background/20" : ""}`}
-                >
-                  <div className="text-7xl font-black text-background/10 mb-4 leading-none">
-                    {item.step}
-                  </div>
-                  <div className="relative h-40 border-4 border-background/20 overflow-hidden mb-6">
-                    <Image
-                      src={item.img}
-                      alt={item.title}
-                      fill
-                      className="object-cover opacity-60"
-                    />
-                  </div>
-                  <h3 className="text-xl font-black uppercase mb-3 text-background">
-                    {item.title}
-                  </h3>
-                  <p className="text-background/60 font-medium">{item.desc}</p>
-                </motion.div>
-              ))}
             </div>
-          </AnimatedSection>
+          </FadeUp>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-0 border-4 border-background/20">
+            {STEPS.map((step, i) => (
+              <FadeUp key={step.n} delay={i * 0.1}>
+                <div
+                  className={`p-8 ${i < 2 ? "border-r-4 border-background/20" : ""} h-full`}
+                >
+                  {/* big number */}
+                  <div className="text-[80px] font-black leading-none mb-6 select-none">
+                    {step.n}
+                  </div>
+                  {/* pixel step indicator */}
+                  <div className="flex items-center gap-2 mb-4">
+                    <div
+                      className="w-4 h-4 bg-primary border-2 border-background/40"
+                      style={{ imageRendering: "pixelated" }}
+                    />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-background/40">
+                      Step {step.n}
+                    </span>
+                  </div>
+                  <h3 className="text-2xl font-black uppercase mb-4 text-background">
+                    {step.title}
+                  </h3>
+                  <p className="text-background/60 font-medium leading-relaxed">
+                    {step.body}
+                  </p>
+                </div>
+              </FadeUp>
+            ))}
+          </div>
         </div>
       </section>
 
-      {/* ── CTA ────────────────────────────────────────────────────── */}
+      {/* ── TECH STACK ──────────────────────────────────────────────────────── */}
+      <section id="tech" className="border-b-4 border-border">
+        <div className="max-w-7xl mx-auto px-6 py-24">
+          <FadeUp className="mb-12">
+            <span className="inline-block border-4 border-border bg-card px-3 py-1 shadow-shadow font-black text-xs uppercase tracking-widest mb-4">
+              Stack
+            </span>
+            <h2 className="text-3xl md:text-5xl font-black uppercase tracking-tight">
+              Built with proven tools
+            </h2>
+            <p className="text-muted-foreground mt-3 font-medium">
+              No exotic dependencies. The entire encryption stack runs on the
+              browser's built-in Web Crypto API.
+            </p>
+          </FadeUp>
+
+          <FadeUp delay={0.1}>
+            <div className="flex flex-wrap gap-3">
+              {TECH_STACK.map((tech, i) => (
+                <motion.span
+                  key={tech.label}
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  whileInView={{ opacity: 1, scale: 1 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: i * 0.04, ease: EASE }}
+                  whileHover={{ y: -3, scale: 1.05 }}
+                  className={`${tech.bg} ${tech.text} border-2 border-border px-4 py-2 font-black text-sm uppercase tracking-wider shadow-shadow cursor-default`}
+                >
+                  {tech.label}
+                </motion.span>
+              ))}
+            </div>
+          </FadeUp>
+
+          {/* architecture quote */}
+          <FadeUp delay={0.2}>
+            <div className="mt-12 border-l-8 border-primary pl-6 py-2">
+              <p className="text-lg font-black italic">
+                "The server never receives a plaintext message or private key at
+                any point."
+              </p>
+              <p className="text-sm text-muted-foreground mt-2 font-medium">
+                — AtriumVerse architecture guarantee
+              </p>
+            </div>
+          </FadeUp>
+        </div>
+      </section>
+
+      {/* ── E2EE EXPLAINER ──────────────────────────────────────────────────── */}
+      <section className="border-b-4 border-border bg-card">
+        <div className="max-w-5xl mx-auto px-6 py-24">
+          <FadeUp>
+            <span className="inline-block border-4 border-border bg-background px-3 py-1 shadow-shadow font-black text-xs uppercase tracking-widest mb-4">
+              Security
+            </span>
+            <h2 className="text-3xl md:text-5xl font-black uppercase tracking-tight mb-8">
+              How the encryption works
+            </h2>
+          </FadeUp>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {[
+              {
+                step: "1",
+                title: "Keypair Generation",
+                body: "On first login your browser generates an X25519 keypair. The public key goes to the server. The private key is stored only in IndexedDB — it never leaves your device.",
+              },
+              {
+                step: "2",
+                title: "Key Backup",
+                body: "You back up your private key using Face ID / Windows Hello (WebAuthn PRF) or a passphrase. The encrypted blob is stored server-side, unreadable without your biometric.",
+              },
+              {
+                step: "3",
+                title: "Sending a DM",
+                body: "ECDH between your private key and the recipient's public key produces a shared secret. HKDF(secret, message_id, 'dm-epoch:N') derives a per-message AES-256-GCM key.",
+              },
+              {
+                step: "4",
+                title: "Forward Secrecy",
+                body: "When a member leaves a channel the epoch increments, a new channel key is distributed to remaining devices, and the departing member cannot decrypt future messages.",
+              },
+            ].map((item, i) => (
+              <FadeUp key={item.step} delay={i * 0.08}>
+                <div className="border-4 border-border bg-background shadow-shadow p-6">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-8 h-8 bg-primary border-2 border-border flex items-center justify-center font-black text-primary-foreground text-sm">
+                      {item.step}
+                    </div>
+                    <h3 className="font-black uppercase text-sm tracking-wide">
+                      {item.title}
+                    </h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground font-medium leading-relaxed">
+                    {item.body}
+                  </p>
+                </div>
+              </FadeUp>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── SECOND MAP ──────────────────────────────────────────────────────── */}
       <section className="border-b-4 border-border">
         <div className="max-w-7xl mx-auto px-6 py-24">
-          <AnimatedSection>
-            <motion.div
-              variants={fadeUp}
-              className="border-4 border-border bg-primary shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] p-12 md:p-20 text-center relative overflow-hidden"
-            >
-              {/* Decorative corner squares */}
-              <div className="absolute top-0 left-0 w-16 h-16 bg-foreground/10 border-b-4 border-r-4 border-border" />
-              <div className="absolute top-0 right-0 w-16 h-16 bg-foreground/10 border-b-4 border-l-4 border-border" />
-              <div className="absolute bottom-0 left-0 w-16 h-16 bg-foreground/10 border-t-4 border-r-4 border-border" />
-              <div className="absolute bottom-0 right-0 w-16 h-16 bg-foreground/10 border-t-4 border-l-4 border-border" />
-
-              <h2 className="text-4xl md:text-6xl font-black uppercase tracking-tight text-primary-foreground mb-6">
-                Ready to Transform
-                <br />
-                Your Team?
+          <FadeUp>
+            <div className="mb-10">
+              <span className="inline-block border-4 border-border bg-card px-3 py-1 shadow-shadow font-black text-xs uppercase tracking-widest mb-4">
+                Maps
+              </span>
+              <h2 className="text-3xl md:text-5xl font-black uppercase tracking-tight">
+                Multiple tile worlds
               </h2>
-              <p className="text-xl text-primary-foreground/70 mb-10 max-w-xl mx-auto font-medium">
-                Join teams already using AtriumVerse for better remote
-                collaboration.
+              <p className="text-muted-foreground mt-3 font-medium">
+                Choose a classroom or campus layout — or upload your own Tiled
+                JSON map.
               </p>
+            </div>
+          </FadeUp>
+          <FadeUp delay={0.1}>
+            <div className="grid grid-cols-2 sm:grid-cols-2 gap-2">
+              {[
+                {
+                  src: "/phaser_assets/map_thumbnails/final_map.png",
+                  label: "Classroom Space",
+                },
+                {
+                  src: "/phaser_assets/map_thumbnails/map1.png",
+                  label: "Campus Space",
+                },
+              ].map((m) => (
+                <motion.div
+                  key={m.label}
+                  whileHover={{ y: -4 }}
+                  className="max-w-lg border-4 border-border shadow-shadow overflow-hidden"
+                >
+                  <div className="border-b-4 border-border bg-muted px-2 py-2 flex items-center gap-2">
+                    <div
+                      className="w-3 h-3 bg-primary border border-border"
+                      style={{ imageRendering: "pixelated" }}
+                    />
+                    <span className="font-black text-xs uppercase tracking-wider">
+                      {m.label}
+                    </span>
+                  </div>
+                  <Image
+                    src={m.src}
+                    alt={m.label}
+                    width={500}
+                    height={250}
+                    className="w-full object-cover"
+                    style={{ imageRendering: "pixelated" }}
+                  />
+                </motion.div>
+              ))}
+            </div>
+          </FadeUp>
+        </div>
+      </section>
+
+      {/* ── CTA ─────────────────────────────────────────────────────────────── */}
+      <section className="border-b-4 border-border bg-primary">
+        <div className="max-w-5xl mx-auto px-6 py-28 text-center relative overflow-hidden">
+          {/* corner decoration */}
+          {[
+            "top-0 left-0 border-b-4 border-r-4",
+            "top-0 right-0 border-b-4 border-l-4",
+            "bottom-0 left-0 border-t-4 border-r-4",
+            "bottom-0 right-0 border-t-4 border-l-4",
+          ].map((pos) => (
+            <div
+              key={pos}
+              className={`absolute w-16 h-16 bg-primary-foreground/10 border-border ${pos}`}
+            />
+          ))}
+          {/* pixel grid */}
+          <div
+            className="absolute inset-0 pointer-events-none opacity-[0.06]"
+            style={{
+              backgroundImage:
+                "linear-gradient(rgba(0,0,0,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.5) 1px, transparent 1px)",
+              backgroundSize: "32px 32px",
+            }}
+          />
+
+          <FadeUp>
+            <h2 className="text-4xl md:text-6xl font-black uppercase tracking-tight text-primary-foreground mb-6 relative">
+              Ready to walk in?
+            </h2>
+            <p className="text-xl text-primary-foreground/70 mb-10 max-w-xl mx-auto font-medium relative">
+              Create your virtual office in seconds. No install, no plugins, no
+              excuses.
+            </p>
+            <div className="flex flex-wrap justify-center gap-4 relative">
               <Link href={isLoggedIn ? "/dashboard" : "/register"}>
                 <Button
                   size="lg"
                   variant="neutral"
-                  className="text-xl font-black px-10 py-7 gap-3"
+                  className="text-xl font-black px-10 py-7 gap-3 shadow-shadow"
                 >
-                  {isLoggedIn ? "Go to Dashboard" : "Get Started Free"}
-                  <ArrowRight size={22} />
+                  {isLoggedIn ? "Open Dashboard" : "Get Started Free"}{" "}
+                  <ArrowRight size={20} />
                 </Button>
               </Link>
-            </motion.div>
-          </AnimatedSection>
+            </div>
+          </FadeUp>
         </div>
       </section>
 
-      {/* ── MARQUEE FOOTER ─────────────────────────────────────────── */}
+      {/* ── FOOTER ──────────────────────────────────────────────────────────── */}
       <MarqueeFooter />
     </div>
   );

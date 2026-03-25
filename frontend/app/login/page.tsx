@@ -79,9 +79,9 @@ export default function LoginPage() {
                 transition={{ delay: 0.9, duration: 0.6 }}
                 className="text-4xl font-black uppercase text-primary-foreground leading-tight"
               >
-                Walk In.
+                Walk In,
                 <br />
-                Talk Live.
+                Talk Live,
                 <br />
                 Work Together.
               </motion.h2>
@@ -95,21 +95,6 @@ export default function LoginPage() {
               </motion.p>
             </div>
 
-            {/* Preview image */}
-            <motion.div
-              initial={{ opacity: 0, y: 30, rotate: -2 }}
-              animate={{ opacity: 1, y: 0, rotate: -2 }}
-              transition={{ delay: 1.3, duration: 0.7 }}
-              className="border-4 border-primary-foreground/30 shadow-[8px_8px_0px_0px_rgba(0,0,0,0.3)] overflow-hidden w-64"
-            >
-              <Image
-                src="https://images.unsplash.com/photo-1551434678-e076c223a692?auto=format&fit=crop&w=500&q=80"
-                alt="Team working"
-                width={256}
-                height={160}
-                className="object-cover"
-              />
-            </motion.div>
           </div>
         </motion.div>
 
