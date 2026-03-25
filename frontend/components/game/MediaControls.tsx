@@ -165,7 +165,7 @@ export function MediaControls({
       <div className="flex items-center gap-2 px-3 py-2 bg-gray-900 border-2 border-black rounded-xl">
         {/* Mic */}
         <button
-          onClick={handleAudioToggle}
+            onClick={handleAudioToggle}
           title={audioEnabled ? "Mute" : "Unmute"}
           className={`${BTN} ${audioEnabled ? "bg-green-400 text-black" : "bg-red-500 text-white"}`}
         >

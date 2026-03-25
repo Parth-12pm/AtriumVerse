@@ -39,10 +39,10 @@ interface AvatarBubblesProps {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 /** How far above the avatar's feet to centre the bubble (world-space pixels) */
-const BUBBLE_WORLD_OFFSET_Y = 60;
+const BUBBLE_WORLD_OFFSET_Y = 40;
 
 /** The bubble's diameter in CSS pixels at zoom=1 */
-const BUBBLE_BASE_SIZE = 48;
+const BUBBLE_BASE_SIZE = 36;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -87,20 +87,37 @@ function VideoBubble({
   const size = Math.round(BUBBLE_BASE_SIZE * Math.min(Math.max(zoom, 0.6), 2.5));
   const top = Math.round(screenY - BUBBLE_WORLD_OFFSET_Y * zoom - size);
   const left = Math.round(screenX - size / 2);
+  // Track local mute state since TrackPublication properties don't strictly trigger React renders
+  const [isMuted, setIsMuted] = useState(pub?.isMuted ?? false);
+
+  useEffect(() => {
+    if (!pub) return;
+    setIsMuted(pub.isMuted);
+
+    const handleMute = () => setIsMuted(true);
+    const handleUnmute = () => setIsMuted(false);
+
+    pub.on("muted", handleMute);
+    pub.on("unmuted", handleUnmute);
+    return () => {
+      pub.off("muted", handleMute);
+      pub.off("unmuted", handleUnmute);
+    };
+  }, [pub]);
 
   // Attach the MediaStreamTrack to the <video> element whenever it changes
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
 
-    if (!pub) {
+    if (!pub || isMuted) {
       el.srcObject = null;
       return;
     }
 
-    // RemoteTrackPublication exposes .track which is a RemoteVideoTrack.
-    // RemoteVideoTrack.mediaStreamTrack is the raw MediaStreamTrack.
-    const lkTrack = (pub as RemoteTrackPublication).track;
+    // RemoteTrackPublication exposes .track. LocalTrackPublication exposes .track.
+    // Both implement Track, which has mediaStreamTrack.
+    const lkTrack = (pub as TrackPublication).track;
     const mst = (lkTrack as any)?.mediaStreamTrack as MediaStreamTrack | undefined;
 
     if (mst) {
@@ -110,9 +127,11 @@ function VideoBubble({
     } else {
       el.srcObject = null;
     }
-  }, [pub]);
+  }, [pub, isMuted]);
 
-  const showVideo = !!pub && !!(pub as RemoteTrackPublication).track;
+  const showVideo = !!pub && !!(pub as TrackPublication).track && !isMuted;
+
+  if (!showVideo) return null;
 
   return (
     <div
@@ -126,40 +145,20 @@ function VideoBubble({
         overflow: "hidden",
         border: "2.5px solid rgba(99,102,241,0.9)",
         boxShadow: "0 2px 8px rgba(0,0,0,0.55), 0 0 0 1px rgba(0,0,0,0.4)",
-        background: `hsl(${hashHue(identity)}, 45%, 28%)`,
+        background: `rgb(0,0,0)`,
         pointerEvents: "none",
         zIndex: 25,
         transition: "top 70ms linear, left 70ms linear",
         willChange: "top, left",
       }}
     >
-      {showVideo ? (
-        <video
-          ref={videoRef}
-          muted
-          autoPlay
-          playsInline
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-        />
-      ) : (
-        /* Fallback: coloured initial when camera is off */
-        <div
-          style={{
-            width: "100%",
-            height: "100%",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "rgba(255,255,255,0.85)",
-            fontSize: Math.max(10, size * 0.38),
-            fontWeight: 700,
-            fontFamily: "Arial, sans-serif",
-            userSelect: "none",
-          }}
-        >
-          {identity.charAt(0).toUpperCase()}
-        </div>
-      )}
+      <video
+        ref={videoRef}
+        muted
+        autoPlay
+        playsInline
+        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+      />
     </div>
   );
 }
@@ -167,7 +166,6 @@ function VideoBubble({
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function AvatarBubbles({ userId, username }: AvatarBubblesProps) {
-  const positionsRef = useRef<Map<string, PlayerPos>>(new Map());
   const [bubbles, setBubbles] = useState<
     Array<{ id: string; screenX: number; screenY: number }>
   >([]);
@@ -175,11 +173,18 @@ export default function AvatarBubbles({ userId, username }: AvatarBubblesProps) 
     new Map(),
   );
   const [zoom, setZoom] = useState(1.5);
+  const [inMeetingZone, setInMeetingZone] = useState(false);
+
+  // Mutable refs for RAF loop
+  const positionsRef = useRef<Map<string, PlayerPos>>(new Map());
   const rafRef = useRef<number>(0);
 
-  // ── Position listeners ────────────────────────────────────────────────────
-
+  // ── Sync with EventBus ────────────────────────────────────────────────────
   useEffect(() => {
+    // 1. Listen for new/removed camera tracks
+    const handleCamTracks = (map: Map<string, AnyTrackPub>) => setCamTracks(new Map(map));
+
+    // 2. Listen for player movement
     const handleMyMove = (data: { x: number; y: number }) => {
       positionsRef.current.set(userId, { tileX: data.x, tileY: data.y });
     };
@@ -190,25 +195,30 @@ export default function AvatarBubbles({ userId, username }: AvatarBubblesProps) 
       positionsRef.current.delete(data.userId);
     };
 
+    // 3. Listen for Zone Enter/Exit to disable bubbles in Meeting Zones
+    const handleZoneEnter = (data: { zoneType: string }) => {
+      if (data.zoneType === "PRIVATE") setInMeetingZone(true);
+    };
+    const handleZoneExit = (data: { zoneType: string }) => {
+      if (data.zoneType === "PRIVATE") setInMeetingZone(false);
+    };
+
+    EventBus.on("livekit:cam_tracks", handleCamTracks);
     EventBus.on(GameEvents.PLAYER_POSITION, handleMyMove);
     EventBus.on(GameEvents.REMOTE_PLAYER_MOVED, handleRemoteMove);
     EventBus.on(GameEvents.PLAYER_LEFT, handleLeft);
+    EventBus.on(GameEvents.ZONE_ENTER, handleZoneEnter);
+    EventBus.on(GameEvents.ZONE_EXIT, handleZoneExit);
+
     return () => {
+      EventBus.off("livekit:cam_tracks", handleCamTracks);
       EventBus.off(GameEvents.PLAYER_POSITION, handleMyMove);
       EventBus.off(GameEvents.REMOTE_PLAYER_MOVED, handleRemoteMove);
       EventBus.off(GameEvents.PLAYER_LEFT, handleLeft);
+      EventBus.off(GameEvents.ZONE_ENTER, handleZoneEnter);
+      EventBus.off(GameEvents.ZONE_EXIT, handleZoneExit);
     };
   }, [userId]);
-
-  // ── Camera track listener ─────────────────────────────────────────────────
-
-  useEffect(() => {
-    const handle = (map: Map<string, AnyTrackPub>) => setCamTracks(new Map(map));
-    EventBus.on("livekit:cam_tracks", handle);
-    return () => {
-      EventBus.off("livekit:cam_tracks", handle);
-    };
-  }, []);
 
   // ── RAF loop: project tile → screen each frame ────────────────────────────
 
@@ -234,7 +244,7 @@ export default function AvatarBubbles({ userId, username }: AvatarBubblesProps) 
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  if (bubbles.length === 0) return null;
+  if (inMeetingZone || bubbles.length === 0) return null;
 
   return (
     <div

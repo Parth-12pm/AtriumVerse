@@ -1,12 +1,14 @@
 "use client";
 
 import React from "react";
-import { Hash, User, ChevronDown, Plus } from "lucide-react";
+import { Hash, User, ChevronDown, Plus, Volume2, PhoneOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import CreateChannelDialog from "./CreateChannelDialog";
 import ChannelDropdown from "./ChannelDropdown";
 import EditChannelDialog from "./EditChannelDialog";
 import type { ChannelCreate } from "@/types/api.types";
+import EventBus, { GameEvents } from "@/game/EventBus";
+import { getVoiceChannelAudio, getProximityAudio } from "@/lib/livekit-audio";
 
 interface Channel {
   id: string;
@@ -58,6 +60,49 @@ export default function ChannelList({
   const [editingChannel, setEditingChannel] = React.useState<Channel | null>(
     null,
   );
+  const [voiceExpanded, setVoiceExpanded] = React.useState(true);
+
+  const textChannels = React.useMemo(() => channels.filter(c => c.type !== "voice"), [channels]);
+  const voiceChannels = React.useMemo(() => channels.filter(c => c.type === "voice"), [channels]);
+
+  const [activeVoiceChannelId, setActiveVoiceChannelId] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const handleVoiceJoined = (data: { channelId: string }) => {
+      setActiveVoiceChannelId(data.channelId);
+    };
+    const handleVoiceLeft = () => {
+      setActiveVoiceChannelId(null);
+    };
+    
+    // Initialize state
+    if (getVoiceChannelAudio().isConnected()) {
+      setActiveVoiceChannelId(getVoiceChannelAudio().currentChannelId);
+    }
+
+    EventBus.on(GameEvents.VOICE_CHANNEL_CONNECTED, handleVoiceJoined);
+    EventBus.on(GameEvents.VOICE_CHANNEL_DISCONNECTED, handleVoiceLeft);
+
+    return () => {
+      EventBus.off(GameEvents.VOICE_CHANNEL_CONNECTED, handleVoiceJoined);
+      EventBus.off(GameEvents.VOICE_CHANNEL_DISCONNECTED, handleVoiceLeft);
+    };
+  }, []);
+
+  const handleJoinVoice = async (channelId: string) => {
+    if (activeVoiceChannelId === channelId) {
+      await getVoiceChannelAudio().disconnect();
+      EventBus.emit("action:toggle_mic", getProximityAudio().isMicEnabled());
+      return;
+    }
+    
+    const wasMicEnabled = getProximityAudio().isMicEnabled();
+    await getProximityAudio().setMicEnabled(false);
+    const voiceAudio = getVoiceChannelAudio();
+    await voiceAudio.connect(channelId);
+    await voiceAudio.setMicEnabled(wasMicEnabled);
+    EventBus.emit("action:toggle_mic", wasMicEnabled); 
+  };
 
   if (loading) {
     return (
@@ -100,12 +145,12 @@ export default function ChannelList({
 
         {channelsExpanded && (
           <div className="py-2">
-            {channels.length === 0 ? (
+            {textChannels.length === 0 ? (
               <p className="px-4 py-2 text-sm text-muted-foreground">
-                No channels available
+                No text channels available
               </p>
             ) : (
-              channels.map((channel) => (
+              textChannels.map((channel) => (
                 <div
                   key={channel.id}
                   onClick={() => onChannelSelect(channel.id)}
@@ -136,6 +181,84 @@ export default function ChannelList({
                     <p className="font-bold text-sm">{channel.name}</p>
                   </div>
                   {isServerOwner && (
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <ChannelDropdown
+                        channelId={channel.id}
+                        channelName={channel.name}
+                        onEdit={() => setEditingChannel(channel)}
+                        onDelete={onDeleteChannel}
+                      />
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Voice Channels Section */}
+      <div className="border-b-2 border-border">
+        <button
+          onClick={() => setVoiceExpanded(!voiceExpanded)}
+          className="flex w-full items-center justify-between border-b-2 border-border px-4 py-3 transition-colors hover:bg-muted/50"
+        >
+          <span className="text-sm font-black uppercase text-muted-foreground">
+            Voice Channels
+          </span>
+          <ChevronDown
+            className={`w-4 h-4 transition-transform ${voiceExpanded ? "" : "-rotate-90"}`}
+          />
+        </button>
+
+        {voiceExpanded && (
+          <div className="py-2">
+            {voiceChannels.length === 0 ? (
+              <p className="px-4 py-2 text-sm text-muted-foreground">
+                No voice channels available
+              </p>
+            ) : (
+              voiceChannels.map((channel) => (
+                <div
+                  key={channel.id}
+                  onClick={() => handleJoinVoice(channel.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleJoinVoice(channel.id);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  className={`group w-full px-4 py-2 flex items-center gap-3 hover:bg-muted/60 transition-all cursor-pointer ${
+                    activeVoiceChannelId === channel.id
+                      ? "border-l-4 border-emerald-500 bg-emerald-500/10 font-bold"
+                      : ""
+                  }`}
+                >
+                  <div
+                    className={`w-8 h-8 rounded-lg border-3 border-black flex items-center justify-center ${
+                      activeVoiceChannelId === channel.id
+                        ? "bg-emerald-500 text-white"
+                        : "bg-gray-850"
+                    }`}
+                  >
+                    <Volume2 className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <p className="font-bold text-sm">{channel.name}</p>
+                  </div>
+                  {activeVoiceChannelId === channel.id && (
+                    <Button 
+                      variant="reverse" 
+                      size="sm" 
+                      onClick={(e) => { e.stopPropagation(); handleJoinVoice(channel.id); }}
+                      className="h-6 text-xs px-2 bg-red-500 hover:bg-red-600 text-white border-red-900"
+                    >
+                      Disconnect
+                    </Button>
+                  )}
+                  {isServerOwner && activeVoiceChannelId !== channel.id && (
                     <div onClick={(e) => e.stopPropagation()}>
                       <ChannelDropdown
                         channelId={channel.id}

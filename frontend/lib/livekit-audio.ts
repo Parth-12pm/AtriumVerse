@@ -5,6 +5,7 @@ import {
   Track,
   type RemoteAudioTrack,
   type RemoteTrackPublication,
+  type TrackPublication,
 } from "livekit-client";
 import EventBus, { GameEvents } from "@/game/EventBus";
 import { fetchLiveKitToken, getLiveKitUrl } from "@/lib/livekit";
@@ -35,7 +36,7 @@ export class ProximityAudioManager {
   private audioElements = new Map<string, HTMLAudioElement>();
   /** Maps participant identity → their active camera TrackPublication
    *  Used to emit livekit:cam_tracks for AvatarBubbles overlay */
-  private camPubs = new Map<string, RemoteTrackPublication>();
+  private camPubs = new Map<string, TrackPublication>();
   private connected = false;
   private isConnecting = false;
   private micEnabled = false; // starts muted; user enables via dock
@@ -87,6 +88,31 @@ export class ProximityAudioManager {
           this.emitCamTracks();
         }
       });
+
+      // Track local camera
+      this.room.on(RoomEvent.LocalTrackPublished, (pub, participant) => {
+        if (pub.kind === Track.Kind.Video && pub.source === Track.Source.Camera) {
+          this.camPubs.set(participant.identity, pub);
+          this.emitCamTracks();
+        }
+      });
+      this.room.on(RoomEvent.LocalTrackUnpublished, (pub, participant) => {
+        if (pub.kind === Track.Kind.Video && pub.source === Track.Source.Camera) {
+          this.camPubs.delete(participant.identity);
+          this.emitCamTracks();
+        }
+      });
+
+      // Also track mute events so Phaser UI can hide/show name tags instantly
+      const handleMuteStateChange = (pub: TrackPublication) => {
+        if (pub.kind === Track.Kind.Video && pub.source === Track.Source.Camera) {
+          this.emitCamTracks();
+        }
+      };
+      this.room.on(RoomEvent.TrackMuted, handleMuteStateChange);
+      this.room.on(RoomEvent.TrackUnmuted, handleMuteStateChange);
+      this.room.on(RoomEvent.LocalTrackMuted, handleMuteStateChange);
+      this.room.on(RoomEvent.LocalTrackUnmuted, handleMuteStateChange);
 
       // Resume AudioContext on first user gesture (Chrome autoplay policy)
       const resumeAudio = () => {

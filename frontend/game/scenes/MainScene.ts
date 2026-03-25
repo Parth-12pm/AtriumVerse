@@ -38,6 +38,7 @@ export class MainScene extends Scene {
   private myId: string = "";
   private myUsername: string = "";
   private myServerId: string = "";
+  private activeCamUsers = new Set<string>();
   private token: string = "";
   private apiUrl: string =
     process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -596,6 +597,16 @@ export class MainScene extends Scene {
     this.time.addEvent({ delay: 2000, callback: broadcastSpeaker, loop: true });
     // ─────────────────────────────────────────────────────────────────────
 
+    // Listen to camera tracks so we know when to hide player name tags
+    EventBus.on("livekit:cam_tracks", (camPubs: Map<string, any>) => {
+      this.activeCamUsers.clear();
+      for (const [id, pub] of camPubs.entries()) {
+        if (pub && !pub.isMuted) {
+          this.activeCamUsers.add(id);
+        }
+      }
+    });
+
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.wasd = this.input.keyboard!.addKeys({
       up: "W",
@@ -754,38 +765,55 @@ export class MainScene extends Scene {
     // ─────────────────────────────────────────────────────────────────────
 
     // Update labels for remote players
-    this.otherPlayers.forEach((player) => {
-      const lw = player.labelText.width;
-      const lh = player.labelText.height;
-      const tx = player.sprite.x + 15;
-      const ty = player.sprite.y - -4;
-      player.labelText.setPosition(tx, ty);
-      player.labelBg.clear();
-      player.labelBg.fillStyle(0x6366f1, 1);
-      player.labelBg.fillRoundedRect(
-        tx - lw / 2 - 5,
-        ty - lh / 2 - 2,
-        lw + 10,
-        lh + 4,
-        6,
-      );
+    this.otherPlayers.forEach((player, id) => {
+      const isCamActive = this.activeCamUsers.has(id);
+      if (isCamActive) {
+        player.labelText.setVisible(false);
+        player.labelBg.setVisible(false);
+      } else {
+        player.labelText.setVisible(true);
+        player.labelBg.setVisible(true);
+        const lw = player.labelText.width;
+        const lh = player.labelText.height;
+        const tx = player.sprite.x + 15;
+        const ty = player.sprite.y - -4;
+        player.labelText.setPosition(tx, ty);
+        player.labelBg.clear();
+        player.labelBg.fillStyle(0x6366f1, 1);
+        player.labelBg.fillRoundedRect(
+          tx - lw / 2 - 5,
+          ty - lh / 2 - 2,
+          lw + 10,
+          lh + 4,
+          6,
+        );
+      }
     });
 
     if (this.playerSprite && this.usernameText) {
-      const lw = this.usernameText.width;
-      const lh = this.usernameText.height;
-      const tx = this.playerSprite.x + 15;
-      const ty = this.playerSprite.y - -4; // fixed: ~50px above feet puts label at head level
-      this.usernameText.setPosition(tx, ty);
-      this.usernameBg.clear();
-      this.usernameBg.fillStyle(0xcc3333, 1);
-      this.usernameBg.fillRoundedRect(
-        tx - lw / 2 - 5,
-        ty - lh / 2 - 2,
-        lw + 10,
-        lh + 4,
-        6,
-      );
+      // Check if my own camera is active
+      const myCamActive = this.myId ? this.activeCamUsers.has(this.myId) : false;
+      if (myCamActive) {
+        this.usernameText.setVisible(false);
+        this.usernameBg.setVisible(false);
+      } else {
+        this.usernameText.setVisible(true);
+        this.usernameBg.setVisible(true);
+        const lw = this.usernameText.width;
+        const lh = this.usernameText.height;
+        const tx = this.playerSprite.x + 15;
+        const ty = this.playerSprite.y - -4; // fixed: ~50px above feet puts label at head level
+        this.usernameText.setPosition(tx, ty);
+        this.usernameBg.clear();
+        this.usernameBg.fillStyle(0xcc3333, 1);
+        this.usernameBg.fillRoundedRect(
+          tx - lw / 2 - 5,
+          ty - lh / 2 - 2,
+          lw + 10,
+          lh + 4,
+          6,
+        );
+      }
     }
   }
 
