@@ -12,6 +12,9 @@ import {
 } from "@/lib/services/api.service";
 import EventBus from "@/game/EventBus";
 import type { Channel, Conversation, ChannelCreate } from "@/types/api.types";
+import { toast } from "sonner";
+import { fetchAPI } from "@/lib/api";
+import { distributeKeysToNewMember } from "@/lib/channelSync";
 
 interface ChatExpandedViewProps {
   serverId: string;
@@ -36,6 +39,7 @@ export default function ChatExpandedView({
   const [dmConversations, setDMConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [isServerOwner, setIsServerOwner] = useState(false);
+  const [repairLoading, setRepairLoading] = useState(false);
 
   // Listen for dm:start events from People view
   useEffect(() => {
@@ -146,6 +150,44 @@ export default function ChatExpandedView({
     }
   };
 
+  const repairKeys = useCallback(async () => {
+    if (repairLoading) return;
+    setRepairLoading(true);
+    try {
+      const missing = await fetchAPI(
+        `/channel-keys/server/${serverId}/members-missing-keys`,
+      );
+      if (!missing || missing.length === 0) {
+        toast.success("All members already have keys — nothing to repair!");
+        return;
+      }
+      // Collect unique user_ids that are missing keys in any channel
+      const allChannelIds = [...new Set(missing.map((m: any) => m.channel_id))] as string[];
+      // Fetch all server members so we can map devices back to users
+      const members = await fetchAPI(`/servers/${serverId}/members`);
+      const acceptedMemberUserIds: string[] = members
+        .filter((m: any) => m.status === "accepted")
+        .map((m: any) => String(m.user_id));
+
+      toast.info(`Repairing keys for ${acceptedMemberUserIds.length} members across ${allChannelIds.length} channel(s)...`);
+      let repaired = 0;
+      for (const uid of acceptedMemberUserIds) {
+        try {
+          await distributeKeysToNewMember(allChannelIds, uid);
+          repaired++;
+        } catch (e) {
+          console.debug(`Repair failed for user ${uid}:`, e);
+        }
+      }
+      toast.success(`Key repair complete — synced ${repaired} member(s)!`);
+    } catch (err) {
+      toast.error("Failed to repair keys. See console for details.");
+      console.error(err);
+    } finally {
+      setRepairLoading(false);
+    }
+  }, [serverId, repairLoading]);
+
   const handleUpdateChannel = async (
     channelId: string,
     data: Partial<Channel>,
@@ -212,6 +254,8 @@ export default function ChatExpandedView({
           onCreateChannel={handleCreateChannel}
           onUpdateChannel={handleUpdateChannel}
           onDeleteChannel={handleDeleteChannel}
+          repairKeys={isServerOwner ? repairKeys : undefined}
+          repairLoading={repairLoading}
         />
       </div>
 

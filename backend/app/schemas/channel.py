@@ -19,6 +19,7 @@ class ChannelResponse(BaseModel):
     description: str | None
     position: int
     is_public: bool
+    is_encrypted: bool = False
     created_at: datetime
 
     class Config:

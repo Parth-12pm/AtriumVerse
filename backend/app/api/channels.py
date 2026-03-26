@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.models.channel import Channel
+from app.models.channel_encryption import ChannelEncryption
 from app.models.server import Server
 from app.models.server_member import MemberStatus, ServerMember
 from app.models.user import User
@@ -36,15 +37,20 @@ async def list_channels(
     if not member_check.scalars().first():
         raise HTTPException(403, detail="Not a member of this server")
 
-    # Get channels
+    # Get channels with their encryption state
     result = await db.execute(
-        select(Channel)
+        select(Channel, ChannelEncryption.is_enabled)
+        .outerjoin(ChannelEncryption, Channel.id == ChannelEncryption.channel_id)
         .where(Channel.server_id == server_id)
         .order_by(Channel.position, Channel.created_at)
     )
-    channels = result.scalars().all()
+    
+    channels_with_state = []
+    for chan, is_enabled in result.all():
+        chan.is_encrypted = bool(is_enabled)
+        channels_with_state.append(chan)
 
-    return channels
+    return channels_with_state
 
 
 @router.post("/{server_id}/channels", response_model=ChannelResponse)
@@ -80,6 +86,8 @@ async def create_channel(
     db.add(new_channel)
     await db.commit()
     await db.refresh(new_channel)
+    
+    new_channel.is_encrypted = False
 
     return new_channel
 
@@ -120,6 +128,10 @@ async def update_channel(
 
     await db.commit()
     await db.refresh(channel)
+
+    # Fetch encryption state to return
+    enc_res = await db.execute(select(ChannelEncryption.is_enabled).where(ChannelEncryption.channel_id == channel.id))
+    channel.is_encrypted = bool(enc_res.scalar_one_or_none())
 
     return channel
 
