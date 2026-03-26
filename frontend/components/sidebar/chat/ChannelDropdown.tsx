@@ -39,10 +39,10 @@ export default function ChannelDropdown({
         <Button
           variant="neutral"
           size="icon"
-          className="w-6 h-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+          className="w-6 h-6 p-0 transition-opacity"
           onClick={(e) => e.stopPropagation()}
         >
-          <MoreVertical className="w-4 h-4" />
+          <MoreVertical className="w-4 h-4 " />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="border-2 border-black">

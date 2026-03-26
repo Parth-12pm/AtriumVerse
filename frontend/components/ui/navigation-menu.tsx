@@ -1,12 +1,12 @@
-"use client"
+"use client";
 
-import * as NavigationMenuPrimitive from "@radix-ui/react-navigation-menu"
-import { cva } from "class-variance-authority"
-import { ChevronDown } from "lucide-react"
+import * as NavigationMenuPrimitive from "@radix-ui/react-navigation-menu";
+import { cva } from "class-variance-authority";
+import { ChevronDown } from "lucide-react";
 
-import * as React from "react"
+import * as React from "react";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 function NavigationMenu({
   className,
@@ -14,7 +14,7 @@ function NavigationMenu({
   viewport = true,
   ...props
 }: React.ComponentProps<typeof NavigationMenuPrimitive.Root> & {
-  viewport?: boolean
+  viewport?: boolean;
 }) {
   return (
     <NavigationMenuPrimitive.Root
@@ -29,7 +29,7 @@ function NavigationMenu({
       {children}
       {viewport && <NavigationMenuViewport />}
     </NavigationMenuPrimitive.Root>
-  )
+  );
 }
 
 function NavigationMenuList({
@@ -45,7 +45,7 @@ function NavigationMenuList({
       )}
       {...props}
     />
-  )
+  );
 }
 
 function NavigationMenuItem({
@@ -58,12 +58,12 @@ function NavigationMenuItem({
       className={cn("relative", className)}
       {...props}
     />
-  )
+  );
 }
 
 const navigationMenuTriggerStyle = cva(
   "group inline-flex h-10 w-max items-center justify-center text-main-foreground rounded-base bg-main px-4 py-2 text-sm font-heading transition-colors focus:outline-none disabled:pointer-events-none disabled:opacity-50",
-)
+);
 
 function NavigationMenuTrigger({
   className,
@@ -82,7 +82,7 @@ function NavigationMenuTrigger({
         aria-hidden="true"
       />
     </NavigationMenuPrimitive.Trigger>
-  )
+  );
 }
 
 function NavigationMenuContent({
@@ -99,7 +99,7 @@ function NavigationMenuContent({
       )}
       {...props}
     />
-  )
+  );
 }
 
 function NavigationMenuLink({
@@ -115,7 +115,7 @@ function NavigationMenuLink({
       )}
       {...props}
     />
-  )
+  );
 }
 
 function NavigationMenuViewport({
@@ -137,7 +137,7 @@ function NavigationMenuViewport({
         {...props}
       />
     </div>
-  )
+  );
 }
 
 function NavigationMenuIndicator({
@@ -155,7 +155,7 @@ function NavigationMenuIndicator({
     >
       <div className="relative top-[60%] h-2 w-2 rotate-45 rounded-tl-sm bg-white" />
     </NavigationMenuPrimitive.Indicator>
-  )
+  );
 }
 
 export {
@@ -168,4 +168,4 @@ export {
   NavigationMenuLink,
   NavigationMenuIndicator,
   NavigationMenuViewport,
-}
+};

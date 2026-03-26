@@ -1,191 +1,133 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Send, MapPin } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Send, X } from "lucide-react";
 import EventBus from "@/game/EventBus";
-import { getCommunicationManager } from "@/game/managers/CommunicationManager";
-import { format } from "date-fns";
 
-interface ZoneMessage {
+interface ProximityMessage {
   sender: string;
   username: string;
   text: string;
   timestamp: string;
-  temporary: boolean;
 }
 
+const MAX_MESSAGES = 50;
+
 export default function ProximityChat() {
-  const [isInZone, setIsInZone] = useState(false);
-  const [currentZoneName, setCurrentZoneName] = useState("");
-  const [messages, setMessages] = useState<ZoneMessage[]>([]);
+  const [messages, setMessages] = useState<ProximityMessage[]>([]);
   const [newMessage, setNewMessage] = useState("");
-  const [isMinimized, setIsMinimized] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const MAX_MESSAGES = 20; // Keep only last 20 messages
-
-  const handleZoneEntered = (zoneData: any) => {
-    setIsInZone(true);
-    setCurrentZoneName(zoneData.name || "Unknown Zone");
-    setMessages([]); // Clear messages when entering new zone
-    setIsMinimized(false);
-  };
-
-  const handleZoneExited = () => {
-    setIsInZone(false);
-    setCurrentZoneName("");
-    setMessages([]);
-    setIsMinimized(false);
-  };
-
-  const handleZoneMessage = (msg: ZoneMessage) => {
-    setMessages((prev) => {
-      const updated = [...prev, msg];
-      // Keep only last MAX_MESSAGES
-      if (updated.length > MAX_MESSAGES) {
-        return updated.slice(-MAX_MESSAGES);
-      }
-      return updated;
-    });
-  };
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Listen for zone events
-    EventBus.on("zone:confirmed_entry", handleZoneEntered);
-    EventBus.on("zone:confirmed_exit", handleZoneExited);
-    EventBus.on("chat:zone_message", handleZoneMessage);
-
+    const handleMessage = (data: ProximityMessage) => {
+      setMessages((prev) => {
+        const updated = [...prev, data];
+        return updated.length > MAX_MESSAGES
+          ? updated.slice(-MAX_MESSAGES)
+          : updated;
+      });
+      setIsVisible(true);
+    };
+    EventBus.on("chat:proximity_message", handleMessage);
     return () => {
-      EventBus.off("zone:confirmed_entry", handleZoneEntered);
-      EventBus.off("zone:confirmed_exit", handleZoneExited);
-      EventBus.off("chat:zone_message", handleZoneMessage);
+      EventBus.off("chat:proximity_message", handleMessage);
     };
   }, []);
 
-  // Auto-scroll to bottom on new messages
   useEffect(() => {
-    if (scrollRef.current) {
+    if (scrollRef.current)
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
+  }, [messages, isVisible]);
+
+  useEffect(() => {
+    const handleToggleChat = (visible: boolean) => {
+      setIsVisible(visible);
+      if (visible) setTimeout(() => inputRef.current?.focus(), 50);
+    };
+    EventBus.on("action:toggle_chat", handleToggleChat);
+    return () => {
+      EventBus.off("action:toggle_chat", handleToggleChat);
+    };
+  }, []);
 
   const sendMessage = () => {
-    if (!newMessage.trim()) return;
-
-    const commManager = getCommunicationManager();
-    if (commManager) {
-      commManager.sendZoneMessage(newMessage.trim());
-      setNewMessage("");
-    }
+    const text = newMessage.trim();
+    if (!text) return;
+    EventBus.emit("proximity:send_message", { message: text });
+    setNewMessage("");
   };
 
-  const formatTime = (timestamp: string) => {
-    try {
-      return format(new Date(timestamp), "h:mm a");
-    } catch {
-      return "";
-    }
+  const stopKeys = (e: React.KeyboardEvent) => {
+    e.stopPropagation();
+    if (e.key === "Enter") sendMessage();
   };
 
-  // Don't render if not in a zone
-  if (!isInZone) return null;
+  if (!isVisible) return null;
 
   return (
-    <div
-      className={`fixed bottom-4 right-4 bg-white border-4 border-black rounded-lg shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] transition-all ${
-        isMinimized ? "w-64" : "w-96"
-      }`}
-      style={{ zIndex: 30 }}
-    >
+    <div className="fixed bottom-4 right-4 z-[70] pointer-events-auto w-72 flex flex-col rounded-xl overflow-hidden border border-border bg-background/95 backdrop-blur shadow-xl">
       {/* Header */}
-      <div className="p-3 border-b-4 border-black bg-green-500 flex items-center justify-between rounded-t-lg">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 bg-white border-2 border-black rounded-full flex items-center justify-center">
-            <MapPin className="w-4 h-4 text-green-600" />
-          </div>
-          <div>
-            <h3 className="font-black text-sm text-white">Send nearby</h3>
-            <p className="text-xs text-green-100">{currentZoneName}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-1">
-          <Button
-            onClick={() => setIsMinimized(!isMinimized)}
-            variant="neutral"
-            size="icon"
-            className="w-6 h-6 bg-white hover:bg-gray-100 p-0"
-            title={isMinimized ? "Expand" : "Minimize"}
-          >
-            {isMinimized ? "+" : "−"}
-          </Button>
-        </div>
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+        <span className="text-muted-foreground text-[10px] font-mono font-bold tracking-wider uppercase">
+          Nearby Chat
+        </span>
+        <button
+          onClick={() => {
+            setIsVisible(false);
+            EventBus.emit("action:toggle_chat", false);
+          }}
+          className="text-muted-foreground/70 hover:text-foreground transition-colors"
+        >
+          <X className="w-3 h-3" />
+        </button>
       </div>
-
-      {!isMinimized && (
-        <>
-          {/* Messages */}
-          <div
-            ref={scrollRef}
-            className="h-48 overflow-y-auto p-3 space-y-2 bg-gradient-to-b from-green-50 to-white"
-          >
-            {messages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-center">
-                <MapPin className="w-8 h-8 text-gray-400 mb-2" />
-                <p className="text-sm text-gray-500 font-bold">
-                  No messages yet
-                </p>
-                <p className="text-xs text-gray-400">
-                  Say hi to nearby people!
-                </p>
-              </div>
-            ) : (
-              messages.map((msg, idx) => (
-                <div
-                  key={idx}
-                  className="bg-white border-2 border-black rounded-lg p-2"
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-black text-xs text-gray-800">
-                      {msg.username}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {formatTime(msg.timestamp)}
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-700">{msg.text}</p>
-                </div>
-              ))
-            )}
-          </div>
-
-          {/* Input */}
-          <div className="p-3 border-t-4 border-black bg-gray-50">
-            <div className="flex gap-2">
-              <Input
-                type="text"
-                placeholder="Message..."
-                value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-                className="flex-1"
-              />
-              <Button
-                onClick={sendMessage}
-                disabled={!newMessage.trim()}
-                variant="default"
-                className="bg-green-500 text-white hover:bg-green-600"
-                size="icon"
-              >
-                <Send className="w-4 h-4" />
-              </Button>
+      {/* Message feed */}
+      <div
+        ref={scrollRef}
+        className="max-h-[180px] overflow-y-auto flex flex-col gap-[2px] p-2"
+        style={{ scrollbarWidth: "none" }}
+      >
+        {messages.length === 0 ? (
+          <p className="text-center text-[10px] text-muted-foreground/70 font-mono py-3">
+            — no messages yet —
+          </p>
+        ) : (
+          messages.map((msg, idx) => (
+            <div
+              key={idx}
+              className="text-[12px] leading-snug px-2 py-[2px] text-foreground"
+            >
+              <span className="font-semibold text-primary">{msg.username}</span>
+              <span className="text-muted-foreground">: </span>
+              <span className="text-foreground/90">{msg.text}</span>
             </div>
-            <p className="text-xs text-gray-500 mt-2">
-              Messages here are not saved
-            </p>
-          </div>
-        </>
-      )}
+          ))
+        )}
+      </div>
+      {/* Input */}
+      <div className="flex items-center gap-2 px-2 py-2 border-t border-border">
+        <input
+          ref={inputRef}
+          type="text"
+          placeholder="Message nearby…"
+          value={newMessage}
+          onChange={(e) => setNewMessage(e.target.value)}
+          onKeyDown={stopKeys}
+          onKeyUp={(e) => e.stopPropagation()}
+          onFocus={() => EventBus.emit("ui:focus")}
+          onBlur={() => EventBus.emit("ui:blur")}
+          className="flex-1 bg-transparent text-foreground text-[12px] placeholder:text-muted-foreground/70 outline-none min-w-0"
+        />
+        <button
+          onClick={sendMessage}
+          disabled={!newMessage.trim()}
+          className="w-6 h-6 flex items-center justify-center rounded-lg bg-violet-600 disabled:opacity-30 hover:bg-violet-500 transition-colors shrink-0"
+        >
+          <Send className="w-3 h-3 text-white" />
+        </button>
+      </div>
     </div>
   );
 }

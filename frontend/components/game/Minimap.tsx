@@ -1,132 +1,163 @@
 "use client";
 
-import { Card } from "@/components/ui/card";
+import { useEffect, useRef } from "react";
+import EventBus, { GameEvents } from "@/game/EventBus";
+import { TILE_PX } from "@/lib/game-constants";
 
-interface MinimapProps {
-  currentRoom: "hall" | "meeting" | "office";
-  playerPosition: { x: number; y: number };
-  proximityRange: number;
-  remotePlayers?: Array<{
-    id: string;
-    username: string;
-    x: number;
-    y: number;
-  }>;
-  onClose?: () => void;
+// Mini-map canvas dimensions (pixels)
+const MINI_W = 200;
+const MINI_H = 160;
+
+interface Player {
+  user_id: string;
+  x: number;
+  y: number;
 }
 
-const ROOM_INFO = {
-  hall: {
-    name: "Main Hall",
-    width: 800,
-    height: 600,
-    color: "#e8f4f8",
-    offsetX: 0,
-  },
-  meeting: {
-    name: "Conference",
-    width: 1200,
-    height: 800,
-    color: "#fff8dc",
-    offsetX: 800,
-  },
-  office: {
-    name: "Office",
-    width: 1000,
-    height: 700,
-    color: "#f0f0f0",
-    offsetX: 2000,
-  },
-};
+interface MinimapZone {
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  isPrivate: boolean;
+}
 
-export function Minimap({
-  currentRoom,
-  playerPosition,
-  proximityRange,
-  remotePlayers = [],
-}: MinimapProps) {
-  const roomInfo = ROOM_INFO[currentRoom];
-  const scale = 0.15; // 15% of original size
-  const miniWidth = roomInfo.width * scale;
-  const miniHeight = roomInfo.height * scale;
+export function Minimap() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // CRITICAL FIX: Convert absolute world position to room-relative position
-  // Rooms are offset horizontally: hall=0, meeting=800, office=2000
-  const relativePlayerX = playerPosition.x - roomInfo.offsetX;
-  const relativePlayerY = playerPosition.y;
+  // hero tile position
+  const heroRef = useRef({ x: 0, y: 0 });
+  // other players
+  const othersRef = useRef<Player[]>([]);
 
-  // Scale player position to minimap
-  const scaledPlayerX = relativePlayerX * scale;
-  const scaledPlayerY = relativePlayerY * scale;
-  const scaledProximity = proximityRange * scale;
+  const draw = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const mapSize = (window as any).__phaserMapSize;
+    const mapW = mapSize?.w ?? 50 * TILE_PX;
+    const mapH = mapSize?.h ?? 40 * TILE_PX;
+
+    const scaleX = MINI_W / mapW;
+    const scaleY = MINI_H / mapH;
+
+    // ── Background ────────────────────────────────────────────────────────────
+    ctx.fillStyle = "#0f1117";
+    ctx.fillRect(0, 0, MINI_W, MINI_H);
+
+    // ── Zone layout ───────────────────────────────────────────────────────────
+    const zones: MinimapZone[] = (window as any).__phaserZones ?? [];
+    for (const zone of zones) {
+      if (!zone.width || !zone.height) continue;
+
+      const zx = zone.x * scaleX;
+      const zy = zone.y * scaleY;
+      const zw = zone.width * scaleX;
+      const zh = zone.height * scaleY;
+
+      // Fill: private rooms = indigo tint, public areas = gray tint
+      ctx.fillStyle = zone.isPrivate
+        ? "rgba(99, 102, 241, 0.18)" // indigo
+        : "rgba(255, 255, 255, 0.04)"; // barely visible public
+      ctx.fillRect(zx, zy, zw, zh);
+
+      // Border
+      ctx.strokeStyle = zone.isPrivate
+        ? "rgba(129, 140, 248, 0.55)" // indigo-400
+        : "rgba(255, 255, 255, 0.12)";
+      ctx.lineWidth = zone.isPrivate ? 1.5 : 1;
+      ctx.strokeRect(zx, zy, zw, zh);
+
+      // Zone name label — strip "_room"/"room_", replace _ with space, title-case
+      const label = zone.name
+        .replace(/_?room_?/gi, " ")
+        .replace(/_/g, " ")
+        .trim()
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+
+      const fontSize = Math.max(6, Math.min(9, zw / label.length + 1));
+      ctx.font = `600 ${fontSize}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
+      // Dark shadow for legibility on any background
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillText(label, zx + zw / 2 + 0.5, zy + zh / 2 + 0.5);
+
+      // Label text
+      ctx.fillStyle = zone.isPrivate
+        ? "rgba(199, 210, 254, 0.9)" // indigo-200
+        : "rgba(255, 255, 255, 0.45)";
+      ctx.fillText(label, zx + zw / 2, zy + zh / 2);
+    }
+
+    // ── Other players (white dots) ────────────────────────────────────────────
+    for (const p of othersRef.current) {
+      const px = p.x * TILE_PX * scaleX;
+      const py = p.y * TILE_PX * scaleY;
+      ctx.beginPath();
+      ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.8)";
+      ctx.fill();
+    }
+
+    // ── Hero — rose dot with glow ─────────────────────────────────────────────
+    const hx = heroRef.current.x * TILE_PX * scaleX;
+    const hy = heroRef.current.y * TILE_PX * scaleY;
+    ctx.beginPath();
+    ctx.arc(hx, hy, 4, 0, Math.PI * 2);
+    ctx.fillStyle = "#f43f5e";
+    ctx.shadowColor = "#f43f5e";
+    ctx.shadowBlur = 8;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  };
+
+  useEffect(() => {
+    const handleHeroMove = (data: { x: number; y: number }) => {
+      heroRef.current = { x: data.x, y: data.y };
+      draw();
+    };
+
+    const handlePlayerList = (users: Player[]) => {
+      othersRef.current = users.filter((u) => u.user_id !== undefined);
+      draw();
+    };
+
+    // Defer initial draw slightly so __phaserZones is populated by MainScene
+    const initialTimer = setTimeout(draw, 500);
+
+    EventBus.on(GameEvents.PLAYER_POSITION, handleHeroMove);
+    EventBus.on(GameEvents.PLAYER_LIST_UPDATE, handlePlayerList);
+
+    return () => {
+      clearTimeout(initialTimer);
+      EventBus.off(GameEvents.PLAYER_POSITION, handleHeroMove);
+      EventBus.off(GameEvents.PLAYER_LIST_UPDATE, handlePlayerList);
+    };
+  }, []);
 
   return (
-    <Card className="fixed bottom-4 right-4 p-3 bg-white border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] z-50">
-      <div className="mb-2">
-        <h3 className="text-sm font-bold">{roomInfo.name}</h3>
-        <p className="text-xs text-muted-foreground">
-          Players: {remotePlayers.length + 1}
-        </p>
+    <div
+      className="absolute bottom-5 left-5 rounded-xl overflow-hidden border border-white/15 shadow-2xl shadow-black/60 backdrop-blur-sm"
+      style={{ zIndex: 25, pointerEvents: "none" }}
+    >
+      {/* Label bar */}
+      <div className="flex items-center gap-1.5 bg-black/60 px-2.5 py-1 border-b border-white/8">
+        <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+        <span className="text-[9px] text-white/50 font-mono tracking-widest uppercase">
+          Mini-Map
+        </span>
       </div>
-
-      <svg
-        width={miniWidth}
-        height={miniHeight}
-        className="border-2 border-black"
-        style={{ backgroundColor: roomInfo.color }}
-      >
-        {/* Proximity circle */}
-        <circle
-          cx={scaledPlayerX}
-          cy={scaledPlayerY}
-          r={scaledProximity}
-          fill="rgba(0, 255, 0, 0.1)"
-          stroke="rgba(0, 255, 0, 0.5)"
-          strokeWidth="1"
-        />
-
-        {/* Remote players */}
-        {remotePlayers.map((player) => {
-          // Convert to room-relative coordinates
-          const relativeX = player.x - roomInfo.offsetX;
-          const relativeY = player.y;
-
-          return (
-            <circle
-              key={player.id}
-              cx={relativeX * scale}
-              cy={relativeY * scale}
-              r="3"
-              fill="#32cd32"
-              stroke="#000"
-              strokeWidth="1"
-            />
-          );
-        })}
-
-        {/* Local player (you) */}
-        <circle
-          cx={scaledPlayerX}
-          cy={scaledPlayerY}
-          r="4"
-          fill="#4169e1"
-          stroke="#000"
-          strokeWidth="1"
-        />
-      </svg>
-
-      <div className="mt-2 text-xs">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-[#4169e1] border border-black" />
-          <span>You</span>
-        </div>
-        {remotePlayers.length > 0 && (
-          <div className="flex items-center gap-2 mt-1">
-            <div className="w-3 h-3 rounded-full bg-[#32cd32] border border-black" />
-            <span>Others</span>
-          </div>
-        )}
-      </div>
-    </Card>
+      <canvas
+        ref={canvasRef}
+        width={MINI_W}
+        height={MINI_H}
+        className="block"
+      />
+    </div>
   );
 }

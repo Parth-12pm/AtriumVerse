@@ -109,7 +109,7 @@ var resolver = {
       type: "core",
       statusCode: response.status,
       headers: Object.fromEntries(response.headers.entries()),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       body: getResponseBody(method, response),
       isBase64Encoded: false
     };

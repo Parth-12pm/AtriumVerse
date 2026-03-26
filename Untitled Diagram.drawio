@@ -1,0 +1,89 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/28.1.2 Chrome/138.0.7204.243 Electron/37.4.0 Safari/537.36" version="28.1.2">
+  <diagram name="Page-1" id="fqz-GJHsx5qI8Oi2Hlsy">
+    <mxGraphModel dx="445" dy="579" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2339" pageHeight="3300" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="user" value="&lt;b&gt;User&lt;/b&gt;&lt;br&gt;Browser / Device" style="ellipse;align=center;verticalAlign=middle;html=1;fontSize=11;fontFamily=Helvetica;fillColor=#FFFFFF;strokeColor=#000000;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="220" y="20" width="140" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="auth" value="&lt;b&gt;Auth&lt;/b&gt;&lt;br&gt;JWT · argon2 · OAuth" style="rounded=2;fillColor=#FFF7ED;strokeColor=#F97316;strokeWidth=1.5;html=1;align=center;verticalAlign=middle;fontSize=11;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="190" y="106" width="200" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="a1" value="Register / Login" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#CC0000;strokeWidth=2;endArrow=block;endFill=1;rounded=1;fontSize=9;fontFamily=Helvetica;fontColor=#555555;labelBackgroundColor=none;fontStyle=1" edge="1" parent="1" source="user" target="auth">
+          <mxGeometry x="-0.0667" y="-40" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="dash" value="&lt;b&gt;Dashboard&lt;/b&gt;&lt;br&gt;Browse &amp; Join Servers" style="rounded=2;fillColor=#EFF6FF;strokeColor=#3B82F6;strokeWidth=1.5;html=1;align=center;verticalAlign=middle;fontSize=11;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="190" y="184" width="200" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="a2" value="Authenticated" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#F97316;strokeWidth=2;endArrow=block;endFill=1;rounded=1;fontSize=9;fontFamily=Helvetica;fontColor=#555555;labelBackgroundColor=none;fontStyle=1" edge="1" parent="1" source="auth" target="dash">
+          <mxGeometry x="0.0667" y="-40" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="game" value="&lt;b style=&quot;font-size:13px;&quot;&gt;Game World (Phaser 3)&lt;/b&gt;&lt;br&gt;Tile-based Virtual Space · Grid Engine · 2D Map" style="rounded=3;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2.5;html=1;align=center;verticalAlign=middle;fontSize=11;fontFamily=Helvetica;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="100" y="262" width="380" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="a3" value="Enter Server" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#3B82F6;strokeWidth=2;endArrow=block;endFill=1;rounded=1;fontSize=9;fontFamily=Helvetica;fontColor=#555555;labelBackgroundColor=none;fontStyle=1" edge="1" parent="1" source="dash" target="game">
+          <mxGeometry x="0.2" y="-40" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ws" value="&lt;b&gt;WebSocket&lt;/b&gt;&lt;br&gt;Player moves · Zone events&lt;br&gt;Reactions · Proximity chat" style="rounded=2;fillColor=#F0FDF4;strokeColor=#10B981;strokeWidth=1.5;html=1;align=center;verticalAlign=middle;fontSize=10;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="10" y="370" width="138" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="chat" value="&lt;b&gt;Channels &amp; DMs&lt;/b&gt;&lt;br&gt;Persistent channels&lt;br&gt;REST API + WS broadcast" style="rounded=2;fillColor=#F0F9FF;strokeColor=#0EA5E9;strokeWidth=1.5;html=1;align=center;verticalAlign=middle;fontSize=10;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="162" y="370" width="138" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="e2ee" value="&lt;b&gt;E2EE Crypto&lt;/b&gt;&lt;br&gt;X25519 ECDH · HKDF&lt;br&gt;AES-256-GCM · WebAuthn PRF" style="rounded=2;fillColor=#FFF1F2;strokeColor=#CC0000;strokeWidth=1.5;html=1;align=center;verticalAlign=middle;fontSize=10;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="310" y="370" width="150" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="lk" value="&lt;b&gt;LiveKit SFU&lt;/b&gt;&lt;br&gt;Proximity audio · Zone video&lt;br&gt;WebRTC · RTP streams" style="rounded=2;fillColor=#FAF5FF;strokeColor=#8B5CF6;strokeWidth=1.5;html=1;align=center;verticalAlign=middle;fontSize=10;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="470" y="370" width="138" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="a4" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#10B981;strokeWidth=2;endArrow=block;endFill=1;rounded=1;" edge="1" parent="1" source="game" target="ws">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a5" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0EA5E9;strokeWidth=2;endArrow=block;endFill=1;rounded=1;" edge="1" parent="1" source="game" target="chat">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a6" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#CC0000;strokeWidth=2;endArrow=block;endFill=1;rounded=1;" edge="1" parent="1" source="game" target="e2ee">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a7" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#8B5CF6;strokeWidth=2;endArrow=block;endFill=1;rounded=1;" edge="1" parent="1" source="game" target="lk">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="redis" value="&lt;b&gt;Redis&lt;/b&gt;&lt;br&gt;Positions · Zones&lt;br&gt;Session state" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#F0FDF4;strokeColor=#10B981;strokeWidth=1.5;fontSize=10;fontFamily=Helvetica;align=center;" vertex="1" parent="1">
+          <mxGeometry x="20" y="466" width="110" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="pg" value="&lt;b&gt;PostgreSQL&lt;/b&gt;&lt;br&gt;Users · Messages&lt;br&gt;Channels · E2EE keys" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#EFF6FF;strokeColor=#3B82F6;strokeWidth=1.5;fontSize=10;fontFamily=Helvetica;align=center;" vertex="1" parent="1">
+          <mxGeometry x="210" y="466" width="140" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="idb" value="&lt;b&gt;IndexedDB&lt;/b&gt;&lt;br&gt;Private keys&lt;br&gt;(browser only)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#FFF1F2;strokeColor=#CC0000;strokeWidth=1.5;fontSize=10;fontFamily=Helvetica;align=center;" vertex="1" parent="1">
+          <mxGeometry x="430" y="466" width="110" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="a8" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#10B981;strokeWidth=1.5;endArrow=open;endFill=0;dashed=1;dashPattern=4 3;rounded=1;exitX=0.478;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;" edge="1" parent="1" source="ws" target="redis">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="76" y="447" />
+              <mxPoint x="75" y="447" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="a9" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0EA5E9;strokeWidth=1.5;endArrow=open;endFill=0;dashed=1;dashPattern=4 3;rounded=1;" edge="1" parent="1" source="chat" target="pg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a10" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#CC0000;strokeWidth=1.5;endArrow=open;endFill=0;dashed=1;dashPattern=4 3;rounded=1;" edge="1" parent="1" source="e2ee" target="idb">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a11" value="last positions" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#000000;strokeWidth=1.5;endArrow=open;endFill=0;dashed=1;dashPattern=3 3;rounded=1;fontSize=9;fontFamily=Helvetica;fontColor=#555555;labelBackgroundColor=none;" edge="1" parent="1" source="redis" target="pg">
+          <mxGeometry y="-14" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

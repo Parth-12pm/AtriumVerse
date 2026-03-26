@@ -15,6 +15,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { ArrowRight, Loader2 } from "lucide-react";
+import { clearLocalDeviceIdentity } from "@/lib/deviceIdentity";
 
 export function LoginForm() {
   const router = useRouter();
@@ -41,6 +42,16 @@ export function LoginForm() {
       if (!response.ok) throw new Error("Login failed");
 
       const data = await response.json();
+      const previousDeviceOwnerUserId = localStorage.getItem(
+        "device_owner_user_id",
+      );
+      if (
+        previousDeviceOwnerUserId &&
+        previousDeviceOwnerUserId !== data.user_id
+      ) {
+        await clearLocalDeviceIdentity();
+      }
+
       localStorage.setItem("token", data.access_token);
       localStorage.setItem("username", username);
       localStorage.setItem("user_id", data.user_id);
@@ -72,6 +83,8 @@ export function LoginForm() {
             </Label>
             <Input
               id="username"
+              name="username"
+              autoComplete="username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="Enter username"
@@ -94,6 +107,8 @@ export function LoginForm() {
             </div>
             <Input
               id="password"
+              name="password"
+              autoComplete="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

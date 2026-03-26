@@ -1,9 +1,20 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  // @ts-ignore
-  allowedDevOrigins: ["10.69.188.52"],
+  experimental: {
+    serverActions: {
+      allowedOrigins: ["10.69.188.52", "192.168.1.100", "*"],
+    },
+  },
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "images.unsplash.com",
+        pathname: "/**",
+      },
+    ],
+  },
 };
 
 export default nextConfig;

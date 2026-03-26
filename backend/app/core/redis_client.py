@@ -1,5 +1,6 @@
+import os
+
 import redis.asyncio as redis
-import os 
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -10,20 +11,17 @@ if not REDIS_URL:
 
 r = None
 
+
 async def init_redis():
-    global r 
-    r = await redis.from_url(
-        REDIS_URL,
-        encoding="utf-8",
-        decode_responses=True
-    )
+    global r
+    r = await redis.from_url(REDIS_URL, encoding="utf-8", decode_responses=True)
 
     await r.ping()
     print("Redis Connected")
 
 
 async def close_redis():
-    global r 
+    global r
     if r:
         await r.close()
         print("Redis Disconnected")

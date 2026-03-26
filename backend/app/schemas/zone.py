@@ -1,13 +1,15 @@
-from pydantic import BaseModel
+from typing import Any
 from uuid import UUID
-from typing import Dict , Any 
+
+from pydantic import BaseModel
+
 
 class ZoneResponse(BaseModel):
-    id : UUID
-    server_id : UUID
-    name : str 
-    type : str
-    bounds : Dict[str, Any]
+    id: UUID
+    server_id: UUID
+    name: str
+    type: str
+    bounds: dict[str, Any]
 
     class Config:
-        from_attributes= True
+        from_attributes = True

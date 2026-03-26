@@ -1,5 +1,6 @@
 import asyncio
-from app.core.database import engine, Base
+
+from app.core.database import Base, engine
 
 # Import ALL models here so SQLAlchemy's mapper registry has them all
 # registered before any query runs. Without this, relationship() calls
@@ -23,4 +24,3 @@ async def init_models():
 
 if __name__ == "__main__":
     asyncio.run(init_models())
-

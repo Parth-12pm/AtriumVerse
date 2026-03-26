@@ -3,7 +3,6 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 
-
 export const metadata: Metadata = {
   title: "AtriumVerse",
   description: "Lets get into the Verse",

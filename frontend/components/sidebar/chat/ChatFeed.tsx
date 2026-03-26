@@ -1,16 +1,19 @@
-"use client";
+﻿"use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Send, Edit2, Trash2, User, Hash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { messagesAPI, directMessagesAPI } from "@/lib/services/api.service";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { formatChatTimestamp } from "@/lib/time";
 import EventBus from "@/game/EventBus";
-import { getCommunicationManager } from "@/game/managers/CommunicationManager";
 import type { Message, DirectMessage } from "@/types/api.types";
+import { useDMKeys } from "@/hooks/useDMKeys";
+import { useChannelKeys } from "@/hooks/useChannelKeys";
+import { fetchAPI } from "@/lib/api";
+import { resolveTrustedLocalDevice } from "@/lib/trustedDevice";
 
 // Union type for messages that can be either channel messages or DMs
 type ChatMessage = Message | DirectMessage;
@@ -19,15 +22,9 @@ interface ChatFeedProps {
   mode: "channel" | "dm";
   channelId?: string;
   dmUserId?: string;
-  serverId: string;
 }
 
-export default function ChatFeed({
-  mode,
-  channelId,
-  dmUserId,
-  serverId,
-}: ChatFeedProps) {
+export default function ChatFeed({ mode, channelId, dmUserId }: ChatFeedProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -37,6 +34,91 @@ export default function ChatFeed({
   const currentUserId =
     typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
 
+  const { encryptDM, decryptDM } = useDMKeys();
+  const { encryptForChannel, decryptForChannel } = useChannelKeys();
+
+  const loadChannelMessages = useCallback(async () => {
+    if (!channelId) return;
+
+    try {
+      const response = await messagesAPI.list(channelId);
+      const msgs: Message[] = response.data.reverse(); // Oldest first
+
+      // Hydrate decryption for E2EE messages
+      const hydrated = await Promise.all(
+        msgs.map(async (msg) => {
+          if (msg.is_encrypted && msg.content && msg.epoch != null) {
+            try {
+              msg.decryptedContent = await decryptForChannel(
+                channelId,
+                msg.epoch,
+                msg.content,
+              );
+            } catch (err) {
+              if (
+                err instanceof Error &&
+                err.name === "ChannelKeyUnavailableError"
+              ) {
+                msg.device_key_status = "predates_channel_access";
+              } else {
+                msg.decryptionFailed = true;
+              }
+            }
+          }
+          return msg;
+        }),
+      );
+
+      setMessages(hydrated);
+    } catch (error) {
+      console.error("Failed to load channel messages:", error);
+      toast.error("Failed to load messages");
+    }
+  }, [channelId, decryptForChannel]);
+
+  const loadDMMessages = useCallback(async () => {
+    if (!dmUserId) return;
+
+    try {
+      const { deviceId: myDeviceId } = await resolveTrustedLocalDevice();
+      const response = await directMessagesAPI.getMessages(
+        dmUserId,
+        myDeviceId,
+      );
+      const msgs = response.data.reverse() as DirectMessage[]; // Oldest first
+
+      // Hydrate decryptions
+      const hydrated = await Promise.all(
+        msgs.map(async (msg) => {
+          if (
+            msg.is_encrypted &&
+            msg.encrypted_ciphertext &&
+            msg.epoch &&
+            msg.sender_public_key
+          ) {
+            try {
+              msg.decryptedContent = await decryptDM(
+                msg.id,
+                msg.epoch,
+                msg.encrypted_ciphertext,
+                msg.sender_public_key,
+              );
+            } catch (err) {
+              msg.decryptionFailed = true;
+              toast.error(`decryption failed ${err}`);
+            }
+          }
+          return msg;
+        }),
+      );
+
+      setMessages(hydrated);
+    } catch (error) {
+      console.error("Failed to load DM messages:", error);
+      toast.error("Failed to load messages");
+    }
+  }, [dmUserId, decryptDM]);
+
   // Load messages when channel/DM changes
   useEffect(() => {
     if (mode === "channel" && channelId) {
@@ -44,8 +126,7 @@ export default function ChatFeed({
     } else if (mode === "dm" && dmUserId) {
       loadDMMessages();
     }
-  }, [mode, channelId, dmUserId]);
-
+  }, [mode, channelId, dmUserId, loadChannelMessages, loadDMMessages]);
   // Auto-scroll to bottom on new messages
   useEffect(() => {
     if (scrollRef.current) {
@@ -55,26 +136,96 @@ export default function ChatFeed({
 
   // Listen for real-time messages from WebSocket
   useEffect(() => {
-    const handleChannelMessage = (msg: any) => {
-      // Only add if for this channel and not from current user (already added locally)
-      if (msg.channel_id === channelId && msg.user_id !== currentUserId) {
-        setMessages((prev) => {
-          // Prevent duplicates
-          if (prev.some((m) => m.id === msg.id)) return prev;
-          return [...prev, msg];
-        });
+    const handleChannelMessage = async (msg: ChatMessage) => {
+      if (!("channel_id" in msg)) return;
+      if (msg.channel_id !== channelId || msg.user_id === currentUserId) return;
+
+      const hydratedMsg = { ...msg } as Message;
+      if (
+        hydratedMsg.is_encrypted &&
+        hydratedMsg.content &&
+        hydratedMsg.epoch != null
+      ) {
+        try {
+          hydratedMsg.decryptedContent = await decryptForChannel(
+            channelId,
+            hydratedMsg.epoch,
+            hydratedMsg.content,
+          );
+        } catch (err) {
+          if (
+            err instanceof Error &&
+            err.name === "ChannelKeyUnavailableError"
+          ) {
+            hydratedMsg.device_key_status = "predates_channel_access";
+          } else {
+            hydratedMsg.decryptionFailed = true;
+          }
+        }
       }
+
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === hydratedMsg.id)) return prev;
+        return [...prev, hydratedMsg];
+      });
     };
 
-    const handleDMReceived = (msg: ChatMessage) => {
+    const handleDMReceived = async (msg: ChatMessage) => {
       if (
         "sender_id" in msg &&
         (msg.sender_id === dmUserId || msg.receiver_id === dmUserId)
       ) {
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === msg.id)) return prev;
-          return [...prev, msg];
-        });
+        // Prevent reacting to our own echo
+        if (msg.sender_id === currentUserId) return;
+
+        // Fetch only this message's device-specific ciphertext slice instead of
+        // refetching the full history. Falls back to loadDMMessages() if the
+        // single-message endpoint is unavailable (404 / network error).
+        try {
+          const { deviceId: myDeviceId } = await resolveTrustedLocalDevice();
+          const token = localStorage.getItem("token");
+
+          const res = await fetch(
+            `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/dm/messages/${msg.id}/my-ciphertext?device_id=${myDeviceId}`,
+            { headers: { Authorization: `Bearer ${token}` } },
+          );
+
+          if (!res.ok) {
+            // Endpoint not yet deployed or message not ready — fall back gracefully
+            await loadDMMessages();
+            return;
+          }
+
+          const slice = await res.json();
+          // slice shape: { encrypted_ciphertext, sender_public_key, epoch, id, created_at, sender_id }
+
+          let decryptedContent: string | undefined;
+          try {
+            decryptedContent = await decryptDM(
+              slice.id,
+              slice.epoch,
+              slice.encrypted_ciphertext,
+              slice.sender_public_key,
+            );
+          } catch {
+            // Decryption failed — still append with failed flag so the UI shows the right status
+          }
+
+          const newMsg: DirectMessage = {
+            ...slice,
+            is_encrypted: true,
+            decryptedContent,
+            decryptionFailed: !decryptedContent,
+          } as DirectMessage;
+
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === newMsg.id)) return prev; // deduplicate
+            return [...prev, newMsg];
+          });
+        } catch {
+          // Any unexpected error — full refetch as last resort
+          await loadDMMessages();
+        }
       }
     };
 
@@ -101,45 +252,15 @@ export default function ChatFeed({
         EventBus.off("dm:deleted", handleDMDeleted);
       };
     }
-  }, [mode, channelId, dmUserId, currentUserId]);
-
-  const handleDMReceived = (msg: ChatMessage) => {
-    // Only add if it's for the current conversation
-    if (
-      "sender_id" in msg &&
-      (msg.sender_id === dmUserId || msg.receiver_id === dmUserId)
-    ) {
-      setMessages((prev) => [...prev, msg]);
-    }
-  };
-
-  const handleDMUpdated = (msg: ChatMessage) => {
-    setMessages((prev) => prev.map((m) => (m.id === msg.id ? msg : m)));
-  };
-
-  const handleDMDeleted = (data: { message_id: string }) => {
-    setMessages((prev) => prev.filter((m) => m.id !== data.message_id));
-  };
-
-  const loadChannelMessages = async () => {
-    try {
-      const response = await messagesAPI.list(channelId!);
-      setMessages(response.data.reverse()); // Oldest first
-    } catch (error) {
-      console.error("Failed to load channel messages:", error);
-      toast.error("Failed to load messages");
-    }
-  };
-
-  const loadDMMessages = async () => {
-    try {
-      const response = await directMessagesAPI.getMessages(dmUserId!);
-      setMessages(response.data.reverse()); // Oldest first
-    } catch (error) {
-      console.error("Failed to load DM messages:", error);
-      toast.error("Failed to load messages");
-    }
-  };
+  }, [
+    mode,
+    channelId,
+    currentUserId,
+    decryptForChannel,
+    dmUserId,
+    loadDMMessages,
+    decryptDM,
+  ]);
 
   const sendMessage = async () => {
     if (!newMessage.trim()) return;
@@ -147,36 +268,124 @@ export default function ChatFeed({
     setLoading(true);
     try {
       if (mode === "channel" && channelId) {
-        // Use messagesAPI directly for reliable REST calls
-        const response = await messagesAPI.send(channelId, {
-          content: newMessage.trim(),
-        });
-        // Add the new message to the list locally
-        setMessages((prev) => [...prev, response.data]);
+        let content = newMessage.trim();
+        let isEncrypted = false;
+        let epoch: number | undefined;
 
-        // Broadcast via WebSocket so other users receive it in real-time
-        EventBus.emit("channel:message_sent", {
+        try {
+          const encrypted = await encryptForChannel(channelId, content);
+          content = encrypted.ciphertext;
+          epoch = encrypted.epoch;
+          isEncrypted = true;
+        } catch (err) {
+          if (
+            !(err instanceof Error) ||
+            err.name !== "ChannelEncryptionDisabledError"
+          ) {
+            throw err;
+          }
+        }
+
+        const response = await messagesAPI.send(channelId, {
+          content,
+          is_encrypted: isEncrypted,
+          epoch,
+        } as any);
+
+        const newMsg: Message = {
           ...response.data,
+          // Show the plaintext locally immediately without re-decrypting
+          decryptedContent: isEncrypted ? newMessage.trim() : undefined,
+        };
+
+        setMessages((prev) => [...prev, newMsg]);
+
+        EventBus.emit("channel:message_sent", {
+          ...newMsg,
           channel_id: channelId,
         });
       } else if (mode === "dm" && dmUserId) {
-        const response = await directMessagesAPI.send({
-          receiver_id: dmUserId,
-          content: newMessage.trim(),
+        const { deviceId: myDeviceId } = await resolveTrustedLocalDevice();
+
+        // Step 1: Fetch target devices with public keys
+        // Must use /devices/user/{id} (not /my-devices) because only that endpoint returns public_key
+        const myUserId = localStorage.getItem("user_id");
+        if (!myUserId) throw new Error("No user_id in localStorage");
+
+        const [myDevicesRes, targetDevicesRes] = await Promise.all([
+          fetchAPI(`/devices/user/${myUserId}`),
+          fetchAPI(`/devices/user/${dmUserId}`),
+        ]);
+
+        // Normalize: both endpoints return { device_id, public_key }
+        const normalize = (d: { device_id: string; public_key: string }) => ({
+          id: d.device_id,
+          public_key: d.public_key,
         });
-        setMessages((prev) => [...prev, response.data]);
+
+        const allTargetDevices = [
+          ...myDevicesRes.map(normalize),
+          ...targetDevicesRes.map(normalize),
+        ];
+        if (allTargetDevices.length === 0) {
+          throw new Error("No devices found for DM encryption");
+        }
+
+        // Step 2: Send placeholder
+        const step1Response = await directMessagesAPI.send({
+          receiver_id: dmUserId,
+          content: "[encrypted]",
+          is_encrypted: true,
+          sender_device_id: myDeviceId,
+        });
+
+        const sentMsg: DirectMessage = step1Response.data;
+
+        try {
+          // Step 3: Encrypt for all target devices
+          const ciphertexts = await encryptDM(
+            sentMsg.id,
+            sentMsg.epoch!,
+            newMessage.trim(),
+            allTargetDevices,
+          );
+
+          // Step 4: Submit keys
+          await directMessagesAPI.submitDeviceKeys(sentMsg.id, ciphertexts);
+        } catch {
+          // ROLLBACK: Delete the placeholder message if key generation/upload fails
+          await directMessagesAPI.delete(sentMsg.id);
+          throw new Error("Failed to secure DM. Message creation rolled back.");
+        }
+
+        // Hydrate sent message locally
+        sentMsg.decryptedContent = newMessage.trim();
+        sentMsg.is_encrypted = true;
+
+        setMessages((prev) => [...prev, sentMsg]);
+
+        // Scrub any sensitive plaintext before broadcasting over WS
+        // We only transmit a strict shell so devices know WHICH message to fetch
+        const wsPayload = {
+          id: sentMsg.id,
+          epoch: sentMsg.epoch,
+          sender_id: currentUserId,
+          receiver_id: dmUserId,
+          created_at: sentMsg.created_at,
+          is_encrypted: true,
+        };
 
         // Send DM notification via WebSocket
         EventBus.emit("dm:message_sent", {
           target_id: dmUserId,
-          message: response.data,
+          message: wsPayload,
         });
       }
 
       setNewMessage("");
     } catch (error) {
       console.error("Failed to send message:", error);
-      toast.error("Failed to send message");
+      toast.error(error?.message || "Failed to send message");
     } finally {
       setLoading(false);
     }
@@ -209,7 +418,7 @@ export default function ChatFeed({
 
       setEditingId(null);
       toast.success("Message updated");
-    } catch (error) {
+    } catch {
       toast.error("Failed to update message");
     }
   };
@@ -226,15 +435,7 @@ export default function ChatFeed({
 
       toast.success("Message deleted");
     } catch (error) {
-      toast.error("Failed to delete message");
-    }
-  };
-
-  const formatTime = (timestamp: string) => {
-    try {
-      return format(new Date(timestamp), "h:mm a");
-    } catch {
-      return "";
+      toast.error("Failed to delete message", error);
     }
   };
 
@@ -257,24 +458,24 @@ export default function ChatFeed({
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-white">
+    <div className="flex-1 flex flex-col min-h-0 bg-background text-foreground">
       {/* Messages Area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
-            <div className="w-16 h-16 bg-gray-100 rounded-lg border-3 border-black flex items-center justify-center mb-4">
+            <div className="w-16 h-16 bg-muted rounded-lg border-2 border-border flex items-center justify-center mb-4">
               {mode === "channel" ? (
                 <Hash className="w-8 h-8 text-gray-500" />
               ) : (
                 <User className="w-8 h-8 text-gray-500" />
               )}
             </div>
-            <h3 className="text-xl font-black mb-2">
+            <h3 className="text-xl font-black mb-2 text-foreground">
               {mode === "channel"
                 ? "Start the conversation!"
                 : "No messages yet"}
             </h3>
-            <p className="text-gray-500 text-sm">
+            <p className="text-muted-foreground text-sm">
               {mode === "channel"
                 ? "Be the first to send a message"
                 : "Send a message to start chatting"}
@@ -292,9 +493,9 @@ export default function ChatFeed({
                 className={`flex gap-3 -mx-2 px-2 py-2 rounded-lg group ${isOwnMessage ? "flex-row-reverse" : "flex-row"}`}
               >
                 {/* Avatar */}
-                <Avatar className="w-10 h-10 flex-shrink-0">
+                <Avatar className="w-10 h-10 shrink-0">
                   <AvatarFallback
-                    className={`text-white font-black ${isOwnMessage ? "bg-gradient-to-br from-blue-500 to-blue-600" : "bg-gradient-to-br from-purple-400 to-pink-400"}`}
+                    className={`text-white font-black ${isOwnMessage ? "bg-linear-to-br from-blue-500 to-blue-600" : "bg-linear-to-br from-purple-400 to-pink-400"}`}
                   >
                     {username.slice(0, 2).toUpperCase()}
                   </AvatarFallback>
@@ -308,11 +509,11 @@ export default function ChatFeed({
                     className={`flex items-center gap-2 mb-1 ${isOwnMessage ? "flex-row-reverse" : "flex-row"}`}
                   >
                     <span className="font-black text-sm">{username}</span>
-                    <span className="text-xs text-gray-500">
-                      {formatTime(msg.created_at)}
+                    <span className="text-xs text-muted-foreground">
+                      {formatChatTimestamp(msg.created_at)}
                     </span>
                     {msg.edited_at && (
-                      <span className="text-xs text-gray-500 italic">
+                      <span className="text-xs text-muted-foreground italic">
                         (edited)
                       </span>
                     )}
@@ -334,7 +535,7 @@ export default function ChatFeed({
                       <Button
                         onClick={() => saveEdit(msg.id)}
                         variant="default"
-                        className="bg-blue-500 text-white hover:bg-blue-600"
+                        className="bg-primary text-primary-foreground hover:bg-primary/90"
                         size="sm"
                       >
                         Save
@@ -352,9 +553,24 @@ export default function ChatFeed({
                       className={`relative group/msg ${isOwnMessage ? "w-full flex justify-end" : "w-full"}`}
                     >
                       <div
-                        className={`inline-block px-4 py-2 rounded-2xl ${isOwnMessage ? "bg-blue-500 text-white rounded-br-sm" : "bg-gray-100 text-gray-900 rounded-bl-sm"}`}
+                        className={`px-4 py-2 rounded-2xl flex items-center justify-between min-w-15 gap-2 ${isOwnMessage ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}
                       >
-                        <p className="text-sm break-words">{msg.content}</p>
+                        <p className="text-sm wrap-break-words whitespace-pre-wrap">
+                          {msg.is_encrypted
+                            ? "decryptedContent" in msg && msg.decryptedContent
+                              ? msg.decryptedContent
+                              : msg.decryptionFailed
+                                ? "ðŸ”’ [Decryption Failed]"
+                                : msg.device_key_status === "predates_device"
+                                  ? "[Sent before this device was linked]"
+                                  : msg.device_key_status === "device_removed"
+                                    ? "[Encrypted for a removed device]"
+                                    : msg.device_key_status ===
+                                        "predates_channel_access"
+                                      ? "[Sent before you had access to this channel]"
+                                      : "[Encrypted]"
+                            : msg.content}
+                        </p>
                       </div>
 
                       {/* Actions (only for own messages) */}
@@ -372,9 +588,9 @@ export default function ChatFeed({
                             onClick={() => deleteMessage(msg.id)}
                             variant="neutral"
                             size="icon"
-                            className="w-6 h-6 p-0 hover:bg-red-100"
+                            className="w-6 h-6 p-0 hover:bg-destructive/15"
                           >
-                            <Trash2 className="w-3 h-3 text-red-600" />
+                            <Trash2 className="w-3 h-3 text-destructive" />
                           </Button>
                         </div>
                       )}
@@ -388,7 +604,7 @@ export default function ChatFeed({
       </div>
 
       {/* Message Input */}
-      <div className="p-4 border-t-4 border-black bg-gray-50 flex-shrink-0">
+      <div className="p-4 border-t border-border bg-muted/40 shrink-0">
         <div className="flex gap-2">
           <Input
             type="text"
@@ -409,7 +625,7 @@ export default function ChatFeed({
             onClick={sendMessage}
             disabled={loading || !newMessage.trim()}
             variant="default"
-            className="bg-blue-500 text-white hover:bg-blue-600"
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
             size="icon"
           >
             <Send className="w-5 h-5" />

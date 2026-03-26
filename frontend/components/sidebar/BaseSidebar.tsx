@@ -3,14 +3,13 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Map,
-  MessageSquare,
   Video,
-  Settings,
-  Users,
   LogOut,
   Trash2,
+  MessageSquare,
+  Settings
 } from "lucide-react";
+import { UsersIcon } from "@/components/ui/users";
 import { Button } from "@/components/ui/button";
 import ChatExpandedView from "@/components/sidebar/chat/ChatExpandedView";
 import PeopleExpandedView from "@/components/sidebar/people/PeopleExpandedView";
@@ -18,6 +17,11 @@ import EventBus, { GameEvents } from "@/game/EventBus";
 import { serversAPI } from "@/lib/services/api.service";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { useDevice } from "@/hooks/useDevice";
+import { DeviceLinkModal } from "@/components/auth/DeviceLinkModal";
+import { BackupSetup } from "@/components/auth/BackupSetup";
+import { RecoveryFlow } from "@/components/auth/RecoveryFlow";
+import { clearLocalDeviceIdentity } from "@/lib/deviceIdentity";
 
 interface BaseSidebarProps {
   serverId: string;
@@ -37,6 +41,21 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
   const [currentZone, setCurrentZone] = useState("Hall");
   const [isServerOwner, setIsServerOwner] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+
+  const { deviceState, backupInfo, recoverDevice, pendingRequest } =
+    useDevice();
+  const [showBackupSetup, setShowBackupSetup] = useState(false);
+
+  // If device just registered as first device, force backup setup
+  useEffect(() => {
+    if (
+      deviceState === "trusted" &&
+      !localStorage.getItem("backup_configured_v1")
+    ) {
+      // Check if we just registered without a backup
+      setTimeout(() => setShowBackupSetup(true), 0);
+    }
+  }, [deviceState]);
 
   // Fetch server data to determine ownership and pending requests
   useEffect(() => {
@@ -92,14 +111,20 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
 
   // Emit ui:focus/ui:blur events for game input control
   useEffect(() => {
-    if (currentView !== "collapsed") {
+    const isModalActive =
+      !!pendingRequest ||
+      deviceState === "recovery_prompt" ||
+      deviceState === "waiting_for_approval" ||
+      showBackupSetup;
+
+    if (currentView !== "collapsed" || isModalActive) {
       // Tell game to disable input
       EventBus.emit("ui:focus");
     } else {
       // Tell game to re-enable input
       EventBus.emit("ui:blur");
     }
-  }, [currentView]);
+  }, [currentView, pendingRequest, deviceState, showBackupSetup]);
 
   const toggleView = (view: SidebarView) => {
     if (currentView === view) {
@@ -112,7 +137,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
   return (
     <>
       {/* Icon Sidebar - Always Visible */}
-      <div className="fixed left-0 top-0 h-full w-19 bg-white border-r-4 border-black z-50 flex flex-col items-center py-4 gap-4">
+      <div className="fixed left-0 top-0 h-full w-19 bg-white border-r-4 border-black z-100 flex flex-col items-center py-4 gap-4">
         {/* Logo */}
         <div className="w-12 h-12 bg-blue-500 border-3 border-black rounded-lg flex items-center justify-center mb-4">
           <span className="text-white font-black text-xl">AV</span>
@@ -126,21 +151,6 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
         {/* Divider */}
         <div className="w-8 h-1 bg-black"></div>
 
-        {/* Map Button */}
-        <Button
-          onClick={() => toggleView("map")}
-          variant="neutral"
-          size="icon"
-          className={`w-12 h-12 rounded-lg ${
-            currentView === "map"
-              ? "bg-purple-500 text-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
-              : "bg-gray-100 hover:bg-gray-200"
-          }`}
-          title="Map"
-        >
-          <Map className="w-6 h-6" />
-        </Button>
-
         {/* Chat Button */}
         <Button
           onClick={() => toggleView("chat")}
@@ -153,7 +163,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
           }`}
           title="Chat"
         >
-          <MessageSquare className="w-6 h-6" />
+          <MessageSquare size={24} />
         </Button>
 
         {/* People Button */}
@@ -168,29 +178,13 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
           }`}
           title="People"
         >
-          <Users className="w-6 h-6" />
-        </Button>
-
-        {/* Media Room Button (Future LiveKit) */}
-        <Button
-          onClick={() => toggleView("media")}
-          variant="neutral"
-          size="icon"
-          className={`w-12 h-12 rounded-lg ${
-            currentView === "media"
-              ? "bg-green-500 text-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
-              : "bg-gray-100 hover:bg-gray-200"
-          }`}
-          title="Media Room (Coming Soon)"
-        >
-          <Video className="w-6 h-6" />
+          <UsersIcon size={24} />
         </Button>
 
         {/* Spacer */}
         <div className="flex-1"></div>
 
         {/* Bottom Buttons */}
-
         <Button
           onClick={() => toggleView("settings")}
           variant="neutral"
@@ -202,7 +196,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
           }`}
           title="Settings"
         >
-          <Settings className="w-6 h-6" />
+          <Settings size={24} />
           {pendingCount > 0 && (
             <Badge className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center bg-red-500 text-white text-xs border-2 border-black">
               {pendingCount}
@@ -236,7 +230,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
       )}
 
       {currentView === "map" && (
-        <div className="fixed  left-19 top-0 h-full w-[400px] bg-white border-r-4 border-black z-40 flex flex-col">
+        <div className="fixed left-19 top-0 h-full w-100 bg-white border-r-4 border-black z-90 flex flex-col shadow-[8px_0px_0px_0px_rgba(0,0,0,1)]">
           {/* Map View Header */}
           <div className="p-4 border-b-4 border-black bg-purple-500 flex items-center justify-between">
             <h2 className="text-xl font-black text-white">Map Overview</h2>
@@ -263,10 +257,9 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
       )}
 
       {currentView === "media" && (
-        <div className="fixed     left-26 top-0 h-full w-[400px] bg-white border-r-4 border-black z-40 flex flex-col">
-          {/* Media View Header */}
-          <div className="p-4 border-b-4 border-black bg-green-500 flex items-center justify-between">
-            <h2 className="text-xl font-black text-white">Media Room</h2>
+        <div className="fixed left-26 top-0 h-full w-100 bg-gray-900 border-r-4 border-black z-40 flex flex-col">
+          <div className="p-4 border-b-4 border-black bg-indigo-600 flex items-center justify-between shrink-0">
+            <h2 className="text-xl font-black text-white">Video Room</h2>
             <Button
               onClick={() => setCurrentView("collapsed")}
               variant="default"
@@ -275,15 +268,18 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
               Collapse
             </Button>
           </div>
-
-          {/* Media Content */}
-          <div className="flex-1 p-4 overflow-auto flex items-center justify-center">
-            <div className="bg-green-100 border-3 border-black rounded-lg p-6 text-center max-w-sm">
-              <Video className="w-16 h-16 mx-auto mb-4" />
-              <p className="font-bold text-lg mb-2">LiveKit Integration</p>
-              <p className="text-sm text-gray-700">
-                Voice and video chat will be available here once LiveKit is
-                integrated!
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-6 gap-4">
+            <div className="w-16 h-16 rounded-full bg-indigo-900 border-2 border-indigo-500 flex items-center justify-center">
+              <Video className="w-8 h-8 text-indigo-300" />
+            </div>
+            <div>
+              <p className="font-black text-lg text-white">
+                Video call is automatic
+              </p>
+              <p className="text-sm text-gray-400 mt-1">
+                Walk into a <strong className="text-indigo-300">Room_*</strong>{" "}
+                zone on the map. A video call strip will appear — click ↗ to
+                expand it here.
               </p>
             </div>
           </div>
@@ -291,7 +287,7 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
       )}
 
       {currentView === "settings" && (
-        <div className="fixed     left-26 top-0 h-full w-[400px] bg-white border-r-4 border-black z-40 flex flex-col">
+        <div className="fixed     left-26 top-0 h-full w-100 bg-white border-r-4 border-black z-40 flex flex-col">
           {/* Settings View Header */}
           <div className="p-4 border-b-4 border-black bg-gray-800 flex items-center justify-between">
             <h2 className="text-xl font-black text-white">Settings</h2>
@@ -307,14 +303,14 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
           {/* Settings Content */}
           <div className="flex-1 p-4 overflow-auto flex flex-col gap-4">
             {/* Exit Game (No API call) */}
-            <div className="bg-blue-50 border-3 border-blue-500 rounded-lg p-4">
+            <div className="bg-blue-100 border-3 border-blue-500 rounded-lg p-4">
               <h3 className="font-black text-blue-700 mb-2 flex items-center gap-2">
                 <LogOut className="w-5 h-5" />
                 Exit Game
               </h3>
-              <p className="text-sm text-gray-700 mb-3">
-                Return to dashboard. You'll remain a member of this server and
-                can rejoin anytime.
+              <p className="text-sm text-black mb-3">
+                Return to dashboard. You&apos;ll remain a member of this server
+                and can rejoin anytime.
               </p>
               <Button
                 onClick={() => {
@@ -375,14 +371,23 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
                   channels, messages, and members will be permanently deleted.
                 </p>
                 <Button
-                  onClick={() => {
-                    if (
-                      confirm(
-                        "⚠️ DELETE SERVER? This CANNOT be undone! Type 'DELETE' to confirm.",
-                      )
-                    ) {
-                      // TODO: Call serversAPI.delete(serverId)
-                      router.push("/dashboard");
+                  onClick={async () => {
+                    const confirmation = prompt(
+                      "⚠️ DELETE SERVER? This CANNOT be undone! Type 'DELETE' to confirm.",
+                    );
+                    if (confirmation === "DELETE") {
+                      try {
+                        await serversAPI.delete(serverId);
+                        toast.success("Server deleted successfully");
+                        window.location.href = "/dashboard";
+                      } catch (error) {
+                        toast.error(error.message || "Failed to delete server");
+                        console.error("Delete server error:", error);
+                      }
+                    } else if (confirmation !== null) {
+                      toast.error(
+                        "Confirmation didn't match 'DELETE', cancelled.",
+                      );
                     }
                   }}
                   className="w-full bg-red-600 hover:bg-red-700 text-white font-bold border-3 border-black"
@@ -392,6 +397,78 @@ export default function BaseSidebar({ serverId }: BaseSidebarProps) {
                 </Button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* --- Auth / Device Modals --- */}
+
+      {/* 1. Linking Ceremony */}
+      {pendingRequest && (
+        <DeviceLinkModal
+          pendingRequest={pendingRequest}
+          isOpen={true}
+          onSuccess={() => window.location.reload()}
+          onReject={() => window.location.reload()}
+        />
+      )}
+
+      {/* 2. Recovery Prompt */}
+      {deviceState === "waiting_for_approval" && (
+        <div className="fixed left-16 top-0 bottom-0 w-80 z-100 bg-zinc-950/95 backdrop-blur-sm flex items-center justify-center p-4 border-r-4 border-black">
+          <div className="w-full rounded-lg border-4 border-black bg-white p-5 text-center space-y-3">
+            <h2 className="text-xl font-black">Approve This Browser</h2>
+            <p className="text-sm text-muted-foreground">
+              This browser has been registered as a new device but is not
+              trusted yet. Approve it from an existing trusted browser or
+              recover from your backup.
+            </p>
+            <Button
+              variant="neutral"
+              onClick={async () => {
+                await clearLocalDeviceIdentity();
+                window.location.reload();
+              }}
+              className="w-full"
+            >
+              Start Over
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {deviceState === "recovery_prompt" && (
+        <div className="fixed left-16 top-0 bottom-0 w-80 z-100 bg-zinc-950/95 backdrop-blur-sm flex items-center justify-center p-4 border-r-4 border-black">
+          <div className="w-full">
+            <RecoveryFlow
+              backupInfo={backupInfo}
+              onRecovered={async (
+                privateKey: CryptoKey,
+                publicKeyBase64: string,
+              ) => {
+                await recoverDevice(privateKey, publicKeyBase64);
+                localStorage.setItem("backup_configured_v1", "true"); // Avoid forcing backup setup again
+              }}
+              onCancel={async () => {
+                // If they cancel recovery, they have to link as a new device
+                await clearLocalDeviceIdentity();
+                window.location.reload();
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* 3. Mandatory Backup Setup (First Time) */}
+      {showBackupSetup && (
+        <div className="fixed left-16 top-0 bottom-0 w-80 z-100 bg-zinc-950/95 backdrop-blur-sm flex items-center justify-center p-4 border-r-4 border-black">
+          <div className="w-full relative">
+            <BackupSetup
+              onComplete={() => {
+                localStorage.setItem("backup_configured_v1", "true");
+                setShowBackupSetup(false);
+              }}
+            />
           </div>
         </div>
       )}

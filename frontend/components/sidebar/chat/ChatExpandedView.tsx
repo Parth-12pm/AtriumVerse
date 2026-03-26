@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { X, Hash, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ChannelList from "@/components/sidebar/chat/ChannelList";
@@ -37,13 +37,6 @@ export default function ChatExpandedView({
   const [loading, setLoading] = useState(true);
   const [isServerOwner, setIsServerOwner] = useState(false);
 
-  // Load server data and channels
-  useEffect(() => {
-    loadServerData();
-    loadChannels();
-    loadDMConversations();
-  }, [serverId]);
-
   // Listen for dm:start events from People view
   useEffect(() => {
     const handleDMStart = (data: { userId: string; username: string }) => {
@@ -58,6 +51,46 @@ export default function ChatExpandedView({
     return () => {
       EventBus.off("dm:start", handleDMStart);
     };
+  }, []);
+
+  const loadServerData = useCallback(async () => {
+    try {
+      const response = await serversAPI.get(serverId);
+      const userId = getUserId();
+      setIsServerOwner(response.data.owner_id === userId);
+    } catch (error) {
+      console.error("Failed to load server data:", error);
+    }
+  }, [serverId]);
+
+  const getUserId = (): string => {
+    // Get from localStorage (set during login)
+    return localStorage.getItem("user_id") || "";
+  };
+
+  const loadChannels = useCallback(async () => {
+    try {
+      const response = await channelsAPI.list(serverId);
+      setChannels(response.data);
+
+      // Auto-select first channel
+      if (response.data.length > 0 && !selectedChannelId) {
+        setSelectedChannelId(response.data[0].id);
+      }
+    } catch (error) {
+      console.error("Failed to load channels:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [serverId, selectedChannelId]);
+
+  const loadDMConversations = useCallback(async () => {
+    try {
+      const response = await directMessagesAPI.listConversations();
+      setDMConversations(response.data);
+    } catch (error) {
+      console.error("Failed to load DM conversations:", error);
+    }
   }, []);
 
   // Refresh DM conversations when a message is sent (for immediate list update)
@@ -79,47 +112,14 @@ export default function ChatExpandedView({
       EventBus.off("dm:message_sent", handleDMSent);
       EventBus.off("dm:received", handleDMReceived);
     };
-  }, []);
+  }, [loadDMConversations]);
 
-  const loadServerData = async () => {
-    try {
-      const response = await serversAPI.get(serverId);
-      const userId = getUserId();
-      setIsServerOwner(response.data.owner_id === userId);
-    } catch (error) {
-      console.error("Failed to load server data:", error);
-    }
-  };
-
-  const getUserId = (): string => {
-    // Get from localStorage (set during login)
-    return localStorage.getItem("user_id") || "";
-  };
-
-  const loadChannels = async () => {
-    try {
-      const response = await channelsAPI.list(serverId);
-      setChannels(response.data);
-
-      // Auto-select first channel
-      if (response.data.length > 0 && !selectedChannelId) {
-        setSelectedChannelId(response.data[0].id);
-      }
-    } catch (error) {
-      console.error("Failed to load channels:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadDMConversations = async () => {
-    try {
-      const response = await directMessagesAPI.listConversations();
-      setDMConversations(response.data);
-    } catch (error) {
-      console.error("Failed to load DM conversations:", error);
-    }
-  };
+  // Load server data and channels
+  useEffect(() => {
+    loadServerData();
+    loadChannels();
+    loadDMConversations();
+  }, [loadServerData, loadChannels, loadDMConversations]);
 
   const handleChannelSelect = (channelId: string) => {
     setMode("channel");
@@ -181,17 +181,17 @@ export default function ChatExpandedView({
   );
 
   return (
-    <div className="fixed left-16 top-0 h-full flex z-40">
+    <div className="fixed left-19 top-0 z-80 flex h-full text-foreground">
       {/* Left Card: Channel/DM List (Slim) */}
-      <div className="w-72 bg-white border-r-4 border-black flex flex-col">
+      <div className="flex w-72 flex-col border-r-2 border-border bg-card">
         {/* Header with Close Button */}
-        <div className="p-4 border-b-4 border-black bg-blue-500 flex items-center justify-between">
-          <h2 className="text-xl font-black text-white">Chat</h2>
+        <div className="flex items-center justify-between border-b-2 border-border bg-primary p-4 text-primary-foreground">
+          <h2 className="text-xl font-black">Chat</h2>
           <Button
             onClick={onClose}
             variant="neutral"
             size="icon"
-            className="w-8 h-8 bg-white hover:bg-gray-100"
+            className="h-8 w-8 border-border bg-card text-foreground hover:bg-muted"
             title="Close Chat"
           >
             <X className="w-5 h-5" />
@@ -207,8 +207,8 @@ export default function ChatExpandedView({
           onChannelSelect={handleChannelSelect}
           onDMSelect={handleDMSelect}
           loading={loading}
-          serverId={serverId}
           isServerOwner={isServerOwner}
+          serverId={serverId}
           onCreateChannel={handleCreateChannel}
           onUpdateChannel={handleUpdateChannel}
           onDeleteChannel={handleDeleteChannel}
@@ -216,18 +216,18 @@ export default function ChatExpandedView({
       </div>
 
       {/* Right Card: Message Feed (Wide) */}
-      <div className="w-[600px] bg-white border-r-4 border-black flex flex-col h-screen overflow-hidden">
+      <div className="flex h-screen w-[600px] flex-col overflow-hidden border-r-2 border-border bg-background">
         {/* Feed Header */}
-        <div className="p-4 border-b-4 border-black bg-gray-50 flex items-center gap-3 flex-shrink-0">
+        <div className="flex shrink-0 items-center gap-3 border-b-2 border-border bg-muted/40 p-4">
           {mode === "channel" && selectedChannel ? (
             <>
-              <div className="w-10 h-10 bg-blue-500 border-3 border-black rounded-lg flex items-center justify-center">
-                <Hash className="w-6 h-6 text-white" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg border-2 border-border bg-primary text-primary-foreground">
+                <Hash className="h-6 w-6" />
               </div>
               <div>
                 <h3 className="font-black text-lg">#{selectedChannel.name}</h3>
                 {selectedChannel.description && (
-                  <p className="text-sm text-gray-600">
+                  <p className="text-sm text-muted-foreground">
                     {selectedChannel.description}
                   </p>
                 )}
@@ -235,8 +235,8 @@ export default function ChatExpandedView({
             </>
           ) : mode === "dm" && (selectedDM || selectedDMUserId) ? (
             <>
-              <div className="w-10 h-10 bg-purple-500 border-3 border-black rounded-full flex items-center justify-center">
-                <User className="w-6 h-6 text-white" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-border bg-secondary text-secondary-foreground">
+                <User className="h-6 w-6" />
               </div>
               <div>
                 <h3 className="font-black text-lg">
@@ -244,37 +244,30 @@ export default function ChatExpandedView({
                     selectedDMUsername ||
                     "Direct Message"}
                 </h3>
-                <p className="text-sm text-gray-600">Direct Message</p>
+                <p className="text-sm text-muted-foreground">Direct Message</p>
               </div>
             </>
           ) : (
             <div className="text-center w-full">
-              <p className="text-gray-500 font-bold">Select a channel or DM</p>
+              <p className="font-bold text-muted-foreground">
+                Select a channel or DM
+              </p>
             </div>
           )}
         </div>
-
         {/* Message Feed - Takes remaining height */}
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
           {mode === "channel" && selectedChannelId ? (
-            <ChatFeed
-              mode="channel"
-              channelId={selectedChannelId}
-              serverId={serverId}
-            />
+            <ChatFeed mode="channel" channelId={selectedChannelId} />
           ) : mode === "dm" && selectedDMUserId ? (
-            <ChatFeed
-              mode="dm"
-              dmUserId={selectedDMUserId}
-              serverId={serverId}
-            />
+            <ChatFeed mode="dm" dmUserId={selectedDMUserId} />
           ) : (
             <div className="flex-1 flex items-center justify-center">
-              <div className="text-center max-w-sm p-8 bg-gray-50 border-3 border-black rounded-lg">
-                <p className="text-gray-500 font-bold text-lg mb-2">
+              <div className="max-w-sm rounded-lg border-2 border-border bg-muted/40 p-8 text-center">
+                <p className="mb-2 text-lg font-bold text-muted-foreground">
                   💬 Welcome to Chat!
                 </p>
-                <p className="text-gray-600 text-sm">
+                <p className="text-sm text-muted-foreground">
                   Select a channel or start a direct message to begin chatting.
                 </p>
               </div>

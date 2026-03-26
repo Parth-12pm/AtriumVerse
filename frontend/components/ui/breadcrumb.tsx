@@ -1,12 +1,12 @@
-import { Slot } from "@radix-ui/react-slot"
-import { ChevronRight, MoreHorizontal } from "lucide-react"
+import { Slot } from "@radix-ui/react-slot";
+import { ChevronRight, MoreHorizontal } from "lucide-react";
 
-import * as React from "react"
+import * as React from "react";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 function Breadcrumb({ ...props }: React.ComponentProps<"nav">) {
-  return <nav data-slot="breadcrumb" aria-label="breadcrumb" {...props} />
+  return <nav data-slot="breadcrumb" aria-label="breadcrumb" {...props} />;
 }
 
 function BreadcrumbList({ className, ...props }: React.ComponentProps<"ol">) {
@@ -19,7 +19,7 @@ function BreadcrumbList({ className, ...props }: React.ComponentProps<"ol">) {
       )}
       {...props}
     />
-  )
+  );
 }
 
 function BreadcrumbItem({ className, ...props }: React.ComponentProps<"li">) {
@@ -29,7 +29,7 @@ function BreadcrumbItem({ className, ...props }: React.ComponentProps<"li">) {
       className={cn("inline-flex items-center gap-1.5", className)}
       {...props}
     />
-  )
+  );
 }
 
 function BreadcrumbLink({
@@ -37,13 +37,13 @@ function BreadcrumbLink({
   className,
   ...props
 }: React.ComponentProps<"a"> & {
-  asChild?: boolean
+  asChild?: boolean;
 }) {
-  const Comp = asChild ? Slot : "a"
+  const Comp = asChild ? Slot : "a";
 
   return (
     <Comp data-slot="breadcrumb-link" className={cn(className)} {...props} />
-  )
+  );
 }
 
 function BreadcrumbPage({ className, ...props }: React.ComponentProps<"span">) {
@@ -56,7 +56,7 @@ function BreadcrumbPage({ className, ...props }: React.ComponentProps<"span">) {
       className={cn(className)}
       {...props}
     />
-  )
+  );
 }
 
 function BreadcrumbSeparator({
@@ -74,7 +74,7 @@ function BreadcrumbSeparator({
     >
       {children ?? <ChevronRight />}
     </li>
-  )
+  );
 }
 
 function BreadcrumbEllipsis({
@@ -92,7 +92,7 @@ function BreadcrumbEllipsis({
       <MoreHorizontal className="size-4" />
       <span className="sr-only">More</span>
     </span>
-  )
+  );
 }
 
 export {
@@ -103,4 +103,4 @@ export {
   BreadcrumbPage,
   BreadcrumbSeparator,
   BreadcrumbEllipsis,
-}
+};

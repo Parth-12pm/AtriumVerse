@@ -1,17 +1,21 @@
-from sqlalchemy import Column , String , ForeignKey , DateTime , Integer
-from sqlalchemy.dialects.postgresql import UUID
+import enum
 import uuid
 from datetime import datetime
-from sqlalchemy.orm import relationship
-from app.core.database import Base
-import enum
 
-class MemberRole(str,enum.Enum):
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+
+from app.core.database import Base
+
+
+class MemberRole(str, enum.Enum):
     OWNER = "owner"
     MEMBER = "member"
     GUEST = "guest"
 
-class MemberStatus(str,enum.Enum):
+
+class MemberStatus(str, enum.Enum):
     PENDING = "pending"
     ACCEPTED = "accepted"
     BANNED = "banned"
@@ -28,8 +32,7 @@ class ServerMember(Base):
     role = Column(String, default=MemberRole.MEMBER)
     status = Column(String, default=MemberStatus.ACCEPTED)
 
-
-    last_position_x = Column(Integer,nullable=True)
+    last_position_x = Column(Integer, nullable=True)
     last_position_y = Column(Integer, nullable=True)
     last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
