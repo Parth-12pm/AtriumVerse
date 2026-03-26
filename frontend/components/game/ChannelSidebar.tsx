@@ -477,21 +477,7 @@ export function ChannelSidebar({
                         </div>
                       )}
 
-                        {isOwner && (
-                          <div className="px-2 pb-2">
-                            <Button
-                              variant="neutral"
-                              size="sm"
-                              className="w-full font-bold text-xs"
-                              onClick={repairKeys}
-                              disabled={repairLoading}
-                            >
-                              {repairLoading ? "Repairing..." : "🔧 Repair E2EE Keys"}
-                            </Button>
-                          </div>
-                        )}
-
-                        {channels.filter(c => c.type === "text" || c.type === "announcements").map((channel) => (
+                      {channels.filter(c => c.type === "text" || c.type === "announcements").map((channel) => (
                         <button
                           key={channel.id}
                           onClick={() => setSelectedChannelId(channel.id)}

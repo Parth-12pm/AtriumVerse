@@ -42,11 +42,6 @@ export default function MobileControls() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeDir = useRef<Direction | null>(null);
 
-  // Only show on touch devices
-  const isTouchDevice =
-    typeof window !== "undefined" &&
-    ("ontouchstart" in window || navigator.maxTouchPoints > 0);
-
   const startMove = useCallback((dir: Direction) => {
     if (activeDir.current === dir) return;
     stopMove();
@@ -72,11 +67,9 @@ export default function MobileControls() {
   // Cleanup on unmount
   useEffect(() => () => stopMove(), [stopMove]);
 
-  if (!isTouchDevice) return null;
-
   return (
     <div
-      className="absolute bottom-28 right-5 z-40 pointer-events-auto select-none"
+      className="hidden [@media(pointer:coarse)]:block absolute bottom-28 right-5 z-40 pointer-events-auto select-none"
       style={{ touchAction: "none" }}
     >
       {/* D-Pad layout */}

@@ -26,6 +26,9 @@ interface EditChannelDialogProps {
   currentName: string;
   currentType: "text" | "voice";
   serverId: string; // Needed to fetch members
+  isEncrypted: boolean;
+  repairKeys?: () => void;
+  repairLoading?: boolean;
   onUpdateChannel: (channelId: string, data: ChannelUpdate) => Promise<void>;
 }
 
@@ -36,11 +39,14 @@ export default function EditChannelDialog({
   currentName,
   currentType,
   serverId,
+  isEncrypted,
+  repairKeys,
+  repairLoading,
   onUpdateChannel,
 }: EditChannelDialogProps) {
   const [name, setName] = useState(currentName);
   const [type, setType] = useState<"text" | "voice">(currentType);
-  const [enableE2EE, setEnableE2EE] = useState(false);
+  const [enableE2EE, setEnableE2EE] = useState(isEncrypted);
   const [loading, setLoading] = useState(false);
 
   // Update name when dialog opens with different channel
@@ -48,8 +54,9 @@ export default function EditChannelDialog({
     if (open) {
       setName(currentName);
       setType(currentType);
+      setEnableE2EE(isEncrypted);
     }
-  }, [open, currentName, currentType]);
+  }, [open, currentName, currentType, isEncrypted]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,8 +66,8 @@ export default function EditChannelDialog({
     try {
       await onUpdateChannel(channelId, { name: name.trim(), type });
 
-      // If owner toggled E2EE on, run the ceremony
-      if (enableE2EE) {
+      // If owner toggled E2EE on AND it wasn't already on, run the ceremony
+      if (enableE2EE && !isEncrypted) {
         toast.info("Initializing End-to-End Encryption...");
 
         // 1. Fetch all trusted devices for all users in server
@@ -175,8 +182,30 @@ export default function EditChannelDialog({
                 <Switch
                   checked={enableE2EE}
                   onCheckedChange={setEnableE2EE}
-                  disabled={loading} // Add 'isAlreadyEncrypted' check later
+                  disabled={loading || isEncrypted}
                 />
+              </div>
+            )}
+            {type === "text" && isEncrypted && repairKeys && (
+              <div className="flex items-center justify-between border-2 border-black p-3 rounded-md bg-blue-50 mt-2">
+                <div className="space-y-0.5">
+                  <Label className="font-bold text-base text-blue-900">
+                    E2EE Key Maintenance
+                  </Label>
+                  <p className="text-xs text-blue-800/80 w-4/5">
+                    If any members are unable to read new messages, use this to distribute the channel keys to their devices.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="default"
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700 font-bold shadow-none"
+                  onClick={repairKeys}
+                  disabled={repairLoading}
+                >
+                  {repairLoading ? "Repairing..." : "Repair Keys"}
+                </Button>
               </div>
             )}
           </div>

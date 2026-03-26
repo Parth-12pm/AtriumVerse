@@ -15,6 +15,7 @@ interface Channel {
   name: string;
   description?: string;
   type?: string;
+  is_encrypted?: boolean;
 }
 
 interface DMConversation {
@@ -38,6 +39,8 @@ interface ChannelListProps {
   onCreateChannel: (data: ChannelCreate) => Promise<void>;
   onUpdateChannel: (channelId: string, data: Partial<Channel>) => Promise<void>;
   onDeleteChannel: (channelId: string) => Promise<void>;
+  repairKeys?: () => Promise<void>;
+  repairLoading?: boolean;
 }
 
 export default function ChannelList({
@@ -53,6 +56,8 @@ export default function ChannelList({
   onCreateChannel,
   onUpdateChannel,
   onDeleteChannel,
+  repairKeys,
+  repairLoading,
 }: ChannelListProps) {
   const [channelsExpanded, setChannelsExpanded] = React.useState(true);
   const [dmsExpanded, setDMsExpanded] = React.useState(true);
@@ -360,6 +365,9 @@ export default function ChannelList({
           currentName={editingChannel.name}
           currentType={editingChannel.type === "voice" ? "voice" : "text"}
           serverId={serverId}
+          isEncrypted={!!editingChannel.is_encrypted}
+          repairKeys={repairKeys}
+          repairLoading={repairLoading}
           onUpdateChannel={onUpdateChannel}
         />
       )}
