@@ -332,6 +332,10 @@ export class VoiceChannelManager {
         this.isConnecting = false;
         this.currentChannelId = channelId;
         EventBus.emit(GameEvents.VOICE_CHANNEL_CONNECTED, { channelId });
+        
+        // Notify backend for presence tracking
+        EventBus.emit("ws:send", { type: "voice_join", channel_id: channelId });
+        
         console.log("🔊 Voice channel connected to:", roomName);
       });
 
@@ -408,6 +412,12 @@ export class VoiceChannelManager {
     EventBus.emit(GameEvents.VOICE_CHANNEL_DISCONNECTED, {
       channelId: pastChannel,
     });
+    
+    // Notify backend
+    if (pastChannel) {
+      EventBus.emit("ws:send", { type: "voice_leave", channel_id: pastChannel });
+    }
+    
     console.log("🔇 Voice channel disconnected");
   }
 }

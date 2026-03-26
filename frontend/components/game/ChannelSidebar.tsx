@@ -83,6 +83,61 @@ export function ChannelSidebar({
 
   // Active voice channel tracking
   const [activeVoiceChannelId, setActiveVoiceChannelId] = useState<string | null>(null);
+  const [voiceParticipants, setVoiceParticipants] = useState<Record<string, {user_id: string, username: string}[]>>({});
+
+  // --- VOICE PRESENCE TRACKING ---
+  useEffect(() => {
+    const handleVoicePresence = (data: Record<string, any>) => {
+      setVoiceParticipants((prev) => {
+        const next = { ...prev };
+        
+        switch (data.type) {
+          case "voice_state":
+            // Full state initialization
+            return data.channels || {};
+            
+          case "voice_join":
+            // Remove from any previous channel just in case
+            Object.keys(next).forEach(cid => {
+              if (next[cid]) {
+                next[cid] = next[cid].filter(p => p.user_id !== data.user_id);
+              }
+            });
+            // Add to new channel
+            if (!next[data.channel_id]) next[data.channel_id] = [];
+            next[data.channel_id].push({
+              user_id: data.user_id,
+              username: data.username || "Player"
+            });
+            return next;
+            
+          case "voice_leave":
+            if (next[data.channel_id]) {
+              next[data.channel_id] = next[data.channel_id].filter(p => p.user_id !== data.user_id);
+            }
+            return next;
+            
+          case "user_left":
+          case "member_left":
+            // Clear their presence anywhere
+            Object.keys(next).forEach(cid => {
+              if (next[cid]) {
+                next[cid] = next[cid].filter(p => p.user_id !== data.user_id);
+              }
+            });
+            return next;
+            
+          default:
+            return prev;
+        }
+      });
+    };
+
+    EventBus.on("ws:message", handleVoicePresence);
+    return () => {
+      EventBus.off("ws:message", handleVoicePresence);
+    };
+  }, []);
 
   useEffect(() => {
     const handleVoiceJoined = (data: { channelId: string }) => {
@@ -562,7 +617,21 @@ export function ChannelSidebar({
                               )}
                             </button>
                             
-                            {/* Connected voice participants would go here if we tracked them */}
+                            {/* Connected voice participants */}
+                            {voiceParticipants[channel.id]?.length > 0 && (
+                              <div className="flex flex-col gap-1 ml-4 mt-1 border-l-2 border-border/50 pl-2">
+                                {voiceParticipants[channel.id].map(p => (
+                                  <div key={p.user_id} className="flex items-center gap-2 rounded-md hover:bg-muted/50 p-1 cursor-default">
+                                    <Avatar className="h-6 w-6 border-2 border-border shadow-sm">
+                                      <AvatarFallback className="bg-orange-400 text-black text-[10px] font-bold">
+                                        {p.username.slice(0, 2).toUpperCase()}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <span className="text-xs font-bold truncate max-w-[120px]">{p.username}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         );
                       })}

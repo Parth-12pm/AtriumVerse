@@ -9,6 +9,7 @@ import EditChannelDialog from "./EditChannelDialog";
 import type { ChannelCreate } from "@/types/api.types";
 import EventBus, { GameEvents } from "@/game/EventBus";
 import { getVoiceChannelAudio, getProximityAudio } from "@/lib/livekit-audio";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 interface Channel {
   id: string;
@@ -71,6 +72,57 @@ export default function ChannelList({
   const voiceChannels = React.useMemo(() => channels.filter(c => c.type === "voice"), [channels]);
 
   const [activeVoiceChannelId, setActiveVoiceChannelId] = React.useState<string | null>(null);
+  const [voiceParticipants, setVoiceParticipants] = React.useState<Record<string, {user_id: string, username: string}[]>>({});
+
+  // --- VOICE PRESENCE TRACKING ---
+  React.useEffect(() => {
+    const handleVoicePresence = (data: Record<string, any>) => {
+      setVoiceParticipants((prev) => {
+        const next = { ...prev };
+        
+        switch (data.type) {
+          case "voice_state":
+            return data.channels || {};
+            
+          case "voice_join":
+            Object.keys(next).forEach(cid => {
+              if (next[cid]) {
+                next[cid] = next[cid].filter(p => p.user_id !== data.user_id);
+              }
+            });
+            if (!next[data.channel_id]) next[data.channel_id] = [];
+            next[data.channel_id].push({
+              user_id: data.user_id,
+              username: data.username || "Player"
+            });
+            return next;
+            
+          case "voice_leave":
+            if (next[data.channel_id]) {
+              next[data.channel_id] = next[data.channel_id].filter(p => p.user_id !== data.user_id);
+            }
+            return next;
+            
+          case "user_left":
+          case "member_left":
+            Object.keys(next).forEach(cid => {
+              if (next[cid]) {
+                next[cid] = next[cid].filter(p => p.user_id !== data.user_id);
+              }
+            });
+            return next;
+            
+          default:
+            return prev;
+        }
+      });
+    };
+
+    EventBus.on("ws:message", handleVoicePresence);
+    return () => {
+      EventBus.off("ws:message", handleVoicePresence);
+    };
+  }, []);
 
   React.useEffect(() => {
     const handleVoiceJoined = (data: { channelId: string }) => {
@@ -224,8 +276,8 @@ export default function ChannelList({
               </p>
             ) : (
               voiceChannels.map((channel) => (
+                <React.Fragment key={channel.id}>
                 <div
-                  key={channel.id}
                   onClick={() => handleJoinVoice(channel.id)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
@@ -274,6 +326,23 @@ export default function ChannelList({
                     </div>
                   )}
                 </div>
+                
+                {/* Connected voice participants */}
+                {voiceParticipants[channel.id]?.length > 0 && (
+                  <div className="flex flex-col gap-1 ml-10 mb-2 border-l-2 border-border/50 pl-2">
+                    {voiceParticipants[channel.id].map(p => (
+                      <div key={p.user_id} className="flex items-center gap-2 rounded-md hover:bg-muted/50 p-1.5 cursor-default mt-1">
+                        <Avatar className="h-6 w-6 border-2 border-border shadow-sm">
+                          <AvatarFallback className="bg-orange-400 text-black text-[10px] font-bold">
+                            {p.username.slice(0, 2).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="text-sm font-bold truncate max-w-[150px]">{p.username}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                </React.Fragment>
               ))
             )}
           </div>

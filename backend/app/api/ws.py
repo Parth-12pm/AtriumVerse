@@ -122,6 +122,22 @@ async def websocket_endpoint(
 
         await websocket.send_json({"type": "user_list", "users": user_positions})
 
+        # Send current voice channel states
+        voice_keys = await redis_client.r.keys(f"voice_channel:{server_id}:*")
+        voice_state = {}
+        for vk in voice_keys:
+            cid = vk.split(":")[-1]
+            members = await redis_client.r.smembers(vk)
+            voice_state[cid] = []
+            for m_id in members:
+                u_data = await redis_client.r.hgetall(f"user:{m_id}")
+                if u_data:
+                    voice_state[cid].append({
+                        "user_id": m_id,
+                        "username": u_data.get("username", "Unknown")
+                    })
+        await websocket.send_json({"type": "voice_state", "channels": voice_state})
+
         await manager.broadcast(
             {
                 "type": "user_joined",
@@ -220,6 +236,42 @@ async def websocket_endpoint(
                     ):
                         _last_db_save[user_id] = now_ts
                         asyncio.create_task(save_position_to_db(data["x"], data["y"]))
+
+            # NEW: Voice channel Presence
+            elif data.get("type") == "voice_join":
+                channel_id = data.get("channel_id")
+                uname = data.get("username", username)
+                if channel_id and redis_client.r:
+                    # Remove from any old voice channel first
+                    old_channel = await redis_client.r.get(f"current_voice:{user_id}")
+                    if old_channel and old_channel != channel_id:
+                        await redis_client.r.srem(f"voice_channel:{server_id}:{old_channel}", user_id)
+                        await manager.broadcast({
+                            "type": "voice_leave",
+                            "channel_id": old_channel,
+                            "user_id": user_id
+                        }, server_id, websocket)
+
+                    # Join new
+                    await redis_client.r.sadd(f"voice_channel:{server_id}:{channel_id}", user_id)
+                    await redis_client.r.set(f"current_voice:{user_id}", channel_id)
+                    await manager.broadcast({
+                        "type": "voice_join",
+                        "channel_id": channel_id,
+                        "user_id": user_id,
+                        "username": uname
+                    }, server_id, websocket)
+
+            elif data.get("type") == "voice_leave":
+                channel_id = data.get("channel_id")
+                if channel_id and redis_client.r:
+                    await redis_client.r.srem(f"voice_channel:{server_id}:{channel_id}", user_id)
+                    await redis_client.r.delete(f"current_voice:{user_id}")
+                    await manager.broadcast({
+                        "type": "voice_leave",
+                        "channel_id": channel_id,
+                        "user_id": user_id
+                    }, server_id, websocket)
 
             # NEW: Zone lifecycle events
             elif data.get("type") == "zone_enter":
@@ -565,6 +617,18 @@ async def websocket_endpoint(
                 last_y = int(final_pos.get("y", 0))
 
                 await save_position_to_db(last_x, last_y)
+
+        # Voice channel cleanup
+        if redis_client.r:
+            current_voice = await redis_client.r.get(f"current_voice:{user_id}")
+            if current_voice:
+                await redis_client.r.srem(f"voice_channel:{server_id}:{current_voice}", user_id)
+                await redis_client.r.delete(f"current_voice:{user_id}")
+                await manager.broadcast({
+                    "type": "voice_leave",
+                    "channel_id": current_voice,
+                    "user_id": user_id
+                }, server_id, websocket)
 
         await redis_client.r.srem(f"server:{server_id}:users", user_id)
         await redis_client.r.delete(f"user:{user_id}")
