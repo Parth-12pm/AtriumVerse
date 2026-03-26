@@ -70,6 +70,7 @@ export function ChannelSidebar({
   const [newChannelName, setNewChannelName] = useState("");
   const [newVoiceChannelName, setNewVoiceChannelName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [repairLoading, setRepairLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
   // Selected channel for chat view
@@ -145,7 +146,10 @@ export function ChannelSidebar({
           .map((c: any) => c.id);
         if (encryptedChannelIds.length === 0) return;
 
-        if (data.type === "public_member_joined") {
+        if (
+          data.type === "public_member_joined" ||
+          data.type === "member_approved"
+        ) {
           toast.info("New member joined. Syncing E2EE keys in background...");
           await distributeKeysToNewMember(
             encryptedChannelIds,
@@ -175,6 +179,44 @@ export function ChannelSidebar({
       EventBus.off("ws:message", handleMembershipChange);
     };
   }, [serverId, isOwner]);
+
+  const repairKeys = useCallback(async () => {
+    if (repairLoading) return;
+    setRepairLoading(true);
+    try {
+      const missing = await fetchAPI(
+        `/channel-keys/server/${serverId}/members-missing-keys`,
+      );
+      if (!missing || missing.length === 0) {
+        toast.success("All members already have keys — nothing to repair!");
+        return;
+      }
+      // Collect unique user_ids that are missing keys in any channel
+      const allChannelIds = [...new Set(missing.map((m: any) => m.channel_id))] as string[];
+      // Fetch all server members so we can map devices back to users
+      const members = await fetchAPI(`/servers/${serverId}/members`);
+      const acceptedMemberUserIds: string[] = members
+        .filter((m: any) => m.status === "accepted")
+        .map((m: any) => String(m.user_id));
+
+      toast.info(`Repairing keys for ${acceptedMemberUserIds.length} members across ${allChannelIds.length} channel(s)...`);
+      let repaired = 0;
+      for (const uid of acceptedMemberUserIds) {
+        try {
+          await distributeKeysToNewMember(allChannelIds, uid);
+          repaired++;
+        } catch (e) {
+          console.debug(`Repair failed for user ${uid}:`, e);
+        }
+      }
+      toast.success(`Key repair complete — synced ${repaired} member(s)!`);
+    } catch (err) {
+      toast.error("Failed to repair keys. See console for details.");
+      console.error(err);
+    } finally {
+      setRepairLoading(false);
+    }
+  }, [serverId, repairLoading]);
 
   const loadChannels = useCallback(async () => {
     try {
@@ -435,7 +477,21 @@ export function ChannelSidebar({
                         </div>
                       )}
 
-                      {channels.filter(c => c.type === "text" || c.type === "announcements").map((channel) => (
+                        {isOwner && (
+                          <div className="px-2 pb-2">
+                            <Button
+                              variant="neutral"
+                              size="sm"
+                              className="w-full font-bold text-xs"
+                              onClick={repairKeys}
+                              disabled={repairLoading}
+                            >
+                              {repairLoading ? "Repairing..." : "🔧 Repair E2EE Keys"}
+                            </Button>
+                          </div>
+                        )}
+
+                        {channels.filter(c => c.type === "text" || c.type === "announcements").map((channel) => (
                         <button
                           key={channel.id}
                           onClick={() => setSelectedChannelId(channel.id)}

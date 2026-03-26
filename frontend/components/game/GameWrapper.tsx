@@ -13,6 +13,7 @@ import ZoneVideoRoom from "@/components/video/ZoneVideoRoom";
 import { getProximityAudio, getVoiceChannelAudio, MAX_HEAR_RADIUS } from "@/lib/livekit-audio";
 import EventBus, { GameEvents } from "@/game/EventBus";
 import { TILE_PX, SPEAKER_TILE_X, SPEAKER_TILE_Y } from "@/lib/game-constants";
+import MobileControls from "@/components/game/MobileControls";
 
 interface GameWrapperProps {
   userId: string;
@@ -357,6 +358,9 @@ export default function GameWrapper({
           />
         </div>
       )}
+
+      {/* ── Mobile D-Pad — only rendered on touch devices ─────────────── */}
+      {isGameReady && <MobileControls />}
     </div>
   );
 }

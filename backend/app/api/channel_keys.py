@@ -164,6 +164,79 @@ async def _get_entitled_epoch_rows_for_device_or_public_key(
     return deduped_rows
 
 
+@router.get("/server/{server_id}/members-missing-keys")
+async def get_members_missing_keys(
+    server_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Owner-only: for each encrypted channel in the server, returns the list of
+    accepted-member trusted devices that are missing a key for the current epoch.
+    Used by the frontend 'Repair E2EE Keys' button.
+    """
+    # Verify the caller is the server owner
+    serv_res = await db.execute(
+        select(Server).where(
+            Server.id == server_id, Server.owner_id == current_user.id
+        )
+    )
+    if not serv_res.scalar_one_or_none():
+        raise HTTPException(
+            status_code=403, detail="Only the server owner can repair keys."
+        )
+
+    # Get all encrypted channels in this server
+    enc_channels_res = await db.execute(
+        select(Channel.id, ChannelEncryption.current_epoch)
+        .join(ChannelEncryption, Channel.id == ChannelEncryption.channel_id)
+        .where(
+            Channel.server_id == server_id,
+            ChannelEncryption.is_enabled == True,
+        )
+    )
+    enc_channels = enc_channels_res.all()
+    if not enc_channels:
+        return []
+
+    # Get all trusted devices of accepted server members
+    all_devices_res = await db.execute(
+        select(Device.id, Device.user_id)
+        .join(ServerMember, Device.user_id == ServerMember.user_id)
+        .where(
+            ServerMember.server_id == server_id,
+            ServerMember.status == "accepted",
+            Device.is_trusted == True,
+            Device.deleted_at == None,
+        )
+    )
+    all_device_rows = all_devices_res.all()
+    all_device_ids = {str(r.id) for r in all_device_rows}
+
+    results = []
+    for channel_id, current_epoch in enc_channels:
+        # Get device IDs that already have a key for the current epoch
+        have_key_res = await db.execute(
+            select(ChannelDeviceKey.device_id).where(
+                ChannelDeviceKey.channel_id == channel_id,
+                ChannelDeviceKey.epoch == current_epoch,
+            )
+        )
+        have_key_ids = {str(r) for r in have_key_res.scalars().all()}
+        missing_ids = all_device_ids - have_key_ids
+
+        if missing_ids:
+            results.append(
+                {
+                    "channel_id": str(channel_id),
+                    "current_epoch": current_epoch,
+                    "missing_device_ids": sorted(missing_ids),
+                }
+            )
+
+    return results
+
+
 @router.get("/my-channels")
 async def get_my_encrypted_channels(
     current_user: User = Depends(get_current_user),
@@ -434,12 +507,14 @@ async def distribute_key_to_device(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Called by an existing trusted device to distribute a channel key copy to another trusted device.
+    Called by an existing trusted member to distribute a channel key copy to any
+    trusted device belonging to an accepted server member (e.g. to onboard a new member).
     """
     submitting_device = await _get_requesting_trusted_device(
         device_id, current_user, db
     )
 
+    # Verify the submitting user is an accepted member of this channel's server
     membership_query = (
         select(ServerMember)
         .join(Channel, Channel.server_id == ServerMember.server_id)
@@ -450,7 +525,8 @@ async def distribute_key_to_device(
         )
     )
     membership_res = await db.execute(membership_query)
-    if not membership_res.scalar_one_or_none():
+    caller_membership = membership_res.scalar_one_or_none()
+    if not caller_membership:
         raise HTTPException(
             status_code=403,
             detail="You are not an accepted member of this encrypted channel.",
@@ -469,17 +545,24 @@ async def distribute_key_to_device(
             status_code=400, detail="Invalid epoch for channel key distribution."
         )
 
-    targ_dev_query = select(Device).where(
-        Device.id == req.target_device_id,
-        Device.user_id == current_user.id,
-        Device.is_trusted == True,
-        Device.deleted_at == None,
+    # Verify the target device is trusted and belongs to an accepted member of the server
+    targ_dev_query = (
+        select(Device)
+        .join(ServerMember, Device.user_id == ServerMember.user_id)
+        .join(Channel, Channel.server_id == ServerMember.server_id)
+        .where(
+            Device.id == req.target_device_id,
+            Device.is_trusted == True,
+            Device.deleted_at == None,
+            Channel.id == channel_id,
+            ServerMember.status == "accepted",
+        )
     )
     targ_res = await db.execute(targ_dev_query)
     if not targ_res.scalar_one_or_none():
         raise HTTPException(
             status_code=403,
-            detail="Target device does not belong to you or is untrusted.",
+            detail="Target device is untrusted or does not belong to an accepted server member.",
         )
 
     existing_query = select(ChannelDeviceKey).where(

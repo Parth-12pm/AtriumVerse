@@ -74,6 +74,15 @@ export class MainScene extends Scene {
     // Broadcast to others
     wsService.send({ type: "reaction", emoji: data.emoji });
   };
+
+  // Mobile D-pad direction state
+  private mobileDirection: string | null = null;
+  private readonly mobileMoveHandler = (data: { direction: string }) => {
+    this.mobileDirection = data.direction;
+  };
+  private readonly mobileMoveStopHandler = () => {
+    this.mobileDirection = null;
+  };
   private readonly sendChatHandler = (data: any) => {
     wsService.send({ type: "chat_message", ...data });
   };
@@ -697,6 +706,8 @@ export class MainScene extends Scene {
     EventBus.on(GameEvents.REQUEST_USER_LIST, this.requestUserListHandler);
     EventBus.on("ws:message", this.wsMessageHandler);
     EventBus.on("action:react", this.reactionHandler);
+    EventBus.on("mobile_move", this.mobileMoveHandler);
+    EventBus.on("mobile_move_stop", this.mobileMoveStopHandler);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.cleanup();
@@ -713,10 +724,10 @@ export class MainScene extends Scene {
     if (!this.inputEnabled) return;
 
     const isMoving = this.gridEngine.isMoving("hero");
-    const leftPressed = this.cursors.left.isDown || this.wasd.left.isDown;
-    const rightPressed = this.cursors.right.isDown || this.wasd.right.isDown;
-    const upPressed = this.cursors.up.isDown || this.wasd.up.isDown;
-    const downPressed = this.cursors.down.isDown || this.wasd.down.isDown;
+    const leftPressed  = this.cursors.left.isDown  || this.wasd.left.isDown  || this.mobileDirection === "left";
+    const rightPressed = this.cursors.right.isDown || this.wasd.right.isDown || this.mobileDirection === "right";
+    const upPressed    = this.cursors.up.isDown    || this.wasd.up.isDown    || this.mobileDirection === "up";
+    const downPressed  = this.cursors.down.isDown  || this.wasd.down.isDown  || this.mobileDirection === "down";
 
     if (leftPressed) {
       this.gridEngine.move("hero", Direction.LEFT);
@@ -1270,6 +1281,8 @@ export class MainScene extends Scene {
     EventBus.off("ui:blur", this.uiBlurHandler);
     EventBus.off("ws:message", this.wsMessageHandler);
     EventBus.off("action:react", this.reactionHandler);
+    EventBus.off("mobile_move", this.mobileMoveHandler);
+    EventBus.off("mobile_move_stop", this.mobileMoveStopHandler);
   }
 
   // ── Floating emoji animation ──────────────────────────────────────────────

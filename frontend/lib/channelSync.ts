@@ -29,15 +29,18 @@ export async function rotateEncryptedChannels(
             newKeyBytes.buffer,
           );
           return {
-            target_device_id: device.device_id,
+            device_id: device.device_id,  // matches EncryptedKeySubmission schema
             encrypted_channel_key: encryptedChannelKey,
           };
         }),
       );
 
-      await fetchAPI(`/channel-keys/${cid}/rotate?device_id=${myDeviceId}`, {
+      await fetchAPI(`/channel-keys/${cid}/rotate`, {
         method: "POST",
-        body: JSON.stringify({ encrypted_keys: encryptedKeys, reason: reason }),
+        body: JSON.stringify({
+          submitting_device_id: myDeviceId,
+          encrypted_keys: encryptedKeys,
+        }),
       });
 
       globalChannelKeysCache.set(cid, newKeyBytes.buffer);

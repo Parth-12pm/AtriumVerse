@@ -368,6 +368,22 @@ async def approve_member(
     # 3. Approve
     member.status = MemberStatus.ACCEPTED
     await db.commit()
+
+    # Notify the owner's frontend so it can distribute E2EE channel keys
+    from app.core.socket_manager import manager
+
+    try:
+        await manager.broadcast_to_server(
+            str(server_id),
+            {
+                "type": "member_approved",
+                "server_id": str(server_id),
+                "user_id": str(user_id),
+            },
+        )
+    except Exception as e:
+        print(f"WS Broadcast failed (non-fatal): {e}")
+
     return {"message": "User approved"}
 
 
