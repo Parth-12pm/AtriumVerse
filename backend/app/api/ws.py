@@ -25,6 +25,22 @@ _last_db_save: dict[str, float] = {}
 DB_SAVE_THROTTLE_SECONDS = 10  # write to DB at most once per 10s per user
 
 
+async def hset_mapping(r, key: str, mapping: dict):
+    """
+    Compatibility wrapper: redis-py 4+ sends HSET key f1 v1 f2 v2 ...
+    but Windows Redis 3.x only accepts the old HMSET form. Try hset first,
+    fall back to HMSET on ResponseError.
+    """
+    try:
+        await r.hset(key, mapping=mapping)
+    except Exception:
+        # Redis server < 4.0 — use the legacy HMSET command
+        args = []
+        for k, v in mapping.items():
+            args.extend([k, v])
+        await r.execute_command("HMSET", key, *args)
+
+
 async def get_user_from_token(token: str):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -90,9 +106,10 @@ async def websocket_endpoint(
         # Get character selection from user model
         character_id = user_obj.character_id if user_obj.character_id else "bob"
 
-        await redis_client.r.hset(
+        await hset_mapping(
+            redis_client.r,
             f"user:{user_id}",
-            mapping={
+            {
                 "x": str(default_x),
                 "y": str(default_y),
                 "username": username,
@@ -209,7 +226,7 @@ async def websocket_endpoint(
                     if character_id:
                         mapping["character_id"] = character_id
                     asyncio.create_task(
-                        redis_client.r.hset(f"user:{user_id}", mapping=mapping)
+                        hset_mapping(redis_client.r, f"user:{user_id}", mapping)
                     )
 
                     # Throttled DB write: at most once per DB_SAVE_THROTTLE_SECONDS

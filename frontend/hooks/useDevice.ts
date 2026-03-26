@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
@@ -48,6 +48,9 @@ export interface PendingRequest {
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+// Module-level flag: survives React StrictMode double-mount (unlike useRef which resets).
+let _bootstrapInFlight = false;
 
 export function useDevice() {
   const [deviceState, setDeviceState] = useState<DeviceState>("checking");
@@ -219,9 +222,12 @@ export function useDevice() {
   };
 
   const checkDeviceState = useCallback(async () => {
-    if (bootstrapInFlightRef.current) {
+    // Guard against concurrent calls — use both module-level flag (survives StrictMode
+    // double-mount) and ref (handles subsequent re-renders in same instance).
+    if (_bootstrapInFlight || bootstrapInFlightRef.current) {
       return;
     }
+    _bootstrapInFlight = true;
     bootstrapInFlightRef.current = true;
 
     try {
@@ -249,10 +255,20 @@ export function useDevice() {
       }
 
       // Always verify the stored browser device against the current account before trusting it.
-      const res = await fetch(`${API_URL}/devices/my-devices`, {
-        headers: getAuthHeaders(),
-      });
-      if (!res.ok) throw new Error("Failed to fetch devices");
+      let res: Response;
+      try {
+        res = await fetch(`${API_URL}/devices/my-devices`, {
+          headers: getAuthHeaders(),
+        });
+      } catch (networkErr) {
+        // Network-level failure (server unreachable, CORS, etc.) — don't lock into
+        // "error" state permanently; stay in "checking" so the effect re-runs on
+        // next render cycle after the server recovers.
+        console.warn("[useDevice] Network error fetching devices, will retry:", networkErr);
+        setDeviceState("checking");
+        return;
+      }
+      if (!res.ok) throw new Error(`Failed to fetch devices (${res.status})`);
       const devices = await res.json();
 
       const verifiedStoredDeviceId = localStorage.getItem("device_id");
@@ -337,6 +353,7 @@ export function useDevice() {
       setErrorMsg(err.message);
     } finally {
       bootstrapInFlightRef.current = false;
+      _bootstrapInFlight = false;
     }
   }, [checkForPendingApprovals, initiateLinkingCeremony, registerFirstDevice]);
 
@@ -419,10 +436,22 @@ export function useDevice() {
     }
   };
 
-  // State Effect
+  // State Effect — run on mount and retry every 3s while still in "checking"
+  // (handles transient network failures where the backend was mid-restart)
   useEffect(() => {
     checkDeviceState();
-  }, [checkDeviceState]);
+
+    let retryTimer: NodeJS.Timeout | null = null;
+    if (deviceState === "checking") {
+      retryTimer = setTimeout(() => {
+        checkDeviceState();
+      }, 3000);
+    }
+
+    return () => {
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [checkDeviceState, deviceState]);
 
   // WebSocket / Polling Effect
   useEffect(() => {

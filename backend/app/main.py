@@ -58,9 +58,8 @@ app.add_middleware(
         "https://atriumverse.vercel.app",
         "http://localhost:3000",
         "http://192.168.1.100:3000",
-        "*",
     ],
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
