@@ -543,7 +543,7 @@ export default function LandingPage() {
                 </Button>
               </Link>
               <Link
-                href="https://github.com/Parth12-pm/AtriumVerse"
+                href="https://github.com/Parth-12pm/AtriumVerse"
                 target="_blank"
                 rel="noopener"
               >

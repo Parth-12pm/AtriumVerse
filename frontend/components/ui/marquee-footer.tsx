@@ -110,7 +110,7 @@ export function MarqueeFooter() {
     { label: "How It Works", href: "#how-it-works" },
     {
       label: "GitHub",
-      href: "https://github.com/Parth12-pm/AtriumVerse",
+      href: "https://github.com/Parth-12pm/AtriumVerse",
       external: true,
     },
   ];
