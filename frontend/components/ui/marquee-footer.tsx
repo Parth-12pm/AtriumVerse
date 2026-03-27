@@ -110,7 +110,7 @@ export function MarqueeFooter() {
     { label: "How It Works", href: "#how-it-works" },
     {
       label: "GitHub",
-      href: "https://github.com/Parth12pm/AtriumVerse",
+      href: "https://github.com/Parth12-pm/AtriumVerse",
       external: true,
     },
   ];
@@ -219,7 +219,7 @@ export function MarqueeFooter() {
         >
           Walk in · Talk live · Work together
         </motion.p>
-        </div>
+      </div>
       {/* ── Bottom bar ─────────────────────────────────────────────────────── */}
       <div className="border-t-4 border-border bg-foreground text-background">
         <div className="max-w-7xl mx-auto px-6 py-8">
