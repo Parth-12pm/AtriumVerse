@@ -19,7 +19,7 @@ from app.api import (
     users,
     ws,
 )
-from app.core.database import engine
+from app.core.database import engine, Base
 from app.core.redis_client import close_redis, init_redis
 
 load_dotenv()
@@ -34,7 +34,12 @@ async def lifespan(app: FastAPI):
     try:
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
-        print("✅ Database Connected")
+            
+        # Automatically create all tables if they don't exist
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            
+        print("✅ Database Connected and Tables Created")
     except Exception as e:
         print(f"❌ Database Error: {e}")
 
