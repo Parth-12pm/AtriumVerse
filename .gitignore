@@ -151,8 +151,6 @@ cython_debug/
 *.pt
 *.pth
 *.onnx
-frontend/pnpm-lock.yaml
-frontend/package-lock.json
 
 node_modules
 
@@ -162,3 +160,5 @@ package-lock.json
 prompts
 
 /prompts
+
+.vscode

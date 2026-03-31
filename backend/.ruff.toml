@@ -1,0 +1,7 @@
+line-length = 88
+target-version = "py310" # Adjust to your python version
+
+[lint]
+# Select rules: E (Error), F (Pyflakes), I (Isort), B (Bugbear), FAST (FastAPI)
+select = ["E", "F", "I", "B", "FAST", "UP"]
+ignore = []
