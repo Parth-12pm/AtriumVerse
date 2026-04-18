@@ -15,6 +15,9 @@ import { MicIcon } from "@/components/ui/mic";
 import { LockKeyholeOpenIcon } from "@/components/ui/lock-keyhole-open";
 
 // ── Animation helpers ──────────────────────────────────────────────────────────
+// Set this to false to disable all scroll and entry animations for static screenshots
+export const ENABLE_PAGE_ANIMATIONS = false;
+
 const EASE = [0.22, 1, 0.36, 1] as const;
 
 function FadeUp({
@@ -28,12 +31,14 @@ function FadeUp({
 }) {
   const ref = useRef(null);
   const inView = useInView(ref, { once: true, margin: "-60px" });
+  const isVisible = !ENABLE_PAGE_ANIMATIONS || inView;
+
   return (
     <motion.div
       ref={ref}
-      initial={{ opacity: 0, y: 40 }}
-      animate={inView ? { opacity: 1, y: 0 } : {}}
-      transition={{ duration: 0.65, delay, ease: EASE }}
+      initial={ENABLE_PAGE_ANIMATIONS ? { opacity: 0, y: 40 } : false}
+      animate={isVisible ? { opacity: 1, y: 0 } : {}}
+      transition={{ duration: ENABLE_PAGE_ANIMATIONS ? 0.65 : 0, delay: ENABLE_PAGE_ANIMATIONS ? delay : 0, ease: EASE }}
       className={className}
     >
       {children}
@@ -459,9 +464,9 @@ export default function LandingPage() {
           <div>
             {/* tag */}
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={ENABLE_PAGE_ANIMATIONS ? { opacity: 0, y: 20 } : false}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, ease: EASE }}
+              transition={{ duration: ENABLE_PAGE_ANIMATIONS ? 0.5 : 0, ease: EASE }}
               className="inline-flex items-center gap-2 border-4 border-border bg-primary px-4 py-2 shadow-shadow mb-8"
             >
               <span className="w-2 h-2 bg-primary-foreground rounded-full animate-pulse" />
@@ -474,11 +479,11 @@ export default function LandingPage() {
             {["Walk in,", "Talk live,", "Work together."].map((line, i) => (
               <motion.h1
                 key={line}
-                initial={{ opacity: 0, x: -40 }}
+                initial={ENABLE_PAGE_ANIMATIONS ? { opacity: 0, x: -40 } : false}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{
-                  duration: 0.6,
-                  delay: 0.1 + i * 0.12,
+                  duration: ENABLE_PAGE_ANIMATIONS ? 0.6 : 0,
+                  delay: ENABLE_PAGE_ANIMATIONS ? 0.1 + i * 0.12 : 0,
                   ease: EASE,
                 }}
                 className={`font-black uppercase tracking-tight leading-[0.88] text-5xl md:text-7xl xl:text-8xl block ${
@@ -505,9 +510,9 @@ export default function LandingPage() {
 
             {/* feature pills */}
             <motion.div
-              initial={{ opacity: 0 }}
+              initial={ENABLE_PAGE_ANIMATIONS ? { opacity: 0 } : false}
               animate={{ opacity: 1 }}
-              transition={{ delay: 0.65 }}
+              transition={{ delay: ENABLE_PAGE_ANIMATIONS ? 0.65 : 0 }}
               className="flex flex-wrap gap-2 mt-6"
             >
               {[
@@ -528,9 +533,9 @@ export default function LandingPage() {
 
             {/* CTAs */}
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={ENABLE_PAGE_ANIMATIONS ? { opacity: 0, y: 20 } : false}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.75, ease: EASE }}
+              transition={{ delay: ENABLE_PAGE_ANIMATIONS ? 0.75 : 0, ease: EASE }}
               className="flex flex-wrap gap-3 mt-8"
             >
               <Link href={isLoggedIn ? "/dashboard" : "/register"}>
@@ -560,9 +565,9 @@ export default function LandingPage() {
 
           {/* Right: game screenshot */}
           <motion.div
-            initial={{ opacity: 0, y: 60, rotate: -1 }}
+            initial={ENABLE_PAGE_ANIMATIONS ? { opacity: 0, y: 60, rotate: -1 } : false}
             animate={{ opacity: 1, y: 0, rotate: -1 }}
-            transition={{ duration: 0.8, delay: 0.3, ease: EASE }}
+            transition={{ duration: ENABLE_PAGE_ANIMATIONS ? 0.8 : 0, delay: ENABLE_PAGE_ANIMATIONS ? 0.3 : 0, ease: EASE }}
             className="relative"
           >
             {/* glow behind */}
@@ -879,10 +884,11 @@ export default function LandingPage() {
               {TECH_STACK.map((tech, i) => (
                 <motion.span
                   key={tech.label}
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  whileInView={{ opacity: 1, scale: 1 }}
+                  initial={ENABLE_PAGE_ANIMATIONS ? { opacity: 0, scale: 0.8 } : false}
+                  animate={ENABLE_PAGE_ANIMATIONS ? undefined : { opacity: 1, scale: 1 }}
+                  whileInView={ENABLE_PAGE_ANIMATIONS ? { opacity: 1, scale: 1 } : undefined}
                   viewport={{ once: true }}
-                  transition={{ delay: i * 0.04, ease: EASE }}
+                  transition={{ delay: ENABLE_PAGE_ANIMATIONS ? i * 0.04 : 0, ease: EASE }}
                   whileHover={{ y: -3, scale: 1.05 }}
                   className={`${tech.bg} ${tech.text} border-2 border-border px-4 py-2 font-black text-sm uppercase tracking-wider shadow-shadow cursor-default`}
                 >

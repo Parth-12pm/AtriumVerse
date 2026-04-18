@@ -9,6 +9,9 @@ import { GithubIcon } from "./github";
 // ── Pixel letter animation ─────────────────────────────────────────────────────
 // Each letter scales in from a pixelated tiny version, simulating a
 // low-res → high-res "game texture loading" effect.
+// Set ENABLE_ANIMATIONS to true for scroll animations, false for static fully-visible state (useful for screenshots)
+export const ENABLE_ANIMATIONS = false;
+
 const BRAND = "ATRIUMVERSE";
 
 const EASE = [0.22, 1, 0.36, 1] as [number, number, number, number];
@@ -30,8 +33,8 @@ function PixelLetter({ char, index }: { char: string; index: number }) {
           filter: "blur(0px)",
           y: 0,
           transition: {
-            delay: i * 0.07,
-            duration: 0.7,
+            delay: ENABLE_ANIMATIONS ? i * 0.07 : 0,
+            duration: ENABLE_ANIMATIONS ? 0.7 : 0,
             ease: EASE,
           },
         }),
@@ -101,8 +104,12 @@ function PixelCursor({ delay = 0 }: { delay?: number }) {
 
 // ── Main component ─────────────────────────────────────────────────────────────
 export function MarqueeFooter() {
+  // Set ANIMATE_ONCE to true to animate only once, false to animate on every scroll
+  const ANIMATE_ONCE = true;
+
   const logoRef = useRef<HTMLDivElement>(null);
-  const isInView = useInView(logoRef, { once: false, margin: "-80px" });
+  const isInView = useInView(logoRef, { once: ANIMATE_ONCE, margin: "-80px" });
+  const isVisible = !ENABLE_ANIMATIONS || isInView;
   const year = new Date().getFullYear();
 
   const LINKS = [
@@ -158,17 +165,17 @@ export function MarqueeFooter() {
               right: (b as any).right,
               imageRendering: "pixelated",
             }}
-            initial={{ opacity: 0, scale: 0 }}
-            animate={isInView ? { opacity: 1, scale: 1 } : {}}
-            transition={{ delay: b.delay, duration: 0.4, ease: EASE }}
+            initial={ENABLE_ANIMATIONS ? { opacity: 0, scale: 0 } : false}
+            animate={isVisible ? { opacity: 1, scale: 1 } : {}}
+            transition={{ delay: ENABLE_ANIMATIONS ? b.delay : 0, duration: ENABLE_ANIMATIONS ? 0.4 : 0, ease: EASE }}
           />
         ))}
 
         {/* the logo text */}
         <motion.div
           className="relative flex justify-center items-center px-4"
-          initial="hidden"
-          animate={isInView ? "visible" : "hidden"}
+          initial={ENABLE_ANIMATIONS ? "hidden" : false}
+          animate={isVisible ? "visible" : "hidden"}
         >
           <h2
             className="font-black uppercase tracking-tighter text-foreground leading-none text-center"
@@ -184,9 +191,9 @@ export function MarqueeFooter() {
             {/* blinking cursor at end — starts after all letters appear */}
             <motion.span
               className="inline-block" // <-- Add this class
-              initial={{ opacity: 0 }}
-              animate={isInView ? { opacity: 1 } : {}}
-              transition={{ delay: BRAND.length * 0.07 + 0.2 }}
+              initial={ENABLE_ANIMATIONS ? { opacity: 0 } : false}
+              animate={isVisible ? { opacity: 1 } : {}}
+              transition={{ delay: ENABLE_ANIMATIONS ? BRAND.length * 0.07 + 0.2 : 0 }}
             >
               <PixelCursor delay={BRAND.length * 0.07 + 0.2} />
             </motion.span>
@@ -194,26 +201,28 @@ export function MarqueeFooter() {
         </motion.div>
 
         {/* bottom scan line sweep — "TV turn-on" effect */}
-        <motion.div
-          className="absolute inset-x-0 h-[3px] bg-primary/60 pointer-events-none"
-          style={{ top: "50%" }}
-          initial={{ scaleX: 0, opacity: 1 }}
-          animate={
-            isInView
-              ? { scaleX: [0, 1, 1], opacity: [1, 1, 0] }
-              : { scaleX: 0, opacity: 1 }
-          }
-          transition={{ duration: 1.2, ease: EASE, times: [0, 0.7, 1] }}
-        />
+        {ENABLE_ANIMATIONS && (
+          <motion.div
+            className="absolute inset-x-0 h-[3px] bg-primary/60 pointer-events-none"
+            style={{ top: "50%" }}
+            initial={{ scaleX: 0, opacity: 1 }}
+            animate={
+              isInView
+                ? { scaleX: [0, 1, 1], opacity: [1, 1, 0] }
+                : { scaleX: 0, opacity: 1 }
+            }
+            transition={{ duration: ENABLE_ANIMATIONS ? 1.2 : 0, ease: EASE, times: [0, 0.7, 1] }}
+          />
+        )}
 
         {/* tagline under logo */}
         <motion.p
           className="text-center text-muted-foreground font-bold uppercase tracking-[0.3em] text-sm mt-4 relative"
-          initial={{ opacity: 0, y: 10 }}
-          animate={isInView ? { opacity: 1, y: 0 } : {}}
+          initial={ENABLE_ANIMATIONS ? { opacity: 0, y: 10 } : false}
+          animate={isVisible ? { opacity: 1, y: 0 } : {}}
           transition={{
-            delay: BRAND.length * 0.07 + 0.5,
-            duration: 0.5,
+            delay: ENABLE_ANIMATIONS ? BRAND.length * 0.07 + 0.5 : 0,
+            duration: ENABLE_ANIMATIONS ? 0.5 : 0,
             ease: EASE,
           }}
         >

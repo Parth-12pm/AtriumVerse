@@ -29,12 +29,23 @@ if DATABASE_URL:
         if sslmode == "require":
             connect_args["ssl"] = "require"
 
+    if "channel_binding" in qs:
+        qs.pop("channel_binding")
+
     new_query = urlencode(qs, doseq=True)
     parsed = parsed._replace(query=new_query)
 
     FINAL_URL = urlunparse(parsed)
 
-    engine = create_async_engine(FINAL_URL, echo=True, connect_args=connect_args)
+    # Disable statement caching for PgBouncer/Neon Serverless compatibility
+    connect_args["statement_cache_size"] = 0
+
+    engine = create_async_engine(
+        FINAL_URL, 
+        echo=True, 
+        connect_args=connect_args, 
+        pool_pre_ping=True
+    )
 
 SessionLocal = sessionmaker(
     bind=engine,
