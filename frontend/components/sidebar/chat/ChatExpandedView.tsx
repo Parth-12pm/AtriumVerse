@@ -150,6 +150,12 @@ export default function ChatExpandedView({
     }
   };
 
+  const handleEncryptionEnabled = useCallback((channelId: string) => {
+    setChannels((prev) =>
+      prev.map((c) => (c.id === channelId ? { ...c, is_encrypted: true } : c)),
+    );
+  }, []);
+
   const repairKeys = useCallback(async () => {
     if (repairLoading) return;
     setRepairLoading(true);
@@ -256,6 +262,7 @@ export default function ChatExpandedView({
           onDeleteChannel={handleDeleteChannel}
           repairKeys={isServerOwner ? repairKeys : undefined}
           repairLoading={repairLoading}
+          onEncryptionEnabled={isServerOwner ? handleEncryptionEnabled : undefined}
         />
       </div>
 

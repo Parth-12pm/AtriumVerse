@@ -42,6 +42,7 @@ interface ChannelListProps {
   onDeleteChannel: (channelId: string) => Promise<void>;
   repairKeys?: () => Promise<void>;
   repairLoading?: boolean;
+  onEncryptionEnabled?: (channelId: string) => void;
 }
 
 export default function ChannelList({
@@ -59,6 +60,7 @@ export default function ChannelList({
   onDeleteChannel,
   repairKeys,
   repairLoading,
+  onEncryptionEnabled,
 }: ChannelListProps) {
   const [channelsExpanded, setChannelsExpanded] = React.useState(true);
   const [dmsExpanded, setDMsExpanded] = React.useState(true);
@@ -438,6 +440,7 @@ export default function ChannelList({
           repairKeys={repairKeys}
           repairLoading={repairLoading}
           onUpdateChannel={onUpdateChannel}
+          onEncryptionEnabled={onEncryptionEnabled}
         />
       )}
     </div>

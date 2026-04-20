@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import {
   encryptMessage,
@@ -92,6 +92,10 @@ export async function createBackupViaPRF(
   const registrationChallenge = await fetchKeyBackupChallenge();
   const registrationChallengeBuffer = base64urlToBuffer(registrationChallenge);
 
+  // Prompt #1: Register the WebAuthn credential.
+  // We also request a PRF eval here — many modern authenticators (Windows Hello,
+  // Touch ID on macOS 15+) return the PRF result inline on create(), so we may
+  // be able to skip the second prompt entirely.
   const credential = (await navigator.credentials.create({
     publicKey: {
       challenge: registrationChallengeBuffer,
@@ -119,31 +123,41 @@ export async function createBackupViaPRF(
     },
   })) as PublicKeyCredential;
 
-  const prfSupported = (credential.getClientExtensionResults() as any)?.prf
-    ?.enabled;
+  const createExtResults = credential.getClientExtensionResults() as any;
+  const prfSupported = createExtResults?.prf?.enabled;
   if (!prfSupported) {
     return { supported: false };
   }
 
-  const prfChallenge = window.crypto.getRandomValues(new Uint8Array(32));
-  const assertion = (await navigator.credentials.get({
-    publicKey: {
-      challenge: prfChallenge,
-      rpId: RP_ID,
-      allowCredentials: [{ id: credential.rawId, type: "public-key" }],
-      userVerification: "required",
-      extensions: {
-        prf: {
-          eval: {
-            first: new TextEncoder().encode(PRF_CONTEXT_STRING),
+  // Try to get the PRF output from the registration response directly (single prompt path).
+  let prfOutput: ArrayBuffer | null =
+    createExtResults?.prf?.results?.first ?? null;
+
+  if (!prfOutput) {
+    // Fallback: some authenticators only supply PRF output on a get() assertion.
+    // Prompt #2 (only reached when the authenticator does NOT return PRF inline on create).
+    const prfChallenge = window.crypto.getRandomValues(new Uint8Array(32));
+    const assertion = (await navigator.credentials.get({
+      publicKey: {
+        challenge: prfChallenge,
+        rpId: RP_ID,
+        allowCredentials: [{ id: credential.rawId, type: "public-key" }],
+        userVerification: "required",
+        extensions: {
+          prf: {
+            eval: {
+              first: new TextEncoder().encode(PRF_CONTEXT_STRING),
+            },
           },
         },
       },
-    },
-  })) as PublicKeyCredential;
+    })) as PublicKeyCredential;
 
-  const prfOutput = (assertion.getClientExtensionResults() as any)?.prf?.results
-    ?.first;
+    prfOutput =
+      (assertion.getClientExtensionResults() as any)?.prf?.results?.first ??
+      null;
+  }
+
   if (!prfOutput) {
     return { supported: false };
   }

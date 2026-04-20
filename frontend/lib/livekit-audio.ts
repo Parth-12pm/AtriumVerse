@@ -40,6 +40,7 @@ export class ProximityAudioManager {
   private connected = false;
   private isConnecting = false;
   private micEnabled = false; // starts muted; user enables via dock
+  private deafened = false;
 
   async connect(serverId: string): Promise<void> {
     if (this.connected || this.isConnecting) return;
@@ -222,7 +223,7 @@ export class ProximityAudioManager {
     );
 
     if (el) {
-      el.volume = volume; // direct DOM element volume — reliable in livekit-client v2
+      el.volume = this.deafened ? 0 : volume; // respect deafen state
     } else {
       // Fallback if audio element isn't attached yet
       participant.setVolume(volume);
@@ -245,6 +246,14 @@ export class ProximityAudioManager {
     } catch (err) {
       console.error("❌ Mic toggle failed:", err);
     }
+  }
+
+  /** Mute/unmute all incoming audio without disconnecting from LiveKit. */
+  setDeafened(deafened: boolean): void {
+    this.deafened = deafened;
+    // Re-run proximity so volumes are set to 0 while deafened,
+    // or restored to proximity-based values when undeafened.
+    this.updateAllParticipants();
   }
 
   async setCameraEnabled(enabled: boolean): Promise<void> {
@@ -306,6 +315,7 @@ export class VoiceChannelManager {
   private connected = false;
   private isConnecting = false;
   private micEnabled = false; // starts muted
+  private deafened = false;
   public currentChannelId: string | null = null;
 
   async connect(channelId: string): Promise<void> {
@@ -342,7 +352,7 @@ export class VoiceChannelManager {
       this.room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
         if (pub.kind === Track.Kind.Audio) {
           const el = track.attach() as HTMLAudioElement;
-          el.volume = 1.0; // Full volume, no proximity
+          el.volume = this.deafened ? 0 : 1.0; // respect deafen state for late joiners
           el.autoplay = true;
           el.style.display = "none";
           document.body.appendChild(el);
@@ -384,6 +394,14 @@ export class VoiceChannelManager {
     } catch (err) {
       console.error("❌ Voice mic toggle failed:", err);
     }
+  }
+
+  /** Mute/unmute all incoming audio without disconnecting. */
+  setDeafened(deafened: boolean): void {
+    this.deafened = deafened;
+    this.audioElements.forEach((el) => {
+      el.volume = deafened ? 0 : 1.0;
+    });
   }
 
   isMicEnabled(): boolean {

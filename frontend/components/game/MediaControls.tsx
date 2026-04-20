@@ -21,8 +21,10 @@ import {
   Minimize2,
   Smile,
   Pencil,
+  Headphones,
 } from "lucide-react";
 import EventBus from "@/game/EventBus";
+import { getProximityAudio, getVoiceChannelAudio } from "@/lib/livekit-audio";
 
 interface MediaControlsProps {
   onAudioToggle?: (enabled: boolean) => void;
@@ -39,6 +41,7 @@ export function MediaControls({
   onExit,
 }: MediaControlsProps) {
   const [audioEnabled, setAudioEnabled] = useState(false);
+  const [deafened, setDeafened] = useState(false);
   const [videoEnabled, setVideoEnabled] = useState(false);
   const [screenSharing, setScreenSharing] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -102,12 +105,14 @@ export function MediaControls({
     const handleVideoExpanded = (expanded: boolean) =>
       setVideoExpanded(expanded);
     const handleMicSync = (enabled: boolean) => setAudioEnabled(enabled);
+    const handleDeafenSync = (isDeafened: boolean) => setDeafened(isDeafened);
 
     EventBus.on("ui:chat_toggled", handleChatToggle);
     EventBus.on("ui:video_room_joined", handleVideoJoined);
     EventBus.on("ui:video_room_left", handleVideoLeft);
     EventBus.on("ui:video_expanded", handleVideoExpanded);
     EventBus.on("action:toggle_mic", handleMicSync);
+    EventBus.on("action:toggle_deafen", handleDeafenSync);
 
     return () => {
       EventBus.off("ui:chat_toggled", handleChatToggle);
@@ -115,6 +120,7 @@ export function MediaControls({
       EventBus.off("ui:video_room_left", handleVideoLeft);
       EventBus.off("ui:video_expanded", handleVideoExpanded);
       EventBus.off("action:toggle_mic", handleMicSync);
+      EventBus.off("action:toggle_deafen", handleDeafenSync);
     };
   }, []);
 
@@ -123,6 +129,15 @@ export function MediaControls({
     setAudioEnabled(next);
     onAudioToggle?.(next);
     EventBus.emit("action:toggle_mic", next);
+  };
+
+  const handleDeafenToggle = () => {
+    const next = !deafened;
+    setDeafened(next);
+    // Mute/unmute all incoming audio elements directly on the manager instances
+    getProximityAudio().setDeafened(next);
+    getVoiceChannelAudio().setDeafened(next);
+    EventBus.emit("action:toggle_deafen", next);
   };
 
   const handleVideoToggle = () => {
@@ -174,6 +189,15 @@ export function MediaControls({
           ) : (
             <MicOff className="w-4 h-4" />
           )}
+        </button>
+
+        {/* Deafen — mutes all incoming audio */}
+        <button
+          onClick={handleDeafenToggle}
+          title={deafened ? "Undeafen (hear others)" : "Deafen (mute incoming)"}
+          className={`${BTN} ${deafened ? "bg-amber-400 text-black" : "bg-gray-700 text-white hover:bg-gray-600"}`}
+        >
+          <Headphones className="w-4 h-4" />
         </button>
 
         {/* Camera */}

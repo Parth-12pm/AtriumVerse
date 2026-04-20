@@ -10,7 +10,7 @@ import { GithubIcon } from "./github";
 // Each letter scales in from a pixelated tiny version, simulating a
 // low-res → high-res "game texture loading" effect.
 // Set ENABLE_ANIMATIONS to true for scroll animations, false for static fully-visible state (useful for screenshots)
-export const ENABLE_ANIMATIONS = false;
+export const ENABLE_ANIMATIONS = true;
 
 const BRAND = "ATRIUMVERSE";
 
@@ -167,7 +167,11 @@ export function MarqueeFooter() {
             }}
             initial={ENABLE_ANIMATIONS ? { opacity: 0, scale: 0 } : false}
             animate={isVisible ? { opacity: 1, scale: 1 } : {}}
-            transition={{ delay: ENABLE_ANIMATIONS ? b.delay : 0, duration: ENABLE_ANIMATIONS ? 0.4 : 0, ease: EASE }}
+            transition={{
+              delay: ENABLE_ANIMATIONS ? b.delay : 0,
+              duration: ENABLE_ANIMATIONS ? 0.4 : 0,
+              ease: EASE,
+            }}
           />
         ))}
 
@@ -193,7 +197,9 @@ export function MarqueeFooter() {
               className="inline-block" // <-- Add this class
               initial={ENABLE_ANIMATIONS ? { opacity: 0 } : false}
               animate={isVisible ? { opacity: 1 } : {}}
-              transition={{ delay: ENABLE_ANIMATIONS ? BRAND.length * 0.07 + 0.2 : 0 }}
+              transition={{
+                delay: ENABLE_ANIMATIONS ? BRAND.length * 0.07 + 0.2 : 0,
+              }}
             >
               <PixelCursor delay={BRAND.length * 0.07 + 0.2} />
             </motion.span>
@@ -211,7 +217,11 @@ export function MarqueeFooter() {
                 ? { scaleX: [0, 1, 1], opacity: [1, 1, 0] }
                 : { scaleX: 0, opacity: 1 }
             }
-            transition={{ duration: ENABLE_ANIMATIONS ? 1.2 : 0, ease: EASE, times: [0, 0.7, 1] }}
+            transition={{
+              duration: ENABLE_ANIMATIONS ? 1.2 : 0,
+              ease: EASE,
+              times: [0, 0.7, 1],
+            }}
           />
         )}
 

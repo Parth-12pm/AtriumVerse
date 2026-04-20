@@ -30,6 +30,7 @@ interface EditChannelDialogProps {
   repairKeys?: () => void;
   repairLoading?: boolean;
   onUpdateChannel: (channelId: string, data: ChannelUpdate) => Promise<void>;
+  onEncryptionEnabled?: (channelId: string) => void;
 }
 
 export default function EditChannelDialog({
@@ -43,6 +44,7 @@ export default function EditChannelDialog({
   repairKeys,
   repairLoading,
   onUpdateChannel,
+  onEncryptionEnabled,
 }: EditChannelDialogProps) {
   const [name, setName] = useState(currentName);
   const [type, setType] = useState<"text" | "voice">(currentType);
@@ -116,6 +118,7 @@ export default function EditChannelDialog({
         });
 
         toast.success("E2E Encryption enabled!");
+        onEncryptionEnabled?.(channelId);
       }
 
       onOpenChange(false);
