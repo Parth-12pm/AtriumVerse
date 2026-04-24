@@ -54,6 +54,135 @@ No meetings to schedule. No calls to join. Just walk up to someone and start tal
 
 ---
 
+## ✦ Screenshots
+
+### 🏠 &nbsp;Landing & Auth
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="frontend/public/Picture1.png" alt="Landing Page" width="100%"/>
+      <br/><sub><b>Landing Page</b> — hero with live world preview and feature highlights</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="frontend/public/Picture3.jpg" alt="Login Page" width="100%"/>
+      <br/><sub><b>Login</b> — animated sign-in screen</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="frontend/public/Picture2.jpg" alt="Register Page" width="100%"/>
+      <br/><sub><b>Register</b> — create a new AtriumVerse account</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="frontend/public/Picture6.jpg" alt="Character Selector" width="100%"/>
+      <br/><sub><b>Character Selector</b> — choose from Bob, Alex, Adam or Amelia</sub>
+    </td>
+  </tr>
+</table>
+
+---
+
+### 🗂 &nbsp;Dashboard & Server Setup
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="frontend/public/Picture4.jpg" alt="Server Browser" width="100%"/>
+      <br/><sub><b>Server Browser</b> — browse and enter public spaces</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="frontend/public/Picture5.jpg" alt="Your Servers" width="100%"/>
+      <br/><sub><b>Your Servers</b> — manage owned servers and view member lists</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="frontend/public/Picture7.png" alt="Create Space" width="100%"/>
+      <br/><sub><b>Create a Space</b> — pick a map (Classroom or Campus) and set access type</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="frontend/public/Picture18.jpg" alt="People Panel" width="100%"/>
+      <br/><sub><b>People Panel</b> — live list of online players in the server</sub>
+    </td>
+  </tr>
+</table>
+
+---
+
+### 🌍 &nbsp;The Game World
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="frontend/public/Picture8.png" alt="Game World" width="100%"/>
+      <br/><sub><b>The World</b> — tile-based campus map with minimap overlay and speaker entities</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="frontend/public/Picture10.jpg" alt="Earshot Ring" width="100%"/>
+      <br/><sub><b>Earshot Ring</b> — visual SVG ring showing your proximity audio radius</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="frontend/public/Picture11.jpg" alt="Emoji Reactions" width="100%"/>
+      <br/><sub><b>Emoji Reactions</b> — proximity-scoped emoji float animations</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="frontend/public/Picture9.jpg" alt="Proximity Chat" width="100%"/>
+      <br/><sub><b>Proximity Chat</b> — nearby text messages visible only within 8 tiles</sub>
+    </td>
+  </tr>
+</table>
+
+---
+
+### 🎙 &nbsp;Real-time Communication
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="frontend/public/Picture12.jpg" alt="Zone Video (PiP)" width="100%"/>
+      <br/><sub><b>Zone Video (Overlay)</b> — video conference opens when you walk into a room zone</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="frontend/public/Picture13.jpg" alt="Zone Video (Fullscreen)" width="100%"/>
+      <br/><sub><b>Zone Video (Fullscreen)</b> — Chill Room with meeting chat sidebar</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="frontend/public/Picture14.jpg" alt="Guest Invite Room" width="100%"/>
+      <br/><sub><b>Guest Invite Room</b> — 3-participant room including a no-account guest link</sub>
+    </td>
+  </tr>
+</table>
+
+---
+
+### 💬 &nbsp;Messaging & E2EE
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="frontend/public/Picture15.jpg" alt="Channel Sidebar" width="100%"/>
+      <br/><sub><b>Chat Sidebar</b> — channels and encrypted DM list</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="frontend/public/Picture16.jpg" alt="Direct Messages" width="100%"/>
+      <br/><sub><b>Direct Messages</b> — E2EE 1-on-1 DM conversation</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="frontend/public/Picture17.jpg" alt="E2EE Channel Settings" width="100%"/>
+      <br/><sub><b>E2EE Channel Settings</b> — enable end-to-end encryption per channel with key repair</sub>
+    </td>
+  </tr>
+</table>
+
+---
+
 ## ✦ Feature Highlights
 
 ### 🌍 &nbsp;The World
